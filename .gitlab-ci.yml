@@ -1,0 +1,30 @@
+stages:
+  - build
+  - deploy
+
+build:
+  image: node:latest    
+  stage: build
+  script:
+    - yarn
+    - yarn build
+  artifacts:
+    paths:
+      - build/  
+  
+pages:
+  image: alpine:latest
+  stage: deploy
+  only:
+    - main
+    - develop
+  variables:
+    GIT_STRATEGY: none        # Do not clone git repo
+  script:
+    - rm -rf public
+    # Rename the CRA `build` folder to `public`
+    - mv build public
+    - cp public/index.html public/404.html         
+  artifacts:
+    paths:
+      - public
