@@ -1,7 +1,3 @@
----
-sidebar_position: 3
----
-
 # Files inheritance 
 
 Framework provides a flexible way to overwrite some functionalities from core. You can create file with same name on same folder and framework will use this file instead on build one 

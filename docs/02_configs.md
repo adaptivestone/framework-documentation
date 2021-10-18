@@ -1,7 +1,3 @@
----
-sidebar_position: 2
----
-
 # Configs
 
 Every modern application runs on multiple environments and should have the ability to configure itself without changing code. 

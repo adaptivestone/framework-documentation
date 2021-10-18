@@ -1,7 +1,3 @@
----
-sidebar_position: 3
----
-
 # Models
 
 TODO mongoose es6, static methods, class methods

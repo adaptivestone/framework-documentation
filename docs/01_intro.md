@@ -1,7 +1,3 @@
----
-sidebar_position: 1
----
-
 # Intro
 
 Welcome to AdaptiveStone framework documentation. We hope that documentation is clean and short. Please feel free to edit it via git merge request and contact us  

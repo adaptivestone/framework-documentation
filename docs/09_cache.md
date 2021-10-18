@@ -1,7 +1,3 @@
----
-sidebar_position: 13
----
-
 # Cache
 
 Cache subsystem designed to store some values for quick access and unified interface. It is useful when you have some values grabbed from external api or some stuff that requires a lot of calculation and not changing from time to time.

@@ -1,7 +1,3 @@
----
-sidebar_position: 4
----
-
 # Controllers
 
 TODO getExpressPAth, loading. yup, middleware
