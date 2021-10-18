@@ -171,7 +171,7 @@ const isSuccess2 = await user.sendVerificationEmail(i18n);
 
 Migration model it's helper for migration subsystems. It stores migrated files to make sure that migrated executed once
 
-Please refer to CLI/migrations for mode details
+Please refer to CLI/migrations for more details
 
 You probably should not use this model directly
 ### Sequence
