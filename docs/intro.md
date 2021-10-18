@@ -32,8 +32,30 @@ That why Adaptive Stone framework was born
 
 ## Folder structure
 
-TODO
-
+```js
+frawework/ 
+├─ commands/  //contains command folder (CLI)
+├─ config/ //constains config files
+├─ controllers/ //contains controller files
+│  ├─ {controller_group_folder}/ //can contain folder (will be added to route)
+├─ locales/ // i18n folder with translations
+│  ├─ {locale_1}/ // locale name (en,fr, etc)
+│  │  ├─ translation.json // translation json file 
+│  ├─ {locale_2}/
+│  │  ├─ translation.json
+├─ migrations/ // folder where migration files stored
+├─ models/ // contains model files 
+├─ modules/ // main folder with abstract stuff
+├─ public/ // public stuff (server statically)
+├─ services/ // some services (email, http, etc)
+├─ tests/ // folder contains basic tests integration with jest
+├─ views/ // frawemork able to respond with view (not only API). Here view files stored
+├─ Cli.js // main CLI class
+├─ cliCommands.js // CLI implementation 
+├─ cluster.js  // entry point for production for the cluster module  
+├─ folderConfig.js // folder configuration
+├─ server.js // main entry point to framework
+```
 ## Framework strusture 
 
 TODO
