@@ -9,7 +9,7 @@ Config files located on ‘src/config/{filename}.js’. Each config file mostly 
 
 :::note
 
-Config files part of  [framework inheritance process ](files-inheritance.md).
+Config files part of  [framework inheritance process ](03_files-inheritance.md).
 
 :::
 
