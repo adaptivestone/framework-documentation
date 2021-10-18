@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../framework"
+		},
+		{
+			"path": "../ouro-exchange-backend"
 		}
 	],
 	"settings": {}
