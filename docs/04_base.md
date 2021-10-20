@@ -28,6 +28,12 @@ class A extends Base{
     return 'Base_please_overwrite_';
   }
 
+  /**
+   * In case of logging sometimes we might need to replace name
+   */
+  getConstructorName() {
+    return this.constructor.name;
+  }
 }
 ```
 
