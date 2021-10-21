@@ -120,6 +120,16 @@ Models united onse per  process and then united instances cached. Do NOT expect 
 
 :::
 
+:::tip
+
+Please do not name the model in plural form. 
+
+**Bad** - Coin**s**
+
+**Good** - Coin
+
+:::
+
 ## API
 
 ```js
