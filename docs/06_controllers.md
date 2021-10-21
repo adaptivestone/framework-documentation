@@ -1,5 +1,12 @@
 # Controllers
 
+
+:::note
+
+Controllers files part of  [framework inheritance process ](03_files-inheritance.md).
+
+:::
+
 TODO getExpressPAth, loading. yup, middleware
 
 
