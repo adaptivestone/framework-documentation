@@ -135,6 +135,11 @@ tests:
 
 ## Http endpoint testing
 
+Good way to tests http it not use [supertest package](https://github.com/visionmedia/supertest)
+
+That library have an easy way to integrate with express server   
+
+
 ```js
 const request = require('supertest');
 
