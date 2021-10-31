@@ -29,7 +29,7 @@ class ControllerName extends AbstractController {
     // return middlewares for THIS route only
   }
 }
-module.exports = Auth;
+module.exports = ControllerName;
 ```
 
 :::tip
@@ -288,7 +288,7 @@ class CustomMiddleware extends AbstractMiddleware {
       //  return and stop processing
       return res.status(400).json({});
     }
-    if (this.params.iiii){
+    if (this.params.iiii) {
       // we can also check all params that we passed during init
     }
     // go to next one
@@ -301,11 +301,200 @@ module.exports = CustomMiddleware;
 
 ## Routes
 
-TODO yup
+Routes relative to controller route. You SHOULD not use the full route here.
 
-[NEW] new route handler format with request validations and casting (yup based)
+Route Objects have multiple levels.
 
-```javascript
+### Route first level (method level)
+
+On a first level only ‘method’ (post, put, delete, etc) exists. Only request with this methods will go depers on real routes.
+
+```js
+const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+
+class ControllerName extends AbstractController {
+  get routes() {
+    return {
+      post: {
+        // post routes
+      },
+      get: {
+        // get routes
+      },
+      put: {
+        // put routes
+      },
+      // etc
+    };
+  }
+}
+module.exports = ControllerName;
+```
+
+### Route second level (path level)
+
+Inside methods (second level) we have a path. It follows https://expressjs.com/en/guide/routing.html#route-paths express documentation
+
+:::tip
+In most cases few options in enough
+
+```js
+"/fullpath";
+
+// grab variables  paramOne and paramTwo into req.params
+"/fullpath/:paramOne/:paramTwo";
+
+// like previous but "paramTwo" snow optional
+"/fullpath/:paramOne/:paramTwo?";
+```
+
+:::
+
+:::note
+
+Order of routes matters. First matched route will be execute
+:::
+
+Example
+
+```js
+const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+
+class ControllerName extends AbstractController {
+  get routes() {
+    return {
+      post: {
+        "/someUrl": {
+          handler: this.postSomeUrl,
+          request: yup.object().shape({
+            count: yup.number().max(100)required(),
+          })
+        }
+      },
+    };
+  }
+}
+module.exports = ControllerName;
+```
+
+### Route third level (route object level)
+
+On the third level we have an "route object" special object that will describe our route.
+
+```js
+{
+  handler: this.postSomeUrl, // required
+  request: yup.object().shape({ // optional
+    count: yup.number().max(100)required(),
+  })
+}
+
+```
+
+Here:
+
+```js
+Handler; // some async function (most likely on this controller file) that will do all job
+Request; //special interface that will do validation for you
+```
+
+### Request
+
+Request did a validation and casting of an upcoming request.
+
+As we want to use already well defined solutions we believe that [yup](https://github.com/jquense/yup) is a great sample of how schema should be validated.
+
+But you still have ability to provide own validation based on interface
+
+:::warning
+Request works on body level. So it can’t be used on GET methods, as GET have no BODY
+:::
+
+Parameters after validation available as req.appInfo.request
+
+:::warning
+Do not use req.body directly. Always use parameters via req.appInfo.request
+
+:::
+
+### Yup validation
+
+```js
+  request: yup.object().shape({
+    count: yup.number().max(100)required("error text"),
+  })
+```
+
+Please follow yup documentation for a deeper understanding of how schemas work. All parameters is located here [https://github.com/jquense/yup#api](https://github.com/jquense/yup#api)
+
+Example:
+
+```js
+request: yup.object().shape({
+  name: yup.string().required('validation.name'), // you can use i18n keys here
+  email: yup.string().email().required('Email required field'), // or just text
+  message: yup
+    .string()
+    .required('Message required field')
+    .min(30, 'minimum 30 chars'), // additional validators for different types exists
+  pin: yup
+    .number()
+    .integer()
+    .min(1000)
+    .max(9999)
+    .required('pin.pinProvided'),
+  status: yup
+    .string()
+    .required('Status required field')
+    .oneOf(['WAITING', 'CANCELED']), // pne of 
+  transaction: yup
+    .object()// ddep level object
+    .shape({
+      to: yup.string().required(),
+      amount: yup.number().required(),
+      coinName: yup.string().oneOf(['btc', 'etc']).default('etc'), // default
+    })
+    .required(),  
+})
+
+```
+
+
+#### Own validation
+
+To create own validator your object should have two methods:
+
+```js
+async validate(req.body) //throw an error on validation vailed
+cast(req.body) // should strip unknown parametes
+```
+
+
+Or error throw error object should provide “errors” array - error (why validation failed) and "path" string - body parameter
+
+```js
+try {
+  await request.validate(req.body);
+} catch (e) {
+  // e.path
+  // e.errors
+}
+
+req.appInfo.request = request.cast;
+```
+
+### i18n
+
+On any fields that can generate an error (required, etc) you can use i18n keys to translate. Framework will handle translation for you 
+
+Please reffer to [i18n documentation](08_i18n.md))
+
+### Handler
+
+[BREAKING] Possible breaking. AsyncFunction now required for router handler (it always was but without checking of code)
+
+\
+```js
   get routes() {
     return {
       post: {
@@ -331,9 +520,6 @@ TODO yup
 
 ```
 
-[UPDATE] add warning when using 'req.body' directly
-[BREAKING] Possible breaking. AsyncFunction now required for router handler (it always was but without checking of code)
-
 ## View
 
 By default the framework uses the express option to render views with a pug template. To render view you need to create view file on view folder and then call it with necessary parameters
@@ -341,6 +527,12 @@ By default the framework uses the express option to render views with a pug temp
 ```js
 res.render("template", { title: "Hey", message: "Hello there!" });
 ```
+
+## JSON
+
+JSON is the most common way to communicate on the modern internet. But it is too flexible and sometimes developers can be confused. How to use it in an appropriate way
+
+We provide [basic documentation](https://andrey-systerr.notion.site/API-JSON-41f2032055ae4bddae5d033dc28eb1d3) of how we expect to work with JSON. Framework follow that rules
 
 ## Configuration
 
