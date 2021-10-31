@@ -54,7 +54,7 @@ frawework/
 ```
 ## Framework strusture 
 
-TODO
+![Framework](/img/AdaptiveStroneFramework.jpg)
 
 ## Getting Started
 
