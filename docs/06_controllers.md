@@ -431,34 +431,27 @@ Example:
 
 ```js
 request: yup.object().shape({
-  name: yup.string().required('validation.name'), // you can use i18n keys here
-  email: yup.string().email().required('Email required field'), // or just text
+  name: yup.string().required("validation.name"), // you can use i18n keys here
+  email: yup.string().email().required("Email required field"), // or just text
   message: yup
     .string()
-    .required('Message required field')
-    .min(30, 'minimum 30 chars'), // additional validators for different types exists
-  pin: yup
-    .number()
-    .integer()
-    .min(1000)
-    .max(9999)
-    .required('pin.pinProvided'),
+    .required("Message required field")
+    .min(30, "minimum 30 chars"), // additional validators for different types exists
+  pin: yup.number().integer().min(1000).max(9999).required("pin.pinProvided"),
   status: yup
     .string()
-    .required('Status required field')
-    .oneOf(['WAITING', 'CANCELED']), // pne of 
+    .required("Status required field")
+    .oneOf(["WAITING", "CANCELED"]), // pne of
   transaction: yup
-    .object()// ddep level object
+    .object() // ddep level object
     .shape({
       to: yup.string().required(),
       amount: yup.number().required(),
-      coinName: yup.string().oneOf(['btc', 'etc']).default('etc'), // default
+      coinName: yup.string().oneOf(["btc", "etc"]).default("etc"), // default
     })
-    .required(),  
-})
-
+    .required(),
+});
 ```
-
 
 #### Own validation
 
@@ -468,7 +461,6 @@ To create own validator your object should have two methods:
 async validate(req.body) //throw an error on validation vailed
 cast(req.body) // should strip unknown parametes
 ```
-
 
 Or error throw error object should provide “errors” array - error (why validation failed) and "path" string - body parameter
 
@@ -485,16 +477,24 @@ req.appInfo.request = request.cast;
 
 ### i18n
 
-On any fields that can generate an error (required, etc) you can use i18n keys to translate. Framework will handle translation for you 
+On any fields that can generate an error (required, etc) you can use i18n keys to translate. Framework will handle translation for you
 
 Please reffer to [i18n documentation](08_i18n.md))
 
 ### Handler
 
-[BREAKING] Possible breaking. AsyncFunction now required for router handler (it always was but without checking of code)
+Handler - some async function (most likely on this controller file) that will do all the job. Better to write function on the same file
 
-\
+:::warning
+Handler only can be an **async** function.  
+:::
+
+req.appInfo.app
+
 ```js
+const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+
+class ControllerName extends AbstractController {
   get routes() {
     return {
       post: {
@@ -510,14 +510,24 @@ Please reffer to [i18n documentation](08_i18n.md))
   // send request with data  {count: "5000"}
   // will produce error with status 400 and {errors: {count:['Text error']}}
 
-
   postSample(req,res) =>{
     // on success validate we pass here.
     // {count: "5000"}
     console.log(req.appInfo.request)
     // {count: 5000} -> casted to number
+
+    const SomeModel = this.app.getModel('SomeModel');
+    const SomeModelAlternativeWay = req.appInfo.app.getModel('SomeModel');
+
+    const { count } = req.appInfo.request;
+
+    const someModel = await SomeModel.findOne({count});
+
+    return res.status(200).json({modelId:someModel.id});
   }
 
+}
+module.exports = ControllerName;
 ```
 
 ## View
