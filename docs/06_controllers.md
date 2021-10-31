@@ -1,11 +1,28 @@
 # Controllers
 
+Controllers are one of the most important parts of the framework. Framework works around [https://expressjs.com/](https://expressjs.com/) http framework and provide convenient way to build complex system around http infrastructure 
 
 :::note
 
 Controllers files part of  [framework inheritance process ](03_files-inheritance.md).
 
 :::
+
+Framework provides from scratch error handling, controllers autoload (including subfolders) and request validation and casting
+
+
+## Name convention and loading
+
+
+
+
+## Middleware 
+
+
+### Build in middleware
+
+
+
 
 TODO getExpressPAth, loading. yup, middleware
 
@@ -18,7 +35,6 @@ TODO getExpressPAth, loading. yup, middleware
   }
 ```
 
-[NEW] controller unhandled rejection now handled with default error
 
 
 [NEW] new route handler format with request validations and casting (yup based)
