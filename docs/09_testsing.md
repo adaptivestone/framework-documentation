@@ -137,26 +137,123 @@ tests:
 
 Good way to tests http it not use [supertest package](https://github.com/visionmedia/supertest)
 
-That library have an easy way to integrate with express server   
-
+That library have an easy way to integrate with express server
 
 ```js
-const request = require('supertest');
+const request = require("supertest");
 
-
-describe('module', () => {
-  describe('functon', () => {
-    it('test', async () => {
+describe("module", () => {
+  describe("functon", () => {
+    it("test", async () => {
       expect.assertions(1);
-      const { status } = await request(global.server.app.httpServer.express) // integration with express 
-        .post('/some/endpoint')
+      const { status } = await request(global.server.app.httpServer.express) // integration with express
+        .post("/some/endpoint")
         .set({ Authorization: global.User.token.token }) // our token for auth
-        .send({ // request object 
+        .send({
+          // request object
           oneData: 1,
-          secondDate: 2
+          secondDate: 2,
         });
       expect(status).toBe(400);
     });
+  });
+});
+```
+
+## Mock
+
+In most cases your code depends on external services, but you still need to perform testing. Calling external service for each test can be expensive and that is not necessary. For this problem jset provides moch options. That when you instead of calling real sdk of service will call a fake function that provide result without api calls
+
+[https://jestjs.io/docs/mock-functions](https://jestjs.io/docs/mock-functions)
+
+### Manual mock
+
+[https://jestjs.io/docs/manual-mocks](https://jestjs.io/docs/manual-mocks)
+
+Manual mocks are defined by writing a module in a **mocks**/ subdirectory immediately adjacent to the module. For example, to mock a module called user in the models directory, create a file called user.js and put it in the models/**mocks** directory. Note that the **mocks** folder is case-sensitive, so naming the directory **MOCKS** will break on some systems.
+
+:::note
+You should call moch load function before performing any operation on it
+
+```js
+jest.mock("path");
+jest.createMockFromModule("module");
+```
+
+:::
+
+### @google-cloud/translate example (NODE_MODULES)
+
+Assume that we have some translation helper (synthetic example) that just do and translation and register it in database for speed up for next time
+
+/src/helpers/translateHelper.js
+
+```js
+const { Translate } = require("@google-cloud/translate").v2;
+const translate = new Translate();
+
+// no errors hanling because it example. You should hanlde error on production mode
+// no model passing
+const translateHelper = async (text, language) => {
+  const alreadyTranslatedData = await TranslatedModel.find({ text, language });
+  if (alreadyTranslatedData) {
+    return alreadyTranslatedData.translatedText;
+  }
+
+  const translated = await translate.translate(text, language);
+  const data = await TranslatedModel.create({
+    text,
+    language,
+    translatedText: translated[0],
+  });
+  return translated[0];
+};
+
+module.exports = translateHelper;
+```
+
+Right now you want to test that function works correctly. So as @google-cloud/translate.js an node_modules module we creating file
+
+```js
+/__mocks__/@google-cloud/translate.js
+```
+
+File extends original google translate and overwrite some function to avoid API calls
+
+```js /__mocks__/@google-cloud/translate.js
+const googleTranslate = jest.genMockFromModule("@google-cloud/translate");
+
+class Translate {
+  translate(text, lang) {
+    return [`${text}_${lang}`, "this is test"];
+  }
+}
+
+googleTranslate.v2.Translate = Translate;
+module.exports = googleTranslate;
+```
+
+Now insside you helper test file
+
+```js
+jest.mock('@google-cloud/translate');
+
+const translateHelper = require('/src/helpers/translateHelper.js');
+
+
+describe('mock testing', () => {
+  it('should return translated text', async () => {
+    expect.assertions(1);
+    const translated = await translateHelper("text","fr");
+    expect(translated).toBe("text_fr");
+  })
+
+  it('should store text on database', async () => {
+    expect.assertions(1);
+    const translated = await TranslatedModel.find({text:"text", "fr"});
+    expect(translated.translatedText).toBe("text_fr");
   })
 })
+
+
 ```
