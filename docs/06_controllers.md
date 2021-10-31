@@ -272,6 +272,33 @@ Rate limiter have multiple backends (memory, redis and mongo). Buy default 'memo
 
 ### Creating own middlewares (or integrate external)
 
+You can create your own middleware. To do that you should extend AbstractMiddleware and provide at least two own functions - description and middleware. Please check code bellow
+
+```js
+const AbstractMiddleware = require("@adaptivestone/framework/services/http/middleware/AbstractMiddleware");
+
+class CustomMiddleware extends AbstractMiddleware {
+  static get description() {
+    return "Middleware descrition";
+  }
+
+  async middleware(req, res, next) {
+    // check something
+    if (!req.body.yyyyy) {
+      //  return and stop processing
+      return res.status(400).json({});
+    }
+    if (this.params.iiii){
+      // we can also check all params that we passed during init
+    }
+    // go to next one
+    return next();
+  }
+}
+
+module.exports = CustomMiddleware;
+```
+
 ## Routes
 
 TODO yup
@@ -308,6 +335,12 @@ TODO yup
 [BREAKING] Possible breaking. AsyncFunction now required for router handler (it always was but without checking of code)
 
 ## View
+
+By default the framework uses the express option to render views with a pug template. To render view you need to create view file on view folder and then call it with necessary parameters
+
+```js
+res.render("template", { title: "Hey", message: "Hello there!" });
+```
 
 ## Configuration
 
