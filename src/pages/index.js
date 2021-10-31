@@ -31,7 +31,7 @@ export default function Home() {
   return (
     <Layout
       title={`${siteConfig.title} documentation`}
-      description="Description will go into a meta tag in <head />"
+      description="AdaptiveStone framework documentation"
     >
       <HomepageHeader />
       <main>
