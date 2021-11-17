@@ -146,6 +146,10 @@ Sample
 Middleware here not a raw express middlewares. Please see below
 :::
 
+### Including middlewares into route object
+
+Middlewares can also be added into route object (subchapter “Routes”)
+
 ### Middleware parameters
 
 Some middleware acept initial parameters pass into it,
@@ -386,7 +390,8 @@ On the third level we have an "route object" special object that will describe o
   handler: this.postSomeUrl, // required
   request: yup.object().shape({ // optional
     count: yup.number().max(100)required(),
-  })
+  }),
+  middleware: [RateLimiter] // optional
 }
 
 ```
@@ -396,6 +401,7 @@ Here:
 ```js
 Handler; // some async function (most likely on this controller file) that will do all job
 Request; //special interface that will do validation for you
+Middleware; // array of middlewares specially for current route
 ```
 
 ### Request
@@ -526,6 +532,63 @@ class ControllerName extends AbstractController {
     return res.status(200).json({modelId:someModel.id});
   }
 
+}
+module.exports = ControllerName;
+```
+
+### Middleware
+
+Middleware - array of middlewares specially for current route
+
+:::warning
+
+Route middlewares takes precedence over middlewares into controllers
+
+:::
+
+```javascript
+const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+
+class ControllerName extends AbstractController {
+  get routes() {
+    return {
+      get: {
+        '/routeName': {
+          handler: ...
+          middleware: [MiddlewareName, MiddlewareName, etc]
+        }
+      },
+    };
+  }
+}
+module.exports = ControllerName;
+```
+
+Similarly controller middlewares you can use middlewares with parameters
+
+:::note
+
+Rules for the design of middlewares with parameters are described in the subsection "Middleware"
+
+:::
+
+Sample
+
+```javascript
+const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+const RoleMiddleware = require("@adaptivestone/framework/services/http/middleware/Role");
+
+class ControllerName extends AbstractController {
+  get routes() {
+    return {
+      get: {
+        '/routeName': {
+          handler: ...
+          middleware: [[RoleMiddleware, { roles: ['client'] }]]
+        }
+      },
+    };
+  }
 }
 module.exports = ControllerName;
 ```
