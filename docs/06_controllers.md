@@ -82,7 +82,7 @@ Default
 
 ```js
   static get middleware() {
-    return new Map([['/*', [PrepareAppInfo, GetUserByToken, Auth]]]);
+    return new Map([['/*', [GetUserByToken, Auth]]]);
   }
 ```
 
@@ -126,7 +126,7 @@ Sample
 
 ```javascript
   static get middleware() {
-    return new Map([['GET/*', [PrepareAppInfo, GetUserByToken]]]);
+    return new Map([['GET/*', [GetUserByToken]]]);
   }
 ```
 
@@ -134,7 +134,6 @@ Sample
   static get middleware() {
     return new Map([
       ['POST/someUrl', [
-        PrepareAppInfo,
         GetUserByToken,
         [RoleMiddleware, { roles: ['admin'] ]}]
       ]]
@@ -158,7 +157,7 @@ Some middleware acept initial parameters pass into it,
   static get middleware() {
     return new Map([
       ['POST/someUrl', [
-        PrepareAppInfo // middleware with no parameters
+        GetUserByToken // middleware with no parameters
         [RoleMiddleware, { roles: ['admin'] ]}] // middleware with parameters
       ]]
     ]);
@@ -241,7 +240,6 @@ Be default rate key generated based on Route, IP and userID. But you can adjust 
       [
         'POST/login',
         [
-          PrepareAppInfo,
           GetUserByToken,
           [
             RateLimiter,
@@ -262,7 +260,6 @@ Rate limited middleware allows you to include request components (req.body) for 
   static get middleware() {
     return new Map([
       ['POST/login', [
-        PrepareAppInfo,
         GetUserByToken,
         [RateLimiter,{consumeKeyComponents: { ip: false, request:['email','phone'] }}]
       ]]
