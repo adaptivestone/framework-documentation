@@ -410,7 +410,13 @@ As we want to use already well defined solutions we believe that [yup](https://g
 But you still have ability to provide own validation based on interface
 
 :::warning
-Request works on body level. So it can’t be used on GET methods, as GET have no BODY
+Request works on a body and a query level. But body have bigger priority then query
+:::
+
+Request merge incoming body and query parameters into one object and pass it into validation
+
+:::warning
+Please note that GET methods have no BODY
 :::
 
 Parameters after validation available as req.appInfo.request
