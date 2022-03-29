@@ -87,7 +87,7 @@ By default, the framework starts the mongo memory server and afterwards stops it
 
 For ARM64 we have an interesting situation. Mongo Inc provides binaries for Ubuntu and not for Debian, but node official images exist for Debian but not for Ubuntu.
 
-To solve that situation we provide our own node docker image based on ubuntu. You can find it here [ubuntu-node-doscker](https://gitlab.com/adaptivestone/ubuntu-node)
+To solve that situation we provide our own node docker image based on ubuntu. You can find it here [ubuntu-node-docker](https://gitlab.com/adaptivestone/ubuntu-node)
 
 ## Running tests in CI (gitlab)
 
