@@ -41,11 +41,12 @@ Please look at the ‘config/mail.js’ file for all configuration options.
 
 ### Environment variables
 
-Here most the impornat nnvironment variables
+Here most the impornat environment variables
 
 ```js
-EMAIL_HOST;
-EMAIL_PORT;
+EMAIL_HOST; // smtp.mailtrap.io by default
+EMAIL_PORT; // 2525 by default
 EMAIL_USER;
 EMAIL_PASSWORD;
+EMAIL_TRANSPORT; // smtp by default
 ```
