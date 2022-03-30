@@ -16,6 +16,13 @@ Framework provides from scratch error handling, controllers autoload (including 
 const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
 
 class ControllerName extends AbstractController {
+  constructor(app, prefix) {
+    // optional constructor. In case you want to keep req.params from main router
+    // by default params from parent router omitted
+    // usefull when some params exists on "getExpressPath" path
+    super(app, prefix, true);
+  }
+
   get routes() {
     // return routes info
     // NECESSARY part
