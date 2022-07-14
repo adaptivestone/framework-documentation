@@ -28,7 +28,7 @@ Example:
 
 ```javascript
 const cacheTime = 60 * 5;
-this.app.cache.getSetValue(
+const someValueFromCache = this.app.cache.getSetValue(
   "someKey",
   async () => {
      const someValue = await someLongAsyncOperation();
