@@ -286,6 +286,19 @@ class CustomMiddleware extends AbstractMiddleware {
     return "Middleware descrition";
   }
 
+  // optional
+  static get usedAuthParameters() {
+    // Array of parameters that are used for authorization within the middleware
+    return [
+      {
+        name: "Authorization", // name of the parameter
+        type: "apiKey", // apiKey, http, oauth2, openIdConnect
+        in: "header", // header, query, cookie
+        description: this?.description,
+      },
+    ];
+  }
+
   async middleware(req, res, next) {
     // check something
     if (!req.body.yyyyy) {
@@ -392,6 +405,7 @@ On the third level we have an "route object" special object that will describe o
     count: yup.number().max(100)required(),
   }),
   middleware: [RateLimiter] // optional
+  description: yup.string() // optional
 }
 
 ```
@@ -402,6 +416,7 @@ Here:
 Handler; // some async function (most likely on this controller file) that will do all job
 Request; //special interface that will do validation for you
 Middleware; // array of middlewares specially for current route
+Description; // description of this route (used when generating documentation)
 ```
 
 ### Request
