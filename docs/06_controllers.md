@@ -16,6 +16,13 @@ Framework provides from scratch error handling, controllers autoload (including 
 const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
 
 class ControllerName extends AbstractController {
+  constructor(app, prefix) {
+    // optional constructor. In case you want to keep req.params from main router
+    // by default params from parent router omitted
+    // usefull when some params exists on "getExpressPath" path
+    super(app, prefix, true);
+  }
+
   get routes() {
     // return routes info
     // NECESSARY part
@@ -82,7 +89,7 @@ Default
 
 ```js
   static get middleware() {
-    return new Map([['/*', [PrepareAppInfo, GetUserByToken, Auth]]]);
+    return new Map([['/*', [GetUserByToken, Auth]]]);
   }
 ```
 
@@ -126,7 +133,7 @@ Sample
 
 ```javascript
   static get middleware() {
-    return new Map([['GET/*', [PrepareAppInfo, GetUserByToken]]]);
+    return new Map([['GET/*', [GetUserByToken]]]);
   }
 ```
 
@@ -134,7 +141,6 @@ Sample
   static get middleware() {
     return new Map([
       ['POST/someUrl', [
-        PrepareAppInfo,
         GetUserByToken,
         [RoleMiddleware, { roles: ['admin'] ]}]
       ]]
@@ -158,7 +164,7 @@ Some middleware acept initial parameters pass into it,
   static get middleware() {
     return new Map([
       ['POST/someUrl', [
-        PrepareAppInfo // middleware with no parameters
+        GetUserByToken // middleware with no parameters
         [RoleMiddleware, { roles: ['admin'] ]}] // middleware with parameters
       ]]
     ]);
@@ -241,7 +247,6 @@ Be default rate key generated based on Route, IP and userID. But you can adjust 
       [
         'POST/login',
         [
-          PrepareAppInfo,
           GetUserByToken,
           [
             RateLimiter,
@@ -262,7 +267,6 @@ Rate limited middleware allows you to include request components (req.body) for 
   static get middleware() {
     return new Map([
       ['POST/login', [
-        PrepareAppInfo,
         GetUserByToken,
         [RateLimiter,{consumeKeyComponents: { ip: false, request:['email','phone'] }}]
       ]]
@@ -428,7 +432,13 @@ As we want to use already well defined solutions we believe that [yup](https://g
 But you still have ability to provide own validation based on interface
 
 :::warning
-Request works on body level. So it can’t be used on GET methods, as GET have no BODY
+Request works on a body and a query level. But body have bigger priority then query
+:::
+
+Request merge incoming body and query parameters into one object and pass it into validation
+
+:::warning
+Please note that GET methods have no BODY
 :::
 
 Parameters after validation available as req.appInfo.request
