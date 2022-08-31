@@ -287,8 +287,8 @@ class CustomMiddleware extends AbstractMiddleware {
   }
 
   // optional
-  static get getHeaderAuthParams() {
-    // Array of parameters that are used for authorization within the middleware (used when generating documentation)
+  static get usedAuthParameters() {
+    // Array of parameters that are used for authorization within the middleware
     return [
       {
         name: "Authorization", // name of the parameter
