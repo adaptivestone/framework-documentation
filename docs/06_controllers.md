@@ -490,7 +490,7 @@ To create own validator your object should have two methods:
 
 ```js
 async validate(req.body) //throw an error on validation vailed
-cast(req.body) // should strip unknown parametes
+async cast(req.body) // should strip unknown parametes
 ```
 
 Or error throw error object should provide “errors” array - error (why validation failed) and "path" string - body parameter
