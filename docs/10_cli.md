@@ -106,3 +106,26 @@ Framework will take care of creating indexes based on your model on next start, 
 ```js
 node scr/cli dropindex --model={modelName}
 ```
+
+### OpenApi documentation
+
+Framework can generate documentation in OpenApi (swagger) format. That pretty standard format to exchange documentation. Framework only generates JSON file and not provide any viewer like online version [https://petstore.swagger.io/](https://petstore.swagger.io/) or provide self hosted version
+
+:::tip
+
+Thats a good idea to set up documentation on CI level for stage env and put the json file to the public directory. Then you can use online viewers to check documentation
+:::
+
+#### Run OpenApi
+
+```js
+node scr/cli getopenapijson --output={PATH}
+```
+
+Output is an optional.
+
+Usage example:
+
+```js
+node scr/cli getopenapijson --output='src/public/openApi.json'
+```
