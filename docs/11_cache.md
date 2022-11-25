@@ -15,7 +15,7 @@ Cache subsystem handled all values and take care or serialization/deserializatio
 Api is simple
 
 ```js
-  getSetValue(
+  async getSetValue(
     key: String,
     onNotFound: () => Promise<any>,
     storeTime: number, // in seconds
@@ -27,14 +27,14 @@ By default store time 5 minutes.
 Example:
 
 ```javascript
-const cacheTime = 60 * 5;
-const someValueFromCache = this.app.cache.getSetValue(
+const cacheTime = 60 * 5; // seconds
+const someValueFromCache = await this.app.cache.getSetValue(
   "someKey",
   async () => {
      const someValue = await someLongAsyncOperation();
      return someValue;
   },
-  cacheTime
+  cacheTime // in seconds
 );
 ```
 
