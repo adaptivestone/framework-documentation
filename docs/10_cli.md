@@ -82,7 +82,7 @@ You can use migration with different cases, not only to modify data on database
 Migration command came with a template to generate migration.
 
 ```js
-node scr/cli migration/create  --name={someName}
+node src/cli migration/create  --name={someName}
 ```
 
 After creating migration please edit it and implement any logic that you want here
@@ -90,7 +90,7 @@ After creating migration please edit it and implement any logic that you want he
 #### Apply migration
 
 ```js
-node scr/cli migration/migrate
+node src/cli migration/migrate
 ```
 
 Migration executed on created order. It executed only once per life
@@ -104,7 +104,23 @@ Framework will take care of creating indexes based on your model on next start, 
 #### Run dropindex
 
 ```js
-node scr/cli dropindex --model={modelName}
+node src/cli dropindex --model={modelName}
+```
+
+### SyncIndexes
+
+Synchronize indexes defined in models with a real one indexed on the database. Command will remove all indexes from the database that do not exist on model OR have different parameters. Then it will create a new indexes
+
+:::warning
+
+This can be a dangerous command in case you have some unique indexes feature
+
+:::
+
+#### Run SyncIndexes
+
+```js
+node src/cli SyncIndexes 
 ```
 
 ### OpenApi documentation
@@ -119,7 +135,7 @@ Thats a good idea to set up documentation on CI level for stage env and put the 
 #### Run OpenApi
 
 ```js
-node scr/cli getopenapijson --output={PATH}
+node src/cli getopenapijson --output={PATH}
 ```
 
 Output is an optional.
@@ -127,5 +143,5 @@ Output is an optional.
 Usage example:
 
 ```js
-node scr/cli getopenapijson --output='src/public/openApi.json'
+node src/cli getopenapijson --output='src/public/openApi.json'
 ```
