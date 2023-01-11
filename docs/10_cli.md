@@ -120,7 +120,7 @@ This can be a dangerous command in case you have some unique indexes feature
 #### Run SyncIndexes
 
 ```js
-node src/cli SyncIndexes 
+node src/cli SyncIndexes
 ```
 
 ### OpenApi documentation
@@ -145,3 +145,15 @@ Usage example:
 ```js
 node src/cli getopenapijson --output='src/public/openApi.json'
 ```
+
+### CreateUser documentation
+
+Create user command creates a new user
+
+#### Run CreateUser
+
+```js
+node src/cli createuser --email=somemail@gmail.com  --password=somePassword --roles=user,admin,someOtherRoles
+```
+
+Only email and password are required
