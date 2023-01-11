@@ -146,7 +146,7 @@ Usage example:
 node src/cli getopenapijson --output='src/public/openApi.json'
 ```
 
-### CreateUser documentation
+### CreateUser
 
 Create user command creates a new user
 
