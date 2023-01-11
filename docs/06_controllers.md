@@ -223,6 +223,42 @@ roles - array of roles to check. OR logic (any role)
   }
 ```
 
+#### Pagination
+
+```js
+const Pagination = require("@adaptivestone/framework/services/http/middleware/Pagination");
+```
+
+Pagination middleware provides helper that grabs URL search parameters (page, limit) and calculate necessary appInfo properties (skip, limit and page)
+
+##### Parameters
+
+limit = 10 - default limit if not provided
+maxLimit = 100 max limit for documents
+
+```javascript
+  static get middleware() {
+    return new Map([
+      ['POST/someUrl', [
+        [Pagination, { limit: 10,maxLimit: 50}]
+      ]]
+    ]);
+  }
+```
+
+```javascript
+  static get middleware() {
+    return new Map([
+      ['POST/someUrl', [Pagination]
+    ]);
+  }
+```
+
+```javascript
+// http://localhost:3300/someUrl?limit=10&page=2
+const { limit, skip, page } = req.appInfo.pagination;
+```
+
 #### RateLimiter
 
 Rate limiter middleware. Limit amount of request.
