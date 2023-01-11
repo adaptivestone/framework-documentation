@@ -234,6 +234,7 @@ Pagination middleware provides helper that grabs URL search parameters (page, li
 ##### Parameters
 
 limit = 10 - default limit if not provided
+
 maxLimit = 100 max limit for documents
 
 ```javascript
