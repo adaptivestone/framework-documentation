@@ -142,7 +142,7 @@ Sample
     return new Map([
       ['POST/someUrl', [
         GetUserByToken,
-        [RoleMiddleware, { roles: ['admin'] ]}]
+        [RoleMiddleware, { roles: ['admin'] }]
       ]]
     ]);
   }
@@ -165,7 +165,7 @@ Some middleware acept initial parameters pass into it,
     return new Map([
       ['POST/someUrl', [
         GetUserByToken // middleware with no parameters
-        [RoleMiddleware, { roles: ['admin'] ]}] // middleware with parameters
+        [RoleMiddleware, { roles: ['admin'] }] // middleware with parameters
       ]]
     ]);
   }
@@ -217,7 +217,7 @@ roles - array of roles to check. OR logic (any role)
   static get middleware() {
     return new Map([
       ['POST/someUrl', [
-        [RoleMiddleware, { roles: ['admin','moderator'] ]}]
+        [RoleMiddleware, { roles: ['admin','moderator'] }]
       ]]
     ]);
   }
