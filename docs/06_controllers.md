@@ -564,7 +564,7 @@ req.appInfo.request = request.cast;
 
 On any fields that can generate an error (required, etc) you can use i18n keys to translate. Framework will handle translation for you
 
-Please reffer to [i18n documentation](08_i18n.md))
+Please reffer to [i18n documentation](08_i18n.md)
 
 ### Handler
 
