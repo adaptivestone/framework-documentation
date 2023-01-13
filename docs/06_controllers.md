@@ -521,6 +521,23 @@ request: yup.object().shape({
 });
 ```
 
+#### File validation
+
+For a file validation we provide a special yup class YupFile. It really simple to use it
+
+```js
+const { YupFile } = require("@adaptivestone/framework/helpers/yup");
+
+request: yup.object().shape({
+  someFileName: new YupFile().required("error text"),
+  otherFiled: yup.string().required(), // yes you can mix it with regular data
+});
+```
+
+:::warning
+Please be aware that file only can be uploaded by ‘multipart/formdata’ and because of it you can’t use nested objects 
+:::
+
 #### Own validation
 
 To create own validator your object should have two methods:
