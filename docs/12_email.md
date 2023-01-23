@@ -48,9 +48,14 @@ const mail = new Mailer(
     oneTempalteVariable: "1",
     anotherTemplateVariable: "2",
   },
-  req.i18n
+  req.i18n,
 );
-const result = await mail.send("some@email.com");
+
+const result = await mail.send(
+  "some@email.com", //To
+  "optional@from.com", //OPTIONAL. From email If not provided will be grabbed from config
+  {}, //OPTIONAL. Any additioanl options to nodemailer  https://nodemailer.com/message/
+);
 ```
 
 For advance usage (own templates,mail headers, attachments) another low level method exists 
