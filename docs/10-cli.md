@@ -6,7 +6,7 @@ Framework scans directory for list of common ds and provide you ability to see w
 
 :::note
 
-CLI commands part of [framework inheritance process ](03_files-inheritance.md).
+CLI commands part of [framework inheritance process ](03-files-inheritance.md).
 
 :::
 

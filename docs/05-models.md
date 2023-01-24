@@ -8,7 +8,7 @@ Model take care about database connection
 
 :::note
 
-Models files part of  [framework inheritance process ](03_files-inheritance.md).
+Models files part of  [framework inheritance process ](03-files-inheritance.md).
 
 :::
 

@@ -92,7 +92,7 @@ Transport **name** it’s a npm package name that framework will be required. Yo
 
 Field **transportOptions** it’s transport options - you can pass any options here for transport. Please refer to transport documentation 
 
-And finally field **enable** will enable/disable modules for logger. You can check [“NODE_ENV” on config documentation](02_configs.md#node_env) to least more how you can use it depend on you environment
+And finally field **enable** will enable/disable modules for logger. You can check [“NODE_ENV” on config documentation](02-configs.md#node_env) to least more how you can use it depend on you environment
 
 
 
@@ -148,7 +148,7 @@ Where
 
 ### info.label
 
-Inside the base class we have a method [“loggerGroup”](04_base.md##api)that is used as a first part of info message generation. This useful to group messages like “controllers”,”models”, etc
+Inside the base class we have a method [“loggerGroup”](04-base.md##api)that is used as a first part of info message generation. This useful to group messages like “controllers”,”models”, etc
 
 Framework uses: “command”, “connector”, “controller”, “model” and “CLI_” groups. 
 

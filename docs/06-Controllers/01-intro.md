@@ -4,7 +4,7 @@ Controllers are one of the most important parts of the framework. Framework work
 
 :::note
 
-Controllers files part of [framework inheritance process ](03_files-inheritance.md).
+Controllers files part of [framework inheritance process ](03-files-inheritance.md).
 
 :::
 
