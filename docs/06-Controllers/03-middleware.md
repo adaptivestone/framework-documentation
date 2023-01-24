@@ -28,6 +28,12 @@ Framework uses internally few middlewares. This middlewares not adjustable (for 
 
 [express.static](https://expressjs.com/en/starter/static-files.html)
 
+[PrepareAppInfo](#prepareappinfo)
+
+[RequestLogger](#requestlogger)
+
+[RequestParser](#requestparser)
+
 ## Including middlewares into controllers
 
 Controllers level middleware adjusted based on “middleware” getter
@@ -245,14 +251,14 @@ Logs example:
 No parameters
 
 
-### RequestRarser
+### RequestParser
 
 ```js
-const RequestRarser = require("@adaptivestone/framework/services/http/middleware/RequestRarser");
+const RequestParser = require("@adaptivestone/framework/services/http/middleware/RequestParser");
 ```
 
 This is a main middleware to parse request (application/json, multipart/formdata, octet-stream, urlencoded)
-It is based on the (formidable)[https://www.npmjs.com/package/formidable] package.
+It is based on the [formidable](https://www.npmjs.com/package/formidable) package.
 After parse data available on tre req.body
 
 
