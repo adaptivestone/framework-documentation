@@ -22,8 +22,6 @@ Middleware will be executed in the provided order. Based on that you can chain m
 
 Framework uses internally few middlewares. This middlewares not adjustable (for now) and executed on each request
 
-[i18next-http-middleware](https://github.com/i18next/i18next-http-middleware)
-
 [cors](https://github.com/expressjs/cors)
 
 [express.static](https://expressjs.com/en/starter/static-files.html)
@@ -33,6 +31,8 @@ Framework uses internally few middlewares. This middlewares not adjustable (for 
 [RequestLogger](#requestlogger)
 
 [RequestParser](#requestparser)
+
+[I18n](#i18n)
 
 ## Including middlewares into controllers
 
@@ -119,6 +119,28 @@ const GetUserByToken = require("@adaptivestone/framework/services/http/middlewar
 ```
 
 Grab a token and try to parse the user from it. Will find user on databased by token. If user exist will add req.appInfo.user variable.
+
+#### Parameters
+
+No parameters
+
+
+### I18n
+
+```js
+const I18n = require("@adaptivestone/framework/services/http/middleware/I18n");
+```
+
+Internationalization module based on [i18next](https://www.npmjs.com/package/i18next). Provides req.appInfo.i18n that can be used to translate 
+
+Middleware provides few detectors
+- X-Lang header
+- Query 
+- User 
+
+Please check [i18n documentation](08-i18n.md) for more details
+
+
 
 #### Parameters
 
