@@ -7,7 +7,7 @@ const darkCodeTheme = require("prism-react-renderer/themes/dracula");
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: "Adaptivestone Framework",
-  tagline: "Collection of usefull good stuff that works as a whole",
+  tagline: "Collection of usefull good stuff that works as a whole. MIT licensed",
   url: "https://framework.adaptivestone.com",
   baseUrl: "/",
   onBrokenLinks: "throw",
