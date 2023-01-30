@@ -86,6 +86,9 @@ On the third level we have an "route object" special object that will describe o
   request: yup.object().shape({ // optional
     count: yup.number().max(100)required(),
   }),
+  query: yup.object().shape({ // optional
+    page: yup.number().required(),
+  }),
   middleware: [RateLimiter] // optional
   description: yup.string() // optional
 }
@@ -96,33 +99,53 @@ Here:
 
 ```js
 Handler; // some async function (most likely on this controller file) that will do all job
-Request; //special interface that will do validation for you
+Request; //special interface that will do validation body parameters for you
+Query; //special interface that will do validation query parameters for you
 Middleware; // array of middlewares specially for current route
 Description; // description of this route (used when generating documentation)
 ```
 
 ## Request
 
-Request did a validation and casting of an upcoming request.
+Request did a validation and casting of an upcoming req.body.
 
 As we want to use already well defined solutions we believe that [yup](https://github.com/jquense/yup) is a great sample of how schema should be validated.
 
 But you still have ability to provide own validation based on interface
 
 :::warning
-Request works on a body and a query level. But body have bigger priority then query
+Request works on a body level.
 :::
 
-Request merge incoming body and query parameters into one object and pass it into validation
+Request contains all fields from req.body and pass it into validation
 
 :::warning
 Please note that GET methods have no BODY
 :::
 
-Parameters after validation available as req.appInfo.request
+Parameters after validation available as req.appInfo.request.
 
 :::warning
 Do not use req.body directly. Always use parameters via req.appInfo.request
+
+:::
+
+## Query
+
+Query did a validation and casting of an upcoming req.query.
+
+Yup scheme is described similarly to request.
+
+:::warning
+Query works on a query level.
+:::
+
+Query contains all fields from req.query and pass it into validation
+
+Parameters after validation available as req.appInfo.query
+
+:::warning
+Do not use req.query directly. Always use parameters via req.appInfo.query
 
 :::
 
@@ -131,6 +154,9 @@ Do not use req.body directly. Always use parameters via req.appInfo.request
 ```js
   request: yup.object().shape({
     count: yup.number().max(100)required("error text"),
+  })
+  query: yup.object().shape({
+    page: yup.number(),
   })
 ```
 

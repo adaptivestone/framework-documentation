@@ -323,7 +323,7 @@ class CustomMiddleware extends AbstractMiddleware {
     return "Middleware descrition";
   }
 
-  // optional
+    // optional
   static get usedAuthParameters() {
     // Array of parameters that are used for authorization within the middleware
     return [
@@ -334,6 +334,22 @@ class CustomMiddleware extends AbstractMiddleware {
         description: this?.description,
       },
     ];
+  }
+
+  // optional
+  get relatedQueryParameters() {
+    // Yup object which defines middleware related req.query parameters, allows to validate and get those parameters in req.appInfo.query relative to the route in which the middleware is declared
+    return yup.object().shape({
+      limit: yup.number() // For example
+    });
+  }
+
+  // optional
+  get relatedRequestParameters() {
+    // Yup object which defines middleware related req.body parameters, allows to validate and get those parameters in req.appInfo.request relative to the route in which the middleware is declared
+    return yup.object().shape({
+      name: yup.string().required() // For example
+    });
   }
 
   async middleware(req, res, next) {
