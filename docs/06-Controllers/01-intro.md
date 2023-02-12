@@ -19,7 +19,7 @@ class ControllerName extends AbstractController {
   constructor(app, prefix) {
     // optional constructor. In case you want to keep req.params from main router
     // by default params from parent router omitted
-    // usefull when some params exists on "getExpressPath" path
+    // usefull when some params exists on "getHttpPath" path
     super(app, prefix, true);
   }
 
@@ -27,7 +27,7 @@ class ControllerName extends AbstractController {
     // return routes info
     // NECESSARY part
   }
-  getExpressPath() {
+  getHttpPath() { 
     // return path for exprress (in 99% cases optional)
   }
 
@@ -51,7 +51,7 @@ Controllers should extends "AbstractController" modules
 
 ## Name convention and loading
 
-Framework will load any file (except \*.test.js files) and initi is a http module. But the default name on the file will be a route name. But this behavior can be changed by providing own **getExpressPath** function
+Framework will load any file (except \*.test.js files) and initi is a http module. But the default name on the file will be a route name. But this behavior can be changed by providing own **getHttpPath** function
 
 For sample above
 
@@ -63,15 +63,15 @@ Route will be “http://localhost:3300/controllername”
 
 Then any method from router will be appear to url
 
-If you want to have own path please provide you implementation of getExpressPath function
+If you want to have own path please provide you implementation of getHttpPath function
 
 ```js
-  getExpressPath() {
+  getHttpPath() {
     return "superDuperMegaSpecialRoute";
   }
 ```
 
-By default getExpressPath resolved current folder and filename and use it as a route name
+By default getHttpPath resolved current folder and filename and use it as a route name
 
 ## Request flow
 
