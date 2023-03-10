@@ -24,6 +24,7 @@ Example of folder
 html.pug; // html markup of email
 subject.pug; // subject to generate
 text.pug; // text version of email
+style.css; // styles to inlide inside html
 ```
 
 ### Template variables
@@ -33,6 +34,7 @@ Each template have that variables:
 - t - translate function from i18n. Can by dummy function in i18n not provided
 - globalVariablesToTemplates - from config. 
 - User provided variables (see API section)
+
 
 
 ## API
@@ -48,7 +50,7 @@ const mail = new Mailer(
     oneTempalteVariable: "1",
     anotherTemplateVariable: "2",
   },
-  req.i18n,
+  req.appInfo.i18n,
 );
 
 const result = await mail.send(
@@ -56,6 +58,12 @@ const result = await mail.send(
   "optional@from.com", //OPTIONAL. From email If not provided will be grabbed from config
   {}, //OPTIONAL. Any additioanl options to nodemailer  https://nodemailer.com/message/
 );
+```
+
+Inside template oneTempalteVariable and anotherTemplateVariable will be availalble as a top level variable 
+
+```pug
+p #{oneTempalteVariable} #{anotherTemplateVariable}
 ```
 
 For advance usage (own templates,mail headers, attachments) another low level method exists 
