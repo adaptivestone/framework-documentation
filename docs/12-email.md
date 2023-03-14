@@ -27,6 +27,20 @@ text.pug; // text version of email
 style.css; // styles to inlide inside html
 ```
 
+### Inline images
+
+By default frameworks not inline images and keep link as it. 
+But if you want to inline some images you can use "data-inline" attribute in "img" tag
+
+```html
+<img src="/cats.jpg" data-inline/>
+```
+Image path relative to your project "src/services/messaging/email/resources" folder
+
+:::note
+Best practice  -  put you images in CDN 
+:::
+
 ### Template variables
 
 Each template have that variables:
