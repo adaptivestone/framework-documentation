@@ -157,3 +157,5 @@ node src/cli createuser --email=somemail@gmail.com  --password=somePassword --ro
 ```
 
 Only email and password are required
+
+You able to update user as well. You need to specify email or user id to find the user and '--update' flag to allow user updates.
