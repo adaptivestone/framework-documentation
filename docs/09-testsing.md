@@ -135,25 +135,34 @@ tests:
 
 ## Http endpoint testing
 
-Good way to tests http it not use [supertest package](https://github.com/visionmedia/supertest)
-
-That library have an easy way to integrate with express server
+Framework provides special function global.server.testingGetUrl to detect testing url
 
 ```js
-const request = require("supertest");
+const url = global.server.testingGetUrl("/auth");
+```
 
+Full example
+
+```js
 describe("module", () => {
   describe("functon", () => {
     it("test", async () => {
       expect.assertions(1);
-      const { status } = await request(global.server.app.httpServer.express) // integration with express
-        .post("/some/endpoint")
-        .set({ Authorization: global.User.token.token }) // our token for auth
-        .send({
-          // request object
-          oneData: 1,
-          secondDate: 2,
-        });
+      const { status } = await fetch(
+        global.server.testingGetUrl("/some/endpoint"),
+        {
+          method: "POST",
+          headers: {
+            "Content-type": "application/json",
+            Authorization: global.User.token.token,
+          },
+          body: JSON.stringify({
+            // request object
+            oneData: 1,
+            secondDate: 2,
+          }),
+        }
+      ).catch(() => {});
       expect(status).toBe(400);
     });
   });
