@@ -63,7 +63,7 @@ class SomeModel extends AbstractModel {
   // await this.app.getModel('SomeModel').findById(124).someInstanceMethod()
   async someInstanceMethod(){
     // you can access app into the instance method
-    const { app } = this.constructor.getSuper();
+    const { app } = this.getSuper();
 
     // inside of instance method you can access model data 
     this.someString;
