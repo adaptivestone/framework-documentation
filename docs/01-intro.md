@@ -44,7 +44,7 @@ frawework/
 ├─ modules/ // main folder with abstract stuff
 ├─ public/ // public stuff (server statically)
 ├─ services/ // some services (email, http, etc)
-├─ tests/ // folder contains basic tests integration with jest
+├─ tests/ // folder contains basic tests
 ├─ views/ // frawemork able to respond with view (not only API). Here view files stored
 ├─ Cli.js // main CLI class
 ├─ cliCommands.js // CLI implementation 

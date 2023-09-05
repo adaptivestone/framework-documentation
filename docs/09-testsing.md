@@ -1,6 +1,6 @@
 # Testing
 
-Framework came out with [jest](https://jestjs.io/) support. When you named files {Something}.test.js then it will be added to tests
+Framework came out with [vitest](https://vitest.dev/) support. When you named files {Something}.test.js then it will be added to tests
 
 :::tip
 Please put test files near main files that you are testing and put the same name to that file.
@@ -20,7 +20,7 @@ npm test
 
 ## Before scripts
 
-Test entry points happen on project level ‘src/test/stetup.js’. This file prepares all folder configs, require framework setup and prepare global setup for tests
+Test entry points happen on project level ‘src/test/setupVite.js’. This file prepares all folder configs, require framework setup and prepare global setup for tests
 
 ### global.testSetup
 
@@ -79,9 +79,6 @@ Integration came with help with [MongoDbMemoryServer](https://github.com/nodkz/m
 
 By default, the framework starts the mongo memory server and afterwards stops it. So you can use mongo during your test
 
-### Selecting own version
-
-// TODO
 
 ### Mongo tests on ARM64 machines (docker)
 
@@ -169,7 +166,8 @@ describe("module", () => {
 });
 ```
 
-## Mock
+
+## Mock (this part should be updated to match new runner Vitest)
 
 In most cases your code depends on external services, but you still need to perform testing. Calling external service for each test can be expensive and that is not necessary. For this problem jset provides moch options. That when you instead of calling real sdk of service will call a fake function that provide result without api calls
 
@@ -266,3 +264,5 @@ describe('mock testing', () => {
 
 
 ```
+
+
