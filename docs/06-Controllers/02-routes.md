@@ -9,7 +9,7 @@ Route Objects have multiple levels.
 On a first level only ‘method’ (post, put, delete, etc) exists. Only request with this methods will go depers on real routes.
 
 ```js
-const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
 
 class ControllerName extends AbstractController {
   get routes() {
@@ -27,7 +27,7 @@ class ControllerName extends AbstractController {
     };
   }
 }
-module.exports = ControllerName;
+export default ControllerName;
 ```
 
 ## Route second level (path level)
@@ -57,7 +57,7 @@ Order of routes matters. First matched route will be execute
 Example
 
 ```js
-const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
 
 class ControllerName extends AbstractController {
   get routes() {
@@ -73,7 +73,7 @@ class ControllerName extends AbstractController {
     };
   }
 }
-module.exports = ControllerName;
+export default ControllerName;
 ```
 
 ## Route third level (route object level)
@@ -193,7 +193,7 @@ request: yup.object().shape({
 For a file validation we provide a special yup class YupFile. It really simple to use it
 
 ```js
-const { YupFile } = require("@adaptivestone/framework/helpers/yup");
+import { YupFile } from "@adaptivestone/framework/helpers/yup.js";
 
 request: yup.object().shape({
   someFileName: new YupFile().required("error text"),
@@ -244,7 +244,7 @@ Handler only can be an **async** function.
 req.appInfo.app
 
 ```js
-const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
 
 class ControllerName extends AbstractController {
   get routes() {
@@ -279,7 +279,7 @@ class ControllerName extends AbstractController {
   }
 
 }
-module.exports = ControllerName;
+export default ControllerName;
 ```
 
 ### Middleware
@@ -293,7 +293,7 @@ Route middlewares takes precedence over middlewares into controllers
 :::
 
 ```javascript
-const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
 
 class ControllerName extends AbstractController {
   get routes() {
@@ -307,7 +307,7 @@ class ControllerName extends AbstractController {
     };
   }
 }
-module.exports = ControllerName;
+export default ControllerName;
 ```
 
 Similarly controller middlewares you can use middlewares with parameters
@@ -321,8 +321,8 @@ Rules for the design of middlewares with parameters are described in the subsect
 Sample
 
 ```javascript
-const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
-const RoleMiddleware = require("@adaptivestone/framework/services/http/middleware/Role");
+import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
+import RoleMiddleware from "@adaptivestone/framework/services/http/middleware/Role.js";
 
 class ControllerName extends AbstractController {
   get routes() {
@@ -336,5 +336,5 @@ class ControllerName extends AbstractController {
     };
   }
 }
-module.exports = ControllerName;
+export default ControllerName;
 ```

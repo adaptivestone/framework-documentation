@@ -196,8 +196,8 @@ Assume that we have some translation helper (synthetic example) that just do and
 /src/helpers/translateHelper.js
 
 ```js
-const { Translate } = require("@google-cloud/translate").v2;
-const translate = new Translate();
+import { v2 } from "@google-cloud/translate";
+const translate = new v2.Translate();
 
 // no errors hanling because it example. You should hanlde error on production mode
 // no model passing
@@ -216,7 +216,7 @@ const translateHelper = async (text, language) => {
   return translated[0];
 };
 
-module.exports = translateHelper;
+export default translateHelper;
 ```
 
 Right now you want to test that function works correctly. So as @google-cloud/translate.js an node_modules module we creating file
@@ -237,7 +237,7 @@ class Translate {
 }
 
 googleTranslate.v2.Translate = Translate;
-module.exports = googleTranslate;
+export default googleTranslate;
 ```
 
 Now insside you helper test file
@@ -245,7 +245,7 @@ Now insside you helper test file
 ```js
 jest.mock('@google-cloud/translate');
 
-const translateHelper = require('/src/helpers/translateHelper.js');
+import translateHelper from '/src/helpers/translateHelper.js';
 
 
 describe('mock testing', () => {

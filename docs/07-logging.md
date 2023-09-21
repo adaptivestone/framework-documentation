@@ -66,7 +66,7 @@ Configuration files located on ‘config/log.js’
 
 
 ```js
-module.exports = {
+export default {
   transports: [
     {
       transport: 'winston-transport-sentry-node', // transport name (npm package name)
@@ -107,7 +107,7 @@ npm i ${WINSTON_TRANSPORT_PACKAGE}
 Then add it into ‘config/log.js’ config file 
 
 ```js
-module.exports = {
+export default {
   transports: [
     {
         // .....

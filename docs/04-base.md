@@ -1,23 +1,21 @@
 # Base class
 
-Each class extend Base class to have some basic functions mostly related to logging and inheritance process 
+Each class extend Base class to have some basic functions mostly related to logging and inheritance process
 
 Base class implements on demand logging instance loading. That means the logger will be united only when you first request it. This important part on loading speed optimization
 
 ## API
 
-
 ```js
-class A extends Base{
-
-  async someFunction(){
+class A extends Base {
+  async someFunction() {
     // Access to loger instance (plese follow logger documentation for more details )
-    this.logger 
+    this.logger;
 
     // get files with inheritance
     const files = await this.getFilesPathWithInheritance(
       `${__dirname}/../../migrations`,
-      this.app.foldersConfig.migrations,
+      this.app.foldersConfig.migrations
     );
   }
 
@@ -25,7 +23,7 @@ class A extends Base{
    * Return logger group. Just to have all logs groupped logically
    */
   static get loggerGroup() {
-    return 'Base_please_overwrite_';
+    return "Base_please_overwrite_";
   }
 
   /**
@@ -37,3 +35,8 @@ class A extends Base{
 }
 ```
 
+```js
+getFilesPathWithInheritance(internalFolder, externalFolder);
+```
+
+Will scan two folders and provide path with inheritance. If same files present on to path that priority wil be for the external file

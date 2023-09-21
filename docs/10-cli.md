@@ -46,7 +46,7 @@ args - athyments that you want to pass to command
 All passed arguments on command line parsed with help with [minimist](https://github.com/substack/minimist) library
 
 ```js
-const AbstractCommand = require("../modules/AbstractCommand");
+import AbstractCommand from "../modules/AbstractCommand.js";
 
 class CommandName extends AbstractCommand {
   async run() {
@@ -58,7 +58,7 @@ class CommandName extends AbstractCommand {
   }
 }
 
-module.exports = CommandName;
+export default CommandName;
 ```
 
 ## Framework commands

@@ -15,7 +15,7 @@ That why Adaptive Stone framework was born
 
 ## Features 
 
-* Automatic united controllers (no config needed)
+* Automatic inited controllers (no config needed)
 * Mongoose ES6 models
 * Winston logger (sentry logger as a part of winston logger)
 * Node cluster enabled by default (possibility to use with no cluster (dev mode))
@@ -24,6 +24,7 @@ That why Adaptive Stone framework was born
 * Cache system 
 * Ability to overwrite any controller, model and config that came with framework 
 * Multi Language support out of the box
+* ESM and CommonJS compatability
 
 
 ## Folder structure
@@ -80,11 +81,3 @@ docker-compose up
 Your site starts at `http://localhost:3300`.
 
 Open `src/controllers/Person.js` and edit some lines: the site **reloads automatically** and apply your changes.
-
-
-## API 
-
-TODO 
-getFilesPathWithInheritance
-Ability to pass additional parameter to server that will be executed before adding page 404
-

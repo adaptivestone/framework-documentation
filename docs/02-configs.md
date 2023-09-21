@@ -53,14 +53,14 @@ Also it's a good practice to keep basic config on files rather then .env file.
 **Example:**
 
 ```js title="/src/config/sample.js"
-module.exports = {
+export default {
     variable1: 1,
     variable2: 2
 }
 ```
 
 ```js title="/src/config/sample.production.js"
-module.exports = {
+export default {
     variable2: 3,
     variable3: 4
 }

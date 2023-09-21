@@ -35,7 +35,7 @@ Same approach works for: models, controllers, config
 That's easy. Just require original file and extend it 
 
 ```js
-const OriginalUserModel = require('@adaptivestone/framework/models/User');
+import OriginalUserModel from '@adaptivestone/framework/models/User.js';
 
 class User extends OriginalUserModel {
   getPublic() {
@@ -53,10 +53,10 @@ To disable something (like default controller) best way to overwrite it with emp
 
 
 ```js
-const AbstractController = require('@adaptivestone/framework/modules/AbstractController');
+import AbstractController from '@adaptivestone/framework/modules/AbstractController.js';
 
 class Auth extends AbstractController {}
 
-module.exports = Auth;
+export default Auth;
 
 ```

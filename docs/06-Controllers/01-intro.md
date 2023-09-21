@@ -13,7 +13,7 @@ Framework provides from scratch error handling, controllers autoload (including 
 ## Controlles structure
 
 ```js
-const AbstractController = require("@adaptivestone/framework/modules/AbstractController");
+import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
 
 class ControllerName extends AbstractController {
   constructor(app, prefix) {
@@ -36,7 +36,7 @@ class ControllerName extends AbstractController {
     // return middlewares for THIS route only
   }
 }
-module.exports = ControllerName;
+export default ControllerName;
 ```
 
 :::tip

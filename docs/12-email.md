@@ -56,7 +56,7 @@ Each template have that variables:
 ### Init mailer
 
 ```js
-const Mailer = require("@adaptivestone/framework/services/messaging").email;
+import Mailer from '@adaptivestone/framework/services/messaging/email/index.js';
 
 const mail = new Mailer(
   this.app,
@@ -91,7 +91,7 @@ const result = await mail.send(
 For advance usage (own templates,mail headers, attachments) another low level method exists
 
 ```js
-const Mailer = require("@adaptivestone/framework/services/messaging").email;
+import Mailer from '@adaptivestone/framework/services/messaging/email/index.js';
 
 const result = await Mailer.sendRaw(
      this.app, //framework app

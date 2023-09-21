@@ -21,7 +21,7 @@ this.mongooseModel
 ## Basic model
 
 ```js
-const AbstractModel = require('@adaptivestone/framework/modules/AbstractModel');
+import AbstractModel from '@adaptivestone/framework/modules/AbstractModel.js';
 
 class SomeModel extends AbstractModel {
   constructor(app) {
@@ -96,7 +96,7 @@ class SomeModel extends AbstractModel {
 
 }
 
-module.exports = SomeModel;
+export default SomeModel;
 
 ```
 

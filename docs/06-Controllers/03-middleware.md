@@ -103,7 +103,7 @@ Frameworks have few middlewares that you can use
 ### Auth
 
 ```js
-const Auth = require("@adaptivestone/framework/services/http/middleware/Auth");
+import Auth from "@adaptivestone/framework/services/http/middleware/Auth.js";
 ```
 
 Allow to pass only if the user provided. Please use any middleware that provide user instance before (like GetUserByToken)
@@ -115,7 +115,7 @@ No parameters
 ### GetUserByToken
 
 ```js
-const GetUserByToken = require("@adaptivestone/framework/services/http/middleware/GetUserByToken");
+import GetUserByToken from "@adaptivestone/framework/services/http/middleware/GetUserByToken.js";
 ```
 
 Grab a token and try to parse the user from it. Will find user on databased by token. If user exist will add req.appInfo.user variable.
@@ -128,7 +128,7 @@ No parameters
 ### I18n
 
 ```js
-const I18n = require("@adaptivestone/framework/services/http/middleware/I18n");
+import I18n from "@adaptivestone/framework/services/http/middleware/I18n.js";
 ```
 
 Internationalization module based on [i18next](https://www.npmjs.com/package/i18next). Provides req.appInfo.i18n that can be used to translate 
@@ -149,7 +149,7 @@ No parameters
 ### Pagination
 
 ```js
-const Pagination = require("@adaptivestone/framework/services/http/middleware/Pagination");
+import Pagination from "@adaptivestone/framework/services/http/middleware/Pagination.js";
 ```
 
 Pagination middleware provides helper that grabs URL search parameters (page, limit) and calculate necessary appInfo properties (skip, limit and page)
@@ -186,7 +186,7 @@ const { limit, skip, page } = req.appInfo.pagination;
 ### PrepareAppInfo
 
 ```js
-const PrepareAppInfo = require("@adaptivestone/framework/services/http/middleware/PrepareAppInfo");
+import PrepareAppInfo from "@adaptivestone/framework/services/http/middleware/PrepareAppInfo.js";
 ```
 
 PrepareApp info is a special small middleware that generates res.appInfo = {}. To make sure that all middleware after will use appInfo without checking if it exists.
@@ -202,7 +202,7 @@ No parameters
 Rate limiter middleware. Limit amount of request.
 
 ```js
-const RateLimiter = require("@adaptivestone/framework/services/http/middleware/RateLimiter");
+import RateLimiter from "@adaptivestone/framework/services/http/middleware/RateLimiter.js";
 ```
 
 As rate limited we are using [node-rate-limiter-flexible](https://github.com/animir/node-rate-limiter-flexible) module. Please refer to module documentation for more details
@@ -256,7 +256,7 @@ Rate limiter have multiple backends (memory, redis and mongo). Buy default 'memo
 ### RequestLogger
 
 ```js
-const RequestLogger = require("@adaptivestone/framework/services/http/middleware/RequestLogger");
+import RequestLogger from "@adaptivestone/framework/services/http/middleware/RequestLogger.js";
 ```
 
 Small middleware that logs request info (route, method, status and time). 
@@ -276,7 +276,7 @@ No parameters
 ### RequestParser
 
 ```js
-const RequestParser = require("@adaptivestone/framework/services/http/middleware/RequestParser");
+import RequestParser from "@adaptivestone/framework/services/http/middleware/RequestParser.js";
 ```
 
 This is a main middleware to parse request (application/json, multipart/formdata, octet-stream, urlencoded)
@@ -294,7 +294,7 @@ No parameters
 Check user role (user.roles property). If the user has no role then stop request and return error. OR logic (any role will pass user)
 
 ```js
-const Role = require("@adaptivestone/framework/services/http/middleware/Role");
+import Role from "@adaptivestone/framework/services/http/middleware/Role.js";
 ```
 
 #### Parameters
@@ -316,7 +316,7 @@ roles - array of roles to check. OR logic (any role)
 You can create your own middleware. To do that you should extend AbstractMiddleware and provide at least two own functions - description and middleware. Please check code bellow
 
 ```js
-const AbstractMiddleware = require("@adaptivestone/framework/services/http/middleware/AbstractMiddleware");
+import AbstractMiddleware from "@adaptivestone/framework/services/http/middleware/AbstractMiddleware.js";
 
 class CustomMiddleware extends AbstractMiddleware {
   static get description() {
@@ -366,5 +366,5 @@ class CustomMiddleware extends AbstractMiddleware {
   }
 }
 
-module.exports = CustomMiddleware;
+export default CustomMiddleware;
 ```
