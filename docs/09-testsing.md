@@ -22,6 +22,20 @@ npm test
 
 Test entry points happen on project level ‘src/test/setupVite.js’. This file prepares all folder configs, require framework setup and prepare global setup for tests
 
+Minimum vite config file should contains :
+
+```js 
+  test: {
+    globalSetup: [ // this script will start mongo 
+      'node_modules/@adaptivestone/framework/tests/globalSetupVitest',
+    ],
+    setupFiles: [
+      './src/tests/setup.js', // this is a local config file  (see below)
+      '@adaptivestone/framework/tests/setupVitest', // this is entry point for testing from framework 
+    ],
+  }
+```
+
 ### global.testSetup
 
 This is a special variable that configures the global behaviour of tests.
