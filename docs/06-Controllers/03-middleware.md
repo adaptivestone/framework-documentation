@@ -24,7 +24,7 @@ Framework uses internally few middlewares. This middlewares not adjustable (for 
 
 [cors](https://github.com/expressjs/cors)
 
-[express.static](https://expressjs.com/en/starter/static-files.html)
+[StaticFiles](#staticfiles)
 
 [PrepareAppInfo](#prepareappinfo)
 
@@ -124,23 +124,21 @@ Grab a token and try to parse the user from it. Will find user on databased by t
 
 No parameters
 
-
 ### I18n
 
 ```js
 import I18n from "@adaptivestone/framework/services/http/middleware/I18n.js";
 ```
 
-Internationalization module based on [i18next](https://www.npmjs.com/package/i18next). Provides req.appInfo.i18n that can be used to translate 
+Internationalization module based on [i18next](https://www.npmjs.com/package/i18next). Provides req.appInfo.i18n that can be used to translate
 
 Middleware provides few detectors
+
 - X-Lang header
-- Query 
-- User 
+- Query
+- User
 
 Please check [i18n documentation](08-i18n.md) for more details
-
-
 
 #### Parameters
 
@@ -195,7 +193,6 @@ Done for internal usage
 #### Parameters
 
 No parameters
-
 
 ### RateLimiter
 
@@ -252,14 +249,13 @@ You can find default parameters on ‘config/rateLimiter.js’. This parameters 
 
 Rate limiter have multiple backends (memory, redis and mongo). Buy default 'memory' backend activated
 
-
 ### RequestLogger
 
 ```js
 import RequestLogger from "@adaptivestone/framework/services/http/middleware/RequestLogger.js";
 ```
 
-Small middleware that logs request info (route, method, status and time). 
+Small middleware that logs request info (route, method, status and time).
 
 Logs example:
 
@@ -272,7 +268,6 @@ Logs example:
 
 No parameters
 
-
 ### RequestParser
 
 ```js
@@ -283,11 +278,9 @@ This is a main middleware to parse request (application/json, multipart/formdata
 It is based on the [formidable](https://www.npmjs.com/package/formidable) package.
 After parse data available on tre req.body
 
-
 #### Parameters
 
 No parameters
-
 
 ### Role
 
@@ -310,6 +303,28 @@ roles - array of roles to check. OR logic (any role)
     ]);
   }
 ```
+
+### StaticFiles
+
+```js
+import StaticFiles from "@adaptivestone/framework/services/http/middleware/StaticFiles.js";
+```
+
+Handle static files. Moslty for the dev purposes. In production better to handle files via webserver.
+
+#### Parameters
+
+folders - array of folders to hanle files. Required parameter
+
+````javascript
+  static get middleware() {
+    return new Map([
+      ['POST/someUrl', [
+        [StaticFiles, { folders: ['/var/www/public','/opt/public'] }]
+      ]]
+    ]);
+  }
+````
 
 ## Creating own middlewares (or integrate external)
 
@@ -367,4 +382,4 @@ class CustomMiddleware extends AbstractMiddleware {
 }
 
 export default CustomMiddleware;
-```
+````
