@@ -22,7 +22,7 @@ Middleware will be executed in the provided order. Based on that you can chain m
 
 Framework uses internally few middlewares. This middlewares not adjustable (for now) and executed on each request
 
-[cors](https://github.com/expressjs/cors)
+[Cors](#cors)
 
 [StaticFiles](#staticfiles)
 
@@ -111,6 +111,29 @@ Allow to pass only if the user provided. Please use any middleware that provide 
 #### Parameters
 
 No parameters
+
+
+### Cors
+
+```js
+import Cors from "@adaptivestone/framework/services/http/middleware/Cors.js";
+```
+
+Add cors headers if origin match config.
+
+#### Parameters
+
+origins - array of strings of regexp to check original. Required parameter
+
+````javascript
+  static get middleware() {
+    return new Map([
+      ['GET/someUrl', [
+        [Cors, { origins: ['http://localhost',/./] }]
+      ]]
+    ]);
+  }
+````
 
 ### GetUserByToken
 
