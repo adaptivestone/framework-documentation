@@ -69,13 +69,13 @@ git clone git@gitlab.com:adaptivestone/example-project.git adaptivestone-example
 
 ## Start your project
 
-You should have **[docker](https://www.docker.com/products/docker-desktop)** and **[docker-compose](https://docs.docker.com/compose/install/)** installed 
+You should have **[docker](https://www.docker.com/products/docker-desktop)** and **[docker compose](https://docs.docker.com/compose/install/)** installed 
 
 Run the development server:
 
 ```shell
 cd adaptivestone-example-rename-me
-docker-compose up
+docker compose up
 ```
 
 Your site starts at `http://localhost:3300`.
