@@ -16,7 +16,7 @@ For each email you should provide: html version of email, text version (optional
 
 If text version of email not provided that it be generated from html version be removing all html tags with help with [html-to-text](https://www.npmjs.com/package/html-to-text) package
 
-Template directory located on on src/services/messaging/email/templates/{templateName}
+Template directory located on on src/services/messaging/email/templates/\{templateName\}
 
 Example of folder
 

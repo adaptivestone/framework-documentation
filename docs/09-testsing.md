@@ -1,6 +1,6 @@
 # Testing
 
-Framework came out with [vitest](https://vitest.dev/) support. When you named files {Something}.test.js then it will be added to tests
+Framework came out with [vitest](https://vitest.dev/) support. When you named files \{Something\}.test.js then it will be added to tests
 
 :::tip
 Please put test files near main files that you are testing and put the same name to that file.

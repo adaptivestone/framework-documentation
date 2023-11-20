@@ -5,7 +5,7 @@ Every modern application runs on multiple environments and should have the abili
 
 ## Config files
 
-Config files located on ‘src/config/{filename}.js’. Each config file mostly unique and you should refer to module documentation (or framework config section)
+Config files located on ‘src/config/\{filename\}.js’. Each config file mostly unique and you should refer to module documentation (or framework config section)
 
 :::note
 
