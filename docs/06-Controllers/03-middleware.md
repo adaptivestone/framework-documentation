@@ -329,6 +329,41 @@ roles - array of roles to check. OR logic (any role)
 
 ### StaticFiles
 
+:::warning
+
+Decrecated and femoved in version 5. Better to use http server (nginx, etc) to handle static files
+:::
+
+
+```bash
+# nginx sample
+server {
+
+	root /var/www/application/src/public;
+
+	server_name _;
+	client_max_body_size 64M;
+	
+	location / {
+		# First attempt to serve request as file, then
+		# as directory, then fall back to displaying a 404.
+		try_files $uri $uri/ @backend;
+	}
+
+	location @backend {
+		proxy_pass http://localhost:3300;
+		proxy_http_version 1.1;
+		proxy_set_header Upgrade $http_upgrade;
+		proxy_set_header Connection 'upgrade';
+		proxy_set_header Host $host;
+		proxy_cache_bypass $http_upgrade;
+	}
+}
+
+```
+
+
+
 ```js
 import StaticFiles from "@adaptivestone/framework/services/http/middleware/StaticFiles.js";
 ```
