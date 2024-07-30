@@ -24,14 +24,14 @@ Test entry points happen on project level ‘src/test/setupVite.js’. This file
 
 Minimum vite config file should contains :
 
-```js 
+```js
   test: {
-    globalSetup: [ // this script will start mongo 
+    globalSetup: [ // this script will start mongo
       'node_modules/@adaptivestone/framework/tests/globalSetupVitest',
     ],
     setupFiles: [
       './src/tests/setup.js', // this is a local config file  (see below)
-      '@adaptivestone/framework/tests/setupVitest', // this is entry point for testing from framework 
+      '@adaptivestone/framework/tests/setupVitest', // this is entry point for testing from framework
     ],
   }
 ```
@@ -92,7 +92,6 @@ As a framework designed to work with mongo db and provide easy integration to it
 Integration came with help with [MongoDbMemoryServer](https://github.com/nodkz/mongodb-memory-server) package
 
 By default, the framework starts the mongo memory server and afterwards stops it. So you can use mongo during your test
-
 
 ### Mongo tests on ARM64 machines (docker)
 
@@ -180,18 +179,36 @@ describe("module", () => {
 });
 ```
 
-
-## Mock (this part should be updated to match new runner Vitest)
+## Mock
 
 In most cases your code depends on external services, but you still need to perform testing. Calling external service for each test can be expensive and that is not necessary. For this problem jset provides moch options. That when you instead of calling real sdk of service will call a fake function that provide result without api calls
 
-[https://jestjs.io/docs/mock-functions](https://jestjs.io/docs/mock-functions)
+[https://vitest.dev/api/vi.html#vi-mock](https://vitest.dev/api/vi.html#vi-mock)
 
-### Manual mock
+### Mocking function
 
-[https://jestjs.io/docs/manual-mocks](https://jestjs.io/docs/manual-mocks)
+[https://vitest.dev/api/vi.html#mocking-functions-and-objects](https://vitest.dev/api/vi.html#mocking-functions-and-objects)
 
-Manual mocks are defined by writing a module in a **mocks**/ subdirectory immediately adjacent to the module. For example, to mock a module called user in the models directory, create a file called user.js and put it in the models/**mocks** directory. Note that the **mocks** folder is case-sensitive, so naming the directory **MOCKS** will break on some systems.
+You able to redefine import for you own import
+
+```js
+vi.doMock("../file.js", () => ({
+  fileFunction: async () => ({
+    isSuccess: true,
+  }),
+}));
+```
+
+Redefine one method in file
+
+```javascript
+import S3 from "../S3.js";
+vi.spyOn(S3, "validateCreds").mockImplementation(() => true);
+```
+
+there are much more mocking options. Please reffer to Vitest documentation about other one
+
+<!-- Manual mocks are defined by writing a module in a **mocks**/ subdirectory immediately adjacent to the module. For example, to mock a module called user in the models directory, create a file called user.js and put it in the models/**mocks** directory. Note that the **mocks** folder is case-sensitive, so naming the directory **MOCKS** will break on some systems.
 
 :::note
 You should call moch load function before performing any operation on it
@@ -277,6 +294,4 @@ describe('mock testing', () => {
 })
 
 
-```
-
-
+``` -->
