@@ -24,9 +24,9 @@ Framework uses internally few middlewares. This middlewares not adjustable (for 
 
 [Cors](#cors)
 
-[StaticFiles](#staticfiles)
-
 [PrepareAppInfo](#prepareappinfo)
+
+[IpDetector](#ipdetector)
 
 [RequestLogger](#requestlogger)
 
@@ -112,7 +112,6 @@ Allow to pass only if the user provided. Please use any middleware that provide 
 
 No parameters
 
-
 ### Cors
 
 ```js
@@ -125,7 +124,7 @@ Add cors headers if origin match config.
 
 origins - array of strings of regexp to check original. Required parameter
 
-````javascript
+```javascript
   static get middleware() {
     return new Map([
       ['GET/someUrl', [
@@ -133,7 +132,7 @@ origins - array of strings of regexp to check original. Required parameter
       ]]
     ]);
   }
-````
+```
 
 ### GetUserByToken
 
@@ -166,6 +165,58 @@ Please check [i18n documentation](08-i18n.md) for more details
 #### Parameters
 
 No parameters
+
+### IpDetector
+
+```js
+import IpDetector from "@adaptivestone/framework/services/http/middleware/IpDetecor.js";
+```
+
+This middleware will detect client IP. In works well with different proxy (AWS ELB, Nginx, etc) and detect real client ip.
+
+:::note
+If request ip from trustedProxy (trusted sources) only then module will try to parse IP from provided headers "X-Forwarded-For" and grab client ip from there. Otherwise it will be used request ip
+:::
+This is a code middleware and some other middlewares (like RateLimiter) depends on it 
+
+#### Parameters
+
+All paramenter goes into config file. There are two parameneter there: headers and trustedProxy
+
+Headers is array of headers to parse ip address. By default it 'X-Forwarded-For'
+
+trustedProxy is a ip, CIDR or range of ipv4 and ipv6 that trusted to parse headers
+
+```javascript
+  headers: ['X-Forwarded-For'],
+  trustedProxy: [ // list of trusted proxies.
+    '169.254.0.0/16', // ipv4 cidr
+    'fe80::/10', // ipv6 cidr
+    '127.0.0.1', // ip itself
+    '1.1.1.1-1.1.1.3', // ip range
+  ],
+```
+
+Ip data available on
+
+```javascript
+req.appInfo.ip;
+```
+
+:::warning
+Select trustedProxy really carefull as anyone can add any headers to you request. B 
+:::
+
+
+Nginx sample to add header
+```bash
+server {
+    location xxxx/ {
+      proxy_set_header  X-Forwarded-For $remote_addr;
+    }
+  }
+
+````
 
 ### Pagination
 
@@ -334,7 +385,6 @@ roles - array of roles to check. OR logic (any role)
 Decrecated and femoved in version 5. Better to use http server (nginx, etc) to handle static files
 :::
 
-
 ```bash
 # nginx sample
 server {
@@ -343,7 +393,7 @@ server {
 
 	server_name _;
 	client_max_body_size 64M;
-	
+
 	location / {
 		# First attempt to serve request as file, then
 		# as directory, then fall back to displaying a 404.
@@ -362,8 +412,6 @@ server {
 
 ```
 
-
-
 ```js
 import StaticFiles from "@adaptivestone/framework/services/http/middleware/StaticFiles.js";
 ```
@@ -374,7 +422,7 @@ Handle static files. Moslty for the dev purposes. In production better to handle
 
 folders - array of folders to hanle files. Required parameter
 
-````javascript
+```javascript
   static get middleware() {
     return new Map([
       ['POST/someUrl', [
@@ -382,7 +430,7 @@ folders - array of folders to hanle files. Required parameter
       ]]
     ]);
   }
-````
+```
 
 ## Creating own middlewares (or integrate external)
 
@@ -396,7 +444,7 @@ class CustomMiddleware extends AbstractMiddleware {
     return "Middleware descrition";
   }
 
-    // optional
+  // optional
   static get usedAuthParameters() {
     // Array of parameters that are used for authorization within the middleware
     return [
@@ -413,7 +461,7 @@ class CustomMiddleware extends AbstractMiddleware {
   get relatedQueryParameters() {
     // Yup object which defines middleware related req.query parameters, allows to validate and get those parameters in req.appInfo.query relative to the route in which the middleware is declared
     return yup.object().shape({
-      limit: yup.number() // For example
+      limit: yup.number(), // For example
     });
   }
 
@@ -421,7 +469,7 @@ class CustomMiddleware extends AbstractMiddleware {
   get relatedRequestParameters() {
     // Yup object which defines middleware related req.body parameters, allows to validate and get those parameters in req.appInfo.request relative to the route in which the middleware is declared
     return yup.object().shape({
-      name: yup.string().required() // For example
+      name: yup.string().required(), // For example
     });
   }
 
@@ -440,4 +488,4 @@ class CustomMiddleware extends AbstractMiddleware {
 }
 
 export default CustomMiddleware;
-````
+```
