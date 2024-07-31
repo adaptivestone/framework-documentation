@@ -23,7 +23,7 @@ const config = {
       ({
         docs: {
           sidebarPath: "./sidebars.js",
-          editUrl: "https://gitlab.com/adaptivestone/framework-documenation/",
+          editUrl: "https://github.com/adaptivestone/framework-documenation",
         },
 
         theme: {
@@ -50,8 +50,8 @@ const config = {
             label: "Docs",
           },
           {
-            href: "https://gitlab.com/adaptivestone/framework-documenation",
-            label: "GitLab (docs)",
+            href: "https://github.com/adaptivestone/framework-documenation",
+            label: "GitHub (docs)",
             position: "right",
           },
           {
@@ -86,8 +86,8 @@ const config = {
             title: "More",
             items: [
               {
-                href: "https://gitlab.com/adaptivestone/framework-documenation",
-                label: "GitLab (docs)",
+                href: "https://github.com/adaptivestone/framework-documenation",
+                label: "GitHub (docs)",
               },
               {
                 href: "https://gitlab.com/adaptivestone/framework",
