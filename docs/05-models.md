@@ -51,11 +51,11 @@ class SomeModel extends AbstractModel {
 
   // Static method will be part on monngose class
   // this.app.getModel('SomeModel').someStaticMethod()
-  // TODO access to APP instance from static methods
   static async someStaticMethod() {
     const somedata = await this.findByIdAndUpdate(
       //.....
     );
+    const {app} = this.getSuper();
     return somedata;
   }
 
