@@ -159,3 +159,20 @@ node src/cli createuser --email=somemail@gmail.com  --password=somePassword --ro
 Only email and password are required
 
 You able to update user as well. You need to specify email or user id to find the user and '--update' flag to allow user updates.
+
+### Generate random bytes
+
+In sme cases you need to a random bytes string. This command help you to generate random bytes string
+
+#### Run Generate random bytes
+
+```js
+node src/cli generateRandomBytes
+```
+or 
+
+```js
+npm run cli generateRandomBytes
+```
+
+
