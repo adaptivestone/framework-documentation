@@ -44,7 +44,7 @@ In most cases few options in enough
 "/fullpath/:paramOne/:paramTwo";
 
 // like previous but "paramTwo" snow optional
-"/fullpath/:paramOne/:paramTwo?";
+"/fullpath/:paramOne/{:paramTwo}";
 ```
 
 :::
