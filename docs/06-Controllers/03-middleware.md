@@ -10,7 +10,7 @@ Default
 
 ```js
   static get middleware() {
-    return new Map([['/*splat', [GetUserByToken, Auth]]]);
+    return new Map([['/{*splat}', [GetUserByToken, Auth]]]);
   }
 ```
 
@@ -56,7 +56,7 @@ Sample
 
 ```javascript
   static get middleware() {
-    return new Map([['GET/*splat', [GetUserByToken]]]);
+    return new Map([['GET/{*splat}', [GetUserByToken]]]);
   }
 ```
 
