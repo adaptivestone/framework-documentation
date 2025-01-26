@@ -59,6 +59,11 @@ class CommandName extends AbstractCommand {
   }
 
   static isShouldInitModels = true; // defaul value. Can be ommited
+
+  static getMongoConnectionName(commandName, commandArguments) {
+    // return name of connection that you want to use
+    return `CLI: ${commandName} ${args.join(" ")}`;
+  }
 }
 
 export default CommandName;
