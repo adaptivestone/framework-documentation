@@ -148,7 +148,7 @@ Where
 
 ### info.label
 
-Inside the base class we have a method [“loggerGroup”](04-base.md##api)that is used as a first part of info message generation. This useful to group messages like “controllers”,”models”, etc
+Inside the base class we have a method [“loggerGroup”](04-base.md#api)that is used as a first part of info message generation. This useful to group messages like “controllers”,”models”, etc
 
 Framework uses: “command”, “connector”, “controller”, “model” and “CLI_” groups. 
 
