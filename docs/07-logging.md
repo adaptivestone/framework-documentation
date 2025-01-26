@@ -144,7 +144,7 @@ Where
 “info.label” - label of place. More info below
 “info.timestamp” - date of event
 “info.level” - log level (“error”,”warn”, etc)
-“Info.message” - message that passed to logger (eg: this.logger.info(“this is a message”);
+“Info.message” - message that passed to logger (eg: this.logger.info(“this is a message”));
 
 ### info.label
 
