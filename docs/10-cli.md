@@ -52,10 +52,13 @@ class CommandName extends AbstractCommand {
   async run() {
     this.args; // passed arguments
   }
+
   static get description() {
     // text decrtiption of what command do
     return "Command description";
   }
+
+  static isShouldInitModels = true; // defaul value. Can be ommited
 }
 
 export default CommandName;
@@ -169,10 +172,9 @@ In sme cases you need to a random bytes string. This command help you to generat
 ```js
 node src/cli generateRandomBytes
 ```
-or 
+
+or
 
 ```js
 npm run cli generateRandomBytes
 ```
-
-
