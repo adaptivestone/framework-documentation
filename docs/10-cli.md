@@ -58,7 +58,26 @@ class CommandName extends AbstractCommand {
     return "Command description";
   }
 
-  static isShouldInitModels = true; // defaul value. Can be ommited
+  /**
+   *  After parsing it goes to this.args
+   * @returns {import("@adaptivestone/framework/types/ICommandArguments.js").ICommandArguments}
+   */
+  static get commandArguments() {
+    return {
+      someParameter: {
+        type: "string", // 'boolean' as well
+        description: "Some paramater description", // optional
+        default: "some nice string", // optional
+        required: true, // optional. Default is false
+      },
+      someParameter2: {
+        type: "boolean"
+      
+      },
+    };
+  }
+
+  static isShouldInitModels = true; // default value. Can be ommited
 
   static getMongoConnectionName(commandName, commandArguments) {
     // return name of connection that you want to use
