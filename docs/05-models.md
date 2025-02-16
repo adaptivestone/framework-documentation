@@ -206,3 +206,98 @@ const someAnotherTypeSequence = await SequenceModel.getSequence(
   "someAnotherType"
 );
 ```
+
+### Lock
+
+Lock model is designed to provide ability to lock some resources in distributed environment.
+
+This can be external requests, some actions in the system, etc.
+
+Imagine that you have a log of traffic that asks external system for some data. You have cache of this data as weel, but initially you shaul asks internal api to get this data. And you want to make sure that you asking this api for that data only one time and other same time requests will wait for the result instead of asking api. This is where Lock model can help you.
+
+```javascript
+
+const LockModel = this.app.getModel("Lock");
+
+  /**
+   * acquire lock based on lock name
+   * @param {string} name
+   * @param {number} [ttlSeconds=30]
+   * @returns {Promise<boolean>}
+   */
+  async acquireLock(name, ttlSeconds = 30)
+
+  /**
+   * release lock based on lock name
+   * @param {string} name
+   * @returns {Promise<boolean>}
+   */
+  async releaseLock(name)
+
+  /**
+   * wait lock based on lock name
+   * @param {string} name
+   * @returns {Promise}
+   */
+  async waitForUnlock(name)
+
+  /**
+   * get lock remaining time based on lock name
+   * @param {string} name
+   * @returns {Promise<{ttl: number}>}
+   */
+  async getLockData(name)
+
+
+  /**
+   * get lock remaining time based on lock name
+   * @param {string[]} names
+   * @returns {Promise<{name: string, ttl: number}[]>}
+   */
+  static async getLocksData(names)
+
+```
+
+Example of usage:
+
+```javascript
+
+async someHTTPRequestWithExpensiveExternalAPI(req,res){
+  // we have some external request (this can be same time request from different users)
+  const LockModel = this.app.getModel("Lock");
+  // lets say its a AI processing of video (for example)
+  const {videoId} = req.appInfo.request;
+
+  // check if we already have it 
+  const VideoAIModel = this.app.getModel("VideoAIModel");
+  const videoAI = await VideoAIModel.findOne({videoId});
+  if(videoAI){
+    return res.json(videoAI.getPublic());
+  }
+
+  const lockName = `video-ai-processing-${videoId}`;
+
+  // we have no that video, lets send it otp rocessing with lock 
+  const isLockAcquired = await LockModel.acquireLock(lockName);
+  if(isLockAcquired){
+    const result = await videoAIService.processVideo(videoId);
+    const videoModel = await VideoAIModel.create({videoId, result});
+    // release lock 
+    await LockModel.releaseLock(lockName);
+    // return result
+    return res.json(videoModel.getPublic());
+  }
+
+  // we have no lock, lets wait for it
+  await LockModel.waitForUnlock(lockName);
+  // lookslikeexternal process is done, lets check if we have result
+  const videoAI2 = await VideoAIModel.findOne({videoId});
+  if(videoAI2){
+    return res.json(videoAI.getPublic());
+  }
+
+  // we have no result, lets return error
+  return res.status(500).json({error: "something went wrong"});
+}
+
+```
