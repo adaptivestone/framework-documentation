@@ -143,6 +143,57 @@ tests:
     - npm run test
 ```
 
+## Running tests in CI (github)
+
+Better to look at [repo](https://github.com/adaptivestone/framework/blob/main/.github/workflows/test.yml)
+
+```yml
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: Test
+
+on:
+  push:
+    branches: ['*']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    services:
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+
+    env:
+      LOGGER_CONSOLE_LEVEL: 'error'
+      REDIS_URI: redis://localhost
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'latest'
+          cache: 'npm'
+
+      - name: npm clean install
+        run: npm ci
+
+      - name: Run Test
+        run: npm test
+
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+```
+
 ## Http endpoint testing
 
 Framework provides special function global.server.testingGetUrl to detect testing url

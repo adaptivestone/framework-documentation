@@ -55,8 +55,8 @@ const config = {
             position: "right",
           },
           {
-            href: "https://gitlab.com/adaptivestone/framework",
-            label: "GitLab (framework)",
+            href: "https://github.com/adaptivestone/framework",
+            label: "GitHab (framework)",
             position: "right",
           },
         ],
@@ -90,8 +90,8 @@ const config = {
                 label: "GitHub (docs)",
               },
               {
-                href: "https://gitlab.com/adaptivestone/framework",
-                label: "GitLab (framework)",
+                href: "https://github.com/adaptivestone/framework",
+                label: "GitHub (framework)",
               },
             ],
           },
