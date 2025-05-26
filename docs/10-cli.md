@@ -43,49 +43,67 @@ args - athyments that you want to pass to command
 
 ## Creating own command
 
-All passed arguments on command line parsed with help with [minimist](https://github.com/substack/minimist) library
+All passed arguments on command line parsed with help with parseArgs module.
 
 ```js
-import AbstractCommand from "../modules/AbstractCommand.js";
+import AbstractCommand from '../modules/AbstractCommand.ts';
 
 class CommandName extends AbstractCommand {
-  async run() {
-    this.args; // passed arguments
-  }
-
   static get description() {
-    // text decrtiption of what command do
-    return "Command description";
+    return 'Some nice description of command';
   }
 
   /**
-   *  After parsing it goes to this.args
-   * @returns {import("@adaptivestone/framework/types/ICommandArguments.js").ICommandArguments}
+   * You able to add command arguments for parsing there.
+   * https://nodejs.org/api/util.html#utilparseargsconfig
    */
   static get commandArguments() {
     return {
-      someParameter: {
-        type: "string", // 'boolean' as well
-        description: "Some paramater description", // optional
-        default: "some nice string", // optional
-        required: true, // optional. Default is false
+      id: {
+        type: 'string' as const,
+        description: 'User id to find user',
       },
-      someParameter2: {
-        type: "boolean"
-      
+      email: {
+        type: 'string' as const,
+        description: 'User id to find/create user',
+      },
+      password: {
+        type: 'string' as const,
+        description: 'New password for user',
+      },
+      roles: {
+        type: 'string' as const,
+        description:
+          'User roles comma separated string (--roles=user,admin,someOtherRoles)',
+      },
+      update: {
+        type: 'boolean' as const,
+        default: false,
+        description: 'Update user if it exists',
       },
     };
   }
 
   static isShouldInitModels = true; // default value. Can be ommited
 
+  /**
+   * If true, then this command will get model paths with inheritance
+   */
+  static isShouldGetModelPaths = true;
+
   static getMongoConnectionName(commandName, commandArguments) {
     // return name of connection that you want to use
     return `CLI: ${commandName} ${JSON.stringify(args)}`;
+
+  async run() {
+    const { id, email, password, roles, update } = this.args;
+
+    return new Promise((resolve, reject) => {})
   }
 }
 
 export default CommandName;
+
 ```
 
 ## Framework commands
@@ -201,4 +219,19 @@ or
 
 ```js
 npm run cli generateRandomBytes
+```
+
+### Generate Type scrip types 
+
+Special commang to generate types for typescript.
+#### Run Generate random bytes
+
+```js
+node src/cli generateTypes
+```
+
+or
+
+```js
+npm run cli generateTypes
 ```
