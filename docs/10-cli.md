@@ -16,7 +16,10 @@ You are able to create a group of commands by putting files in the directory. Yo
 
 ```bash
 # on project level
-node src/cli {command}
+node src/cli.ts {command}
+
+# OR
+npm run cli
 ```
 
 Commands path work the same way as on controllers. Any file will be parsed as commands, folders will group commands together.
@@ -127,7 +130,7 @@ You can use migration with different cases, not only to modify data on database
 Migration command came with a template to generate migration.
 
 ```js
-node src/cli migration/create  --name={someName}
+node src/cli.ts migration/create  --name={someName}
 ```
 
 After creating migration please edit it and implement any logic that you want here
@@ -135,7 +138,7 @@ After creating migration please edit it and implement any logic that you want he
 #### Apply migration
 
 ```js
-node src/cli migration/migrate
+node src/cli.ts migration/migrate
 ```
 
 Migration executed on created order. It executed only once per life
@@ -149,7 +152,7 @@ Framework will take care of creating indexes based on your model on next start, 
 #### Run dropindex
 
 ```js
-node src/cli dropindex --model={modelName}
+node src/cli.ts dropindex --model={modelName}
 ```
 
 ### SyncIndexes
@@ -165,7 +168,7 @@ This can be a dangerous command in case you have some unique indexes feature
 #### Run SyncIndexes
 
 ```js
-node src/cli SyncIndexes
+node src/cli.ts SyncIndexes
 ```
 
 ### OpenApi documentation
@@ -180,7 +183,7 @@ Thats a good idea to set up documentation on CI level for stage env and put the 
 #### Run OpenApi
 
 ```js
-node src/cli getopenapijson --output={PATH}
+node src/cli.ts getopenapijson --output={PATH}
 ```
 
 Output is an optional.
@@ -188,7 +191,7 @@ Output is an optional.
 Usage example:
 
 ```js
-node src/cli getopenapijson --output='src/public/openApi.json'
+node src/cli.ts getopenapijson --output='src/public/openApi.json'
 ```
 
 ### CreateUser
@@ -198,7 +201,7 @@ Create user command creates a new user
 #### Run CreateUser
 
 ```js
-node src/cli createuser --email=somemail@gmail.com  --password=somePassword --roles=user,admin,someOtherRoles
+node src/cli.ts createuser --email=somemail@gmail.com  --password=somePassword --roles=user,admin,someOtherRoles
 ```
 
 Only email and password are required
@@ -212,7 +215,7 @@ In sme cases you need to a random bytes string. This command help you to generat
 #### Run Generate random bytes
 
 ```js
-node src/cli generateRandomBytes
+node src/cli.ts generateRandomBytes
 ```
 
 or
@@ -227,7 +230,7 @@ Special commang to generate types for typescript.
 #### Run Generate random bytes
 
 ```js
-node src/cli generateTypes
+node src/cli.ts generateTypes
 ```
 
 or
