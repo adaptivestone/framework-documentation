@@ -56,7 +56,7 @@ const config = {
           },
           {
             href: "https://github.com/adaptivestone/framework",
-            label: "GitHab (framework)",
+            label: "GitHub (framework)",
             position: "right",
           },
         ],
