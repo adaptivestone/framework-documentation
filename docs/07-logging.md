@@ -1,127 +1,120 @@
 # Logging
 
-Framework uses [winston](https://github.com/winstonjs/winston) logger as a main subsystem to logging 
+The framework uses the [Winston](https://github.com/winstonjs/winston) logger as the main subsystem for logging.
 
-You can adjust different transports (console and sentry available by default) and add you own transport with own parameters
+You can adjust different transports (console and Sentry are available by default) and add your own transport with your own parameters.
 
-Frameworks provides basic initialization of Winston so you can easily use it from out of the box, but you still have ability to adjust it as you want 
+The framework provides a basic initialization of Winston so you can easily use it out of the box, but you still have the ability to adjust it as you want.
 
+## Logging Levels
 
-## Logging levels
+[RFC5424](https://datatracker.ietf.org/doc/html/rfc5424) defines logger levels. Higher levels will include messages from lower levels. In other words, if you set the ‘warn’ level, the logger will report ‘error’ as well, but will not report the ‘debug’ level.
 
-[RFC5424](https://datatracker.ietf.org/doc/html/rfc5424) defines a logger level. More higher levels will include messages from the lower level. In other word if you set ‘warn’ level then logger will report ‘error’ as well, but will not report debug level
+You can read more about levels in the [Winston levels documentation](https://github.com/winstonjs/winston#logging-levels).
 
-You can read more about levels on [winston levels documentation](https://github.com/winstonjs/winston#logging-levels)
-
-But in short that default levels
+But in short, these are the default levels:
 
 ```js
-{ 
-  error: 0, 
-  warn: 1, 
-  info: 2, 
+{
+  error: 0,
+  warn: 1,
+  info: 2,
   http: 3,
-  verbose: 4, 
-  debug: 5, 
-  silly: 6 
+  verbose: 4,
+  debug: 5,
+  silly: 6
 }
 ```
 
-
 ## API
 
-Each class have access to logger instance via 
+Each class has access to the logger instance via:
 
 ```js
-this.logger
+this.logger;
 ```
 
-
-
 ```js
-this.logger.error('error message');
-this.logger.warn('warn message');
-this.logger.info('info message');
-this.logger.http('http message');
-this.logger.verbose('verbose message');
-this.logger.debug('debug message');
-this.logger.silly('silly message');
+this.logger.error("error message");
+this.logger.warn("warn message");
+this.logger.info("info message");
+this.logger.http("http message");
+this.logger.verbose("verbose message");
+this.logger.debug("debug message");
+this.logger.silly("silly message");
 ```
 
 :::tip
-Please note that this.logger is an instance of winston.logger and you can use any methods from it 
+Please note that `this.logger` is an instance of `winston.logger`, and you can use any methods from it.
 :::
 
+## Default Transports
 
-## Default transports
-
-By default the framework provides two transports: **console** and **sentry** (via (winston-transport-sentry-node)[https://github.com/aandrewww/winston-transport-sentry-node]). 
-
+By default, the framework provides two transports: **console** and **Sentry** (via [winston-transport-sentry-node](https://github.com/aandrewww/winston-transport-sentry-node)).
 
 ## Configuration
 
-We try to keep configuration simple and powerful - you able to enable/disable loggers and adding own with pass all available options to transport 
+We try to keep the configuration simple and powerful - you are able to enable/disable loggers and add your own with all available options passed to the transport.
 
-Configuration files located on ‘config/log.js’
-
+Configuration files are located in ‘config/log.js’.
 
 ```js
 export default {
   transports: [
     {
-      transport: 'winston-transport-sentry-node', // transport name (npm package name)
-      transportOptions: { // options that will pass info transport instance 
+      transport: "winston-transport-sentry-node", // transport name (npm package name)
+      transportOptions: {
+        // options that will be passed to the transport instance
         sentry: {
           dsn: process.env.LOGGER_SENTRY_DSN,
         },
-        level: process.env.LOGGER_SENTRY_LEVEL || 'info',
+        level: process.env.LOGGER_SENTRY_LEVEL || "info",
       },
-      enable: process.env.LOGGER_SENTRY_ENABLE || false, // is transport enabled on not
+      enable: process.env.LOGGER_SENTRY_ENABLE || false, // whether the transport is enabled or not
     },
     {
-        // ....
+      // ....
     },
     /// more transports
   ],
 };
 ```
 
-Config contains a “transports” array. Each transport can be included in the logger. 
+The config contains a “transports” array. Each transport can be included in the logger.
 
-Transport **name** it’s a npm package name that framework will be required. You can use any transport from NPM 
+The transport **name** is an npm package name that the framework will require. You can use any transport from NPM.
 
-Field **transportOptions** it’s transport options - you can pass any options here for transport. Please refer to transport documentation 
+The **transportOptions** field contains the transport options - you can pass any options here for the transport. Please refer to the transport documentation.
 
-And finally field **enable** will enable/disable modules for logger. You can check [“NODE_ENV” on config documentation](02-configs.md#node_env) to least more how you can use it depend on you environment
+And finally, the **enable** field will enable/disable modules for the logger. You can check [“NODE_ENV” in the config documentation](02-configs.md#node_env) to learn more about how you can use it depending on your environment.
 
+## Add Your Own Transport
 
-
-## Add own transport 
-
-Adding own transport is simple process. 
+Adding your own transport is a simple process.
 
 ```js
 npm i ${WINSTON_TRANSPORT_PACKAGE}
 ```
 
-Then add it into ‘config/log.js’ config file 
+Then add it to the ‘config/log.ts’ config file.
 
 ```js
 export default {
   transports: [
     {
-        // .....
-        // some already existed transports
-    }, 
-    {
-        // ....
+      // .....
+      // some already existing transports
     },
     {
-      transport: 'WINSTON_TRANSPORT_PACKAGE',
-      transportOptions: { // options that will pass info transport instance 
-        // .... you transport options
+      // ....
+    },
+    {
+      transport: "WINSTON_TRANSPORT_PACKAGE",
+      transportOptions: {
+        // options that will be passed to the transport instance
+        // .... your transport options
       },
-      enable: true
+      enable: true,
     },
   ],
 };
@@ -129,64 +122,63 @@ export default {
 
 :::tip
 
-Feel free to use environment variables on your transport config as well. That simplify working with multiple environments 
+Feel free to use environment variables in your transport config as well. That simplifies working with multiple environments.
 
 :::
 
-## Console output for logger
+## Console Output for Logger
 
-Console loggers act in a customized way to provide more verbose info. Default console output constructed as 
+Console loggers act in a customized way to provide more verbose info. The default console output is constructed as:
 
 `(${process.pid}) ${info.label}  ${info.timestamp}  ${info.level} : ${info.message}`
 
-Where 
-“process.pid” - pid of node process. Useful in cluster environment 
-“info.label” - label of place. More info below
-“info.timestamp” - date of event
-“info.level” - log level (“error”,”warn”, etc)
-“Info.message” - message that passed to logger (eg: this.logger.info(“this is a message”));
+Where:
+“process.pid” - the PID of the Node process. Useful in a cluster environment.
+“info.label” - the label of the place. More info below.
+“info.timestamp” - the date of the event.
+“info.level” - the log level (“error”, ”warn”, etc.).
+“info.message” - the message that was passed to the logger (e.g., `this.logger.info(“this is a message”)`).
 
 ### info.label
 
-Inside the base class we have a method [“loggerGroup”](04-base.md#api)that is used as a first part of info message generation. This useful to group messages like “controllers”,”models”, etc
+Inside the base class, we have a method [“loggerGroup”](04-base.md#api) that is used as the first part of the info message generation. This is useful for grouping messages like “controllers”, ”models”, etc.
 
-Framework uses: “command”, “connector”, “controller”, “model” and “CLI_” groups. 
-
+The framework uses the following groups: “command”, “connector”, “controller”, “model”, and “CLI\_”.
 
 :::tip
-Feel free to introduce your own groups
+Feel free to introduce your own groups.
 :::
 
-Second part is generated by the base class function “getConstructorName” that by default grabs the constructor name and adds it to the info string. You can overwrite this method for you classes
+The second part is generated by the base class function “getConstructorName”, which by default grabs the constructor name and adds it to the info string. You can overwrite this method for your classes.
 
-Example
+Example:
 
 ```
 (15950)  [modelCoin]  2021-10-18T11:17:54.746Z  verbose : Model have no hooks
 ```
 
-Here: 
+Here:
+
 ```
-(15950) - process pid 
-[modelCoin] -  info message ("model" - group. "Coin" model name)
+(15950) - process PID
+[modelCoin] -  info message ("model" - group, "Coin" - model name)
 2021-10-18T11:17:54.746Z - time
-verbose - level 
-Model have no hooks - message 
+verbose - level
+Model have no hooks - message
 ```
 
-### Environment variables
+### Environment Variables
 
+#### Sentry Transport
 
-#### Sentry transport
+**LOGGER_SENTRY_DSN** - Sentry DSN.
 
-**LOGGER_SENTRY_DSN** sentry DSN
+**LOGGER_SENTRY_LEVEL** - the log level that should go into Sentry. Default: 'info'.
 
-**LOGGER_SENTRY_LEVEL** logs level that shouls go into sentry. Default 'info'
+**LOGGER_SENTRY_ENABLE** - enable or disable the Sentry logger. Default: 'false'.
 
-**LOGGER_SENTRY_ENABLE** enable or not sentry logger. Default 'false'
+#### Console Transport
 
+**LOGGER_CONSOLE_LEVEL** - the log level. Default: 'silly' (includes all).
 
-#### Console transport
-**LOGGER_CONSOLE_LEVEL** logs level. Default 'silly' (include all)
-
-**LOGGER_CONSOLE_ENABLE** enable or not console logger. Default 'true'
+**LOGGER_CONSOLE_ENABLE** - enable or disable the console logger. Default: 'true'.
