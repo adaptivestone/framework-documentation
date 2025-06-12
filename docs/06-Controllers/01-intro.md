@@ -1,6 +1,6 @@
 # Controllers
 
-Controllers are one of the most important parts of the framework. The framework works around the [https://expressjs.com/](https://expressjs.com/) HTTP framework and provides a convenient way to build a complex system around HTTP infrastructure.
+Controllers are a crucial component of the framework, which is built on top of the [Express.js](https://expressjs.com/) HTTP framework. They provide a convenient way to build complex systems with a robust HTTP infrastructure.
 
 :::note
 
@@ -8,7 +8,13 @@ Controller files are part of the [framework inheritance process](03-files-inheri
 
 :::
 
-The framework provides error handling, controller autoloading (including subfolders), and request validation and casting from scratch.
+The framework provides built-in error handling, automatic controller loading (including from subfolders), and request validation and casting.
+
+:::note
+
+In production, the framework uses the `cluster` module to start multiple instances (based on the number of CPU cores) and provide load balancing between them.
+Keep in mind that you cannot access one process from another. For complex scenarios (like a WebSocket server), you will need to use inter-process communication techniques to send messages between processes.
+:::
 
 ## Controller Structure
 
@@ -41,7 +47,7 @@ export default ControllerName;
 
 :::tip
 
-Only "routes" is a necessary part. Other parts can be kept as is.
+Only the `routes` getter is required; other parts of the controller can be omitted if not needed.
 :::
 
 :::warning
@@ -51,9 +57,9 @@ Controllers should extend the "AbstractController" module.
 
 ## Name Convention and Loading
 
-The framework will load any file (except \*.test.(js|ts) files) and initialize it as an HTTP module. The default name of the file will be the route name. This behavior can be changed by providing your own **getHttpPath** function.
+The framework will load any file (except for `*.test.js` and `*.test.ts` files) and initialize it as an HTTP module. By default, the filename will be used as the route name. This behavior can be customized by providing your own `getHttpPath` function.
 
-For the sample above:
+For the example above:
 
 ```js
 class ControllerName extends AbstractController {
@@ -61,9 +67,9 @@ class ControllerName extends AbstractController {
 
 The route will be “http://localhost:3300/controllername”.
 
-Then, any method from the router will appear in the URL.
+Then, any method from the router will be accessible via the URL.
 
-If you want to have your own path, please provide your implementation of the `getHttpPath` function.
+If you want to define a custom path, you can provide your own implementation of the `getHttp-Path` function.
 
 ```js
   getHttpPath() {
@@ -71,7 +77,7 @@ If you want to have your own path, please provide your implementation of the `ge
   }
 ```
 
-By default, `getHttpPath` resolves the current folder and filename and uses it as a route name.
+By default, `getHttpPath` resolves the current folder and filename and uses them to construct the route name.
 
 ## Request Flow
 
@@ -79,7 +85,9 @@ By default, `getHttpPath` resolves the current folder and filename and uses it a
 
 ## View
 
-By default, the framework uses the Express option to render views with a Pug template. To render a view, you need to create a view file in the view folder and then call it with the necessary parameters.
+By default, the framework uses Express to render views with the Pug template engine. To render a view, create a template file in the `views` folder and then call it with the required parameters:
+++++...
+[message is too long]
 
 ```js
 res.render("template", { title: "Hey", message: "Hello there!" });
@@ -87,17 +95,17 @@ res.render("template", { title: "Hey", message: "Hello there!" });
 
 ## JSON
 
-JSON is the most common way to communicate on the modern internet. But it is too flexible, and sometimes developers can be confused. How to use it in an appropriate way?
+JSON is the most common data format for modern web applications, but its flexibility can sometimes lead to confusion.
 
-We provide [basic documentation](https://andrey-systerr.notion.site/API-JSON-41f2032055ae4bddae5d033dc28eb1d3) of how we expect to work with JSON. The framework follows those rules.
+We provide [basic documentation](https://andrey-systerr.notion.site/API-JSON-41f2032055ae4bddae5d033dc28eb1d3) on how we recommend working with JSON, and the framework is designed to follow these guidelines.
 
 ## Configuration
 
-The configuration file is located in “config/http.js”.
+The configuration file is located at `config/http.js`.
 
-Please take a look at it.
+Please take a moment to review it.
 
-Most notable options:
+The most notable options are:
 
 ```js
 port; // Port that the server will use. By default, process.env.HTTP_PORT or port 3300.
