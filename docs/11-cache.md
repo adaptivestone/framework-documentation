@@ -1,28 +1,28 @@
 # Cache
 
-Cache subsystem designed to store some values for quick access and unified interface. It is useful when you have some values grabbed from external api or some stuff that requires a lot of calculation and not changing from time to time.
+The cache subsystem is designed to store some values for quick access and a unified interface. It is useful when you have some values grabbed from an external API or some stuff that requires a lot of calculation and does not change from time to time.
 
-Caches have expiration time and the developer should not worry to check it. It value expired or not exist then callback will be executed and it return value will be used as value to store on cache
+Caches have an expiration time, and the developer should not worry about checking it. If a value has expired or does not exist, a callback will be executed, and its return value will be used as the value to store in the cache.
 
 :::note
 
-Cache subsystem handled all values and take care or serialization/deserialization
+The cache subsystem handles all values and takes care of serialization/deserialization.
 
 :::
 
 ## API
 
-Api is simple
+The API is simple:
 
-```js
+```ts
   async getSetValue(
-    key: String,
+    key: string,
     onNotFound: () => Promise<any>,
     storeTime: number, // in seconds
   ): Promise<any>;
 ```
 
-By default store time 5 minutes.
+By default, the store time is 5 minutes.
 
 Example:
 
@@ -31,8 +31,8 @@ const cacheTime = 60 * 5; // seconds
 const someValueFromCache = await this.app.cache.getSetValue(
   "someKey",
   async () => {
-     const someValue = await someLongAsyncOperation();
-     return someValue;
+    const someValue = await someLongAsyncOperation();
+    return someValue;
   },
   cacheTime // in seconds
 );
@@ -40,26 +40,29 @@ const someValueFromCache = await this.app.cache.getSetValue(
 
 :::note
 
-You can request same value multiple times and only one callback will be executed all other values will be resolved as Promise (same promise)
+You can request the same value multiple times, and only one callback will be executed. All other calls will be resolved as a Promise (the same promise).
 
 ```js
-const promiseArr = []
-for (let n=0;n<100;n++){}
-    promiseArr.push(this.app.cache.getSetValue(
-    "someKey",
-    async () => { // will be called once! Other call will find that "someKey" already processing and return same Promise
+const promiseArr = [];
+for (let n = 0; n < 100; n++) {
+  promiseArr.push(
+    this.app.cache.getSetValue(
+      "someKey",
+      async () => {
+        // Will be called once! Other calls will find that "someKey" is already processing and return the same Promise.
         const someValue = await someLongAsyncOperation();
         return someValue;
-    },
-    3600
-    })
+      },
+      3600
+    )
+  );
 }
 ```
 
-Please note that it works that way **per process** as checking promises happens on process level and not synchronized via master process.
+Please note that it works that way **per process**, as checking promises happens at the process level and is not synchronized via a master process.
 
 :::
 
 ## Configuration
 
-For now the cache subsystem has no configuration. But please follow Redis configuration as cache depend on it
+For now, the cache subsystem has no configuration. But please follow the Redis configuration, as the cache depends on it.

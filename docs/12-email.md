@@ -1,20 +1,20 @@
-# Sending emails
+# Sending Emails
 
 :::warning
 
-As from framework version 5.0 we moved email module to separated package [@adaptivestone/framework-module-email](https://www.npmjs.com/package/@adaptivestone/framework-module-email)
+As of framework version 5.0, we have moved the email module to a separate package: [@adaptivestone/framework-module-email](https://www.npmjs.com/package/@adaptivestone/framework-module-email).
 
 :::
 
-Email subsystem based on [nodemailer](https://github.com/nodemailer/nodemailer). In additional we are using [juice](https://www.npmjs.com/package/juice) to inline css and [html-to-text](https://www.npmjs.com/package/html-to-text) to generate text from html of files
+The email subsystem is based on [Nodemailer](https://github.com/nodemailer/nodemailer). In addition, we are using [Juice](https://www.npmjs.com/package/juice) to inline CSS and [html-to-text](https://www.npmjs.com/package/html-to-text) to generate text from the HTML of files.
 
 :::note
 
-Sadly email clients are outdated and do not support a lot of web features. Some clients even do not support “style” tags. That why all styles should be inlined
+Sadly, email clients are outdated and do not support a lot of web features. Some clients do not even support “style” tags. That is why all styles should be inlined.
 
 :::
 
-## Instalation
+## Installation
 
 ```bash
 npm i @adaptivestone/framework-module-email
@@ -22,50 +22,50 @@ npm i @adaptivestone/framework-module-email
 
 ## Templates
 
-We support two types of templates - html files (not templates) or pug templates. It’s easy to add your own template language too.
+We support two types of templates: HTML files (not templates) or Pug templates. It’s easy to add your own template language too.
 
-For each email you should provide: html version of email, text version (optional) and subject. This should be provided as separate files inside the template directory.
+For each email, you should provide an HTML version, a text version (optional), and a subject. These should be provided as separate files inside the template directory.
 
-If text version of email not provided that it be generated from html version be removing all html tags with help with [html-to-text](https://www.npmjs.com/package/html-to-text) package
+If the text version of the email is not provided, it will be generated from the HTML version by removing all HTML tags with the help of the [html-to-text](https://www.npmjs.com/package/html-to-text) package.
 
-Template directory located on on src/services/messaging/email/templates/\{templateName\} on you project. You can change it in config.
+The template directory is located at `src/services/messaging/email/templates/{templateName}` in your project. You can change it in the config.
 
-Example of folder
+Example of a folder:
 
 ```js
-html.pug; // html markup of email
-subject.pug; // subject to generate
-text.pug; // text version of email
-style.css; // styles to inlide inside html
+html.pug; // HTML markup of the email
+subject.pug; // Subject to generate
+text.pug; // Text version of the email
+style.css; // Styles to inline inside the HTML
 ```
 
-### Inline images
+### Inline Images
 
-By default framework email module not inline images and keep link as it.
-But if you want to inline some images you can use "data-inline" attribute in "img" tag
+By default, the framework email module does not inline images and keeps the links as they are.
+But if you want to inline some images, you can use the "data-inline" attribute in the "img" tag.
 
 ```html
 <img src="/cats.jpg" data-inline />
 ```
 
-Image path relative to your project "src/services/messaging/email/resources" folder
+The image path is relative to your project's "src/services/messaging/email/resources" folder.
 
 :::note
-Best practice - put you images in CDN
+The best practice is to put your images on a CDN.
 :::
 
-### Template variables
+### Template Variables
 
-Each template have that variables:
+Each template has these variables:
 
-- locale - current locale of request
-- t - translate function from i18n. Can by dummy function in i18n not provided
-- globalVariablesToTemplates - from config.
-- User provided variables (see API section)
+- `locale` - the current locale of the request.
+- `t` - the translate function from i18n. Can be a dummy function if i18n is not provided.
+- `globalVariablesToTemplates` - from the config.
+- User-provided variables (see the API section).
 
 ## API
 
-### Init mailer
+### Init Mailer
 
 ```js
 import Mailer from "@adaptivestone/framework-module-email";
@@ -74,51 +74,51 @@ const mail = new Mailer(
   this.app,
   "recovery", // template name
   {
-    // variables for template. This is a user provided variables. IT will be merged to default variables
-    oneTempalteVariable: "1",
+    // variables for the template. These are user-provided variables. They will be merged with the default variables.
+    oneTemplateVariable: "1",
     anotherTemplateVariable: "2",
   },
   req.appInfo.i18n
 );
 ```
 
-Inside template oneTempalteVariable and anotherTemplateVariable will be availalble as a top level variable
+Inside the template, `oneTemplateVariable` and `anotherTemplateVariable` will be available as top-level variables.
 
 ```pug
-p #{oneTempalteVariable} #{anotherTemplateVariable}
+p #{oneTemplateVariable} #{anotherTemplateVariable}
 ```
 
-### Send email
+### Send Email
 
 ```js
 const result = await mail.send(
-  "some@email.com", //To
-  "optional@from.com", //OPTIONAL. From email If not provided will be grabbed from config
-  {} //OPTIONAL. Any additioanl options to nodemailer  https://nodemailer.com/message/
+  "some@email.com", // To
+  "optional@from.com", // OPTIONAL. From email. If not provided, it will be grabbed from the config.
+  {} // OPTIONAL. Any additional options for Nodemailer: https://nodemailer.com/message/
 );
 ```
 
-### Send raw
+### Send Raw
 
-For advance usage (own templates,mail headers, attachments) another low level method exists
+For advanced usage (your own templates, mail headers, attachments), another low-level method exists.
 
 ```js
 import Mailer from "@adaptivestone/framework-module-email";
 
 const result = await Mailer.sendRaw(
-  this.app, //framework app
-  "to@email.com", //To
-  "email subject", //topic
-  "<html><body><h1>Email html body</h1></body></html>", //HTML body of email
-  "Email text body", //OPTIONAL. If not provided will be generated from html string
-  "from@email.com", //OPTIONAL. From email If not provided will be grabbed from config
-  {} //OPTIONAL. Any additioanl options to nodemailer  https://nodemailer.com/message/
+  this.app, // framework app
+  "to@email.com", // To
+  "email subject", // topic
+  "<html><body><h1>Email html body</h1></body></html>", // HTML body of the email
+  "Email text body", // OPTIONAL. If not provided, it will be generated from the HTML string.
+  "from@email.com", // OPTIONAL. From email. If not provided, it will be grabbed from the config.
+  {} // OPTIONAL. Any additional options for Nodemailer: https://nodemailer.com/message/
 );
 ```
 
-### Render template
+### Render Template
 
-In some cases you may want to rendern templates to string for future usage. For example send email via gmail Oauth2 authorisation on user behalf
+In some cases, you may want to render templates to a string for future usage. For example, to send an email via Gmail OAuth2 authorization on behalf of a user.
 
 ```js
 const { subject, text, inlinedHTML, htmlRaw } = await mail.renderTemplate();
@@ -128,9 +128,9 @@ const { subject, text, inlinedHTML, htmlRaw } = await mail.renderTemplate();
 
 Please look at the ‘config/mail.ts’ file for all configuration options.
 
-### Environment variables
+### Environment Variables
 
-Here most the impornat environment variables
+Here are the most important environment variables:
 
 ```js
 EMAIL_HOST; // smtp.mailtrap.io by default
@@ -138,4 +138,3 @@ EMAIL_PORT; // 2525 by default
 EMAIL_USER;
 EMAIL_PASSWORD;
 EMAIL_TRANSPORT; // smtp by default
-```

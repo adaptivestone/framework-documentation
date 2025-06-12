@@ -1,53 +1,57 @@
 # Testing
 
-Framework came out with [vitest](https://vitest.dev/) support. When you named files \{Something\}.test.js then it will be added to tests
+The framework comes with [Vitest](https://vitest.dev/) support. When you name files with the `.test.(js|ts)` extension, they will be added to the tests.
 
 :::tip
-Please put test files near main files that you are testing and put the same name to that file.
-If you want to test “Auth.js” please create a file “Auth.test.js” and put it on the same folder
+Please put test files near the main files that you are testing and give them the same name.
+If you want to test “Auth.js”, please create a file named “Auth.test.js” and put it in the same folder.
 
 :::
 
-## Frawemork (app) instance
+## Framework (app) Instance
 
-Of course inside a test you need to have access to framework instance. In will available via global variable ‘global.server.app’
+Of course, inside a test, you need to have access to the framework instance. It will be available via appInstanceHelper
 
-## Run tests
+```js
+import { appInstance } from "@adaptivestone/framework/helpers/appInstance.js";
+```
+
+## Run Tests
 
 ```bash
 npm test
 ```
 
-## Before scripts
+## Before Scripts
 
-Test entry points happen on project level ‘src/test/setupVite.js’. This file prepares all folder configs, require framework setup and prepare global setup for tests
+The test entry point is at the project level in ‘src/test/setupVite.js’. This file prepares all folder configs, requires the framework setup, and prepares the global setup for tests.
 
-Minimum vite config file should contains :
+The minimum Vite config file should contain:
 
 ```js
   test: {
-    globalSetup: [ // this script will start mongo
+    globalSetup: [ // This script will start Mongo
       'node_modules/@adaptivestone/framework/tests/globalSetupVitest',
     ],
     setupFiles: [
-      './src/tests/setup.js', // this is a local config file  (see below)
-      '@adaptivestone/framework/tests/setupVitest', // this is entry point for testing from framework
+      './src/tests/setup.js', // This is a local config file (see below)
+      '@adaptivestone/framework/tests/setupVitest', // This is the entry point for testing from the framework
     ],
   }
 ```
 
 ### global.testSetup
 
-This is a special variable that configures the global behaviour of tests.
+This is a special variable that configures the global behavior of tests.
 
-You have two hooks that will happen globally before the test run and after the test run.
+You have two hooks that will happen globally before and after the test run:
 
 ```
 global.testSetup.beforeAll
 global.testSetup.afterAll
 ```
 
-In additional you have ability to disable default user creating by adjusting variable
+In addition, you have the ability to disable the default user creation by adjusting the variable:
 
 ```
 global.testSetup.disableUserCreate
@@ -57,53 +61,53 @@ Example:
 
 ```js src/tests/setup.js on project level
 global.testSetup = {
-  disableUserCreate: true, // we diabled user creating default one
+  disableUserCreate: true, // We disabled the default user creation
   beforeAll: async () => {
     const User = global.server.app.getModel("User");
     global.user = await User.create({
       email: "test@test.com",
       password: "testPassword",
-      role: ["admin"], // That new behaviour
+      role: ["admin"], // This is new behavior
     }).catch((e) => {
       console.error(e);
       console.info(
-        "That error can happens in case you have custom user model. Please use global.testSetup.disableUserCreate flag to skip user creating"
+        "That error can happen in case you have a custom user model. Please use the global.testSetup.disableUserCreate flag to skip user creation."
       );
     });
     global.authToken = await global.user.generateToken();
-    // here can be init for some connection, like for test instance of elastic search or redis
+    // Here you can initialize some connections, like for a test instance of Elasticsearch or Redis.
   },
   afterAll: async () => {
-    // If you made connection do not miss to close it after test
+    // If you made a connection, do not forget to close it after the test.
   },
 };
 ```
 
-### Default user for testing
+### Default User for Testing
 
-By default, create a default user with email 'test@test.com' and password 'testPassword'. User instance as ‘global.user’ and ‘global.authToken’ for auth token
+By default, a user with the email 'test@test.com' and password 'testPassword' is created. The user instance is available as `global.user` and the auth token as `global.authToken`.
 
-You can change that behaviour by global variable ‘global.testSetup.disableUserCreate’
+You can change this behavior with the global variable `global.testSetup.disableUserCreate`.
 
-## Mongo instance
+## Mongo Instance
 
-As a framework designed to work with mongo db and provide easy integration to it - then it comes with mongo db integration on tests too.
+As the framework is designed to work with MongoDB and provide easy integration with it, it also comes with MongoDB integration in tests.
 
-Integration came with help with [MongoDbMemoryServer](https://github.com/nodkz/mongodb-memory-server) package
+The integration is done with the help of the [MongoDbMemoryServer](https://github.com/nodkz/mongodb-memory-server) package.
 
-By default, the framework starts the mongo memory server and afterwards stops it. So you can use mongo during your test
+By default, the framework starts the Mongo memory server and stops it afterward. So you can use Mongo during your tests.
 
-### Mongo tests on ARM64 machines (docker)
+### Mongo Tests on ARM64 Machines (Docker)
 
-For ARM64 we have an interesting situation. Mongo Inc provides binaries for Ubuntu and not for Debian, but node official images exist for Debian but not for Ubuntu.
+For ARM64, we have an interesting situation. Mongo Inc. provides binaries for Ubuntu but not for Debian, but official Node images exist for Debian but not for Ubuntu.
 
-To solve that situation we provide our own node docker image based on ubuntu. You can find it here [ubuntu-node-docker](https://gitlab.com/adaptivestone/ubuntu-node)
+To solve this situation, we provide our own Node Docker image based on Ubuntu. You can find it here: [ubuntu-node-docker](https://gitlab.com/adaptivestone/ubuntu-node).
 
-## Running tests in CI (gitlab)
+## Running Tests in CI (GitLab)
 
-Important stuff about testing - tests should be executed in an auto way on every git commit. That where CI (continue integration) go to light
+An important thing about testing is that tests should be executed automatically on every Git commit. That is where CI (Continuous Integration) comes in.
 
-.gitlab-ci.yml sample bellow
+A `.gitlab-ci.yml` sample is below:
 
 ```yaml
 stages:
@@ -143,9 +147,9 @@ tests:
     - npm run test
 ```
 
-## Running tests in CI (github)
+## Running Tests in CI (GitHub)
 
-Better to look at [repo](https://github.com/adaptivestone/framework/blob/main/.github/workflows/test.yml)
+It is better to look at the [repo](https://github.com/adaptivestone/framework/blob/main/.github/workflows/test.yml).
 
 ```yml
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
@@ -154,7 +158,7 @@ name: Test
 
 on:
   push:
-    branches: ['*']
+    branches: ["*"]
 
 jobs:
   test:
@@ -169,7 +173,7 @@ jobs:
           - 6379:6379
 
     env:
-      LOGGER_CONSOLE_LEVEL: 'error'
+      LOGGER_CONSOLE_LEVEL: "error"
       REDIS_URI: redis://localhost
 
     steps:
@@ -179,8 +183,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 'latest'
-          cache: 'npm'
+          node-version: "latest"
+          cache: "npm"
 
       - name: npm clean install
         run: npm ci
@@ -194,19 +198,19 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 ```
 
-## Http endpoint testing
+## HTTP Endpoint Testing
 
-Framework provides special function global.server.testingGetUrl to detect testing url
+The framework provides a special function `global.server.testingGetUrl` to detect the testing URL.
 
 ```js
 const url = global.server.testingGetUrl("/auth");
 ```
 
-Full example
+Full example:
 
 ```js
 describe("module", () => {
-  describe("functon", () => {
+  describe("function", () => {
     it("test", async () => {
       expect.assertions(1);
       const { status } = await fetch(
@@ -232,15 +236,15 @@ describe("module", () => {
 
 ## Mock
 
-In most cases your code depends on external services, but you still need to perform testing. Calling external service for each test can be expensive and that is not necessary. For this problem jset provides moch options. That when you instead of calling real sdk of service will call a fake function that provide result without api calls
+In most cases, your code depends on external services, but you still need to perform testing. Calling an external service for each test can be expensive and is not necessary. For this problem, Vitest provides mock options. That is when you, instead of calling the real SDK of a service, will call a fake function that provides the result without API calls.
 
 [https://vitest.dev/api/vi.html#vi-mock](https://vitest.dev/api/vi.html#vi-mock)
 
-### Mocking function
+### Mocking a Function
 
 [https://vitest.dev/api/vi.html#mocking-functions-and-objects](https://vitest.dev/api/vi.html#mocking-functions-and-objects)
 
-You able to redefine import for you own import
+You are able to redefine an import for your own import.
 
 ```js
 vi.doMock("../file.js", () => ({
@@ -250,14 +254,14 @@ vi.doMock("../file.js", () => ({
 }));
 ```
 
-Redefine one method in file
+Redefine one method in a file:
 
 ```javascript
 import S3 from "../S3.js";
 vi.spyOn(S3, "validateCreds").mockImplementation(() => true);
 ```
 
-there are much more mocking options. Please reffer to Vitest documentation about other one
+There are many more mocking options. Please refer to the Vitest documentation for others.
 
 <!-- Manual mocks are defined by writing a module in a **mocks**/ subdirectory immediately adjacent to the module. For example, to mock a module called user in the models directory, create a file called user.js and put it in the models/**mocks** directory. Note that the **mocks** folder is case-sensitive, so naming the directory **MOCKS** will break on some systems.
 

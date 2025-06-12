@@ -1,30 +1,30 @@
 # Deploy
 
-There are mmultiple ways to deploy your app.
+There are multiple ways to deploy your app.
 
-## On server
+## On a Server
 
-This is a simplest way. There a multiple option there but we are recomending pm2+nginx setup
+This is the simplest way. There are multiple options here, but we are recommending a PM2 + Nginx setup.
 
-### Pm2 setup
+### PM2 Setup
 
-You need to install pm2 and make it autoload
+You need to install PM2 and make it autoload.
 
 ```bash
 npm install pm2@latest -g
 pm2 startup
 ```
 
-Then load you code to server and go to server directory
+Then load your code to the server and go to the server directory.
 
 ```bash
 NODE_ENV=production pm2 start --name YOUR_APP_NAME src/index.js
 pm2 save
 ```
 
-That all from nodejs side. App already there and listen on a localhost:3000
+That is all from the Node.js side. The app is already there and listening on localhost:3300.
 
-### Nginx setup
+### Nginx Setup
 
 ```
 server {
@@ -54,9 +54,9 @@ server {
 
 ## Docker
 
-You can create an docker image with all you data and run it on any server including kubernetes
+You can create a Docker image with all your data and run it on any server, including Kubernetes.
 
-docker file can looks like
+The Dockerfile can look like this:
 
 ```dockerfile
 FROM node:latest
@@ -67,22 +67,22 @@ USER node
 RUN npm ci
 COPY --chown=node:node src/ ./src/
 EXPOSE 3300
-CMD [ "node", "src/index.js"]
+CMD [ "node", "src/index.ts"]
 ```
 
-To build it use
+To build it, use:
 
 ```bash
 docker build --platform --platform linux/amd64,linux/arm64 -t YOUR_REPO_NAME:TAG .
 ```
 
-As well you can use buildx
+You can also use `buildx`:
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 -t YOUR_REPO_NAME:TAG . --push
 ```
 
-They you can run it
+Then you can run it:
 
 ```bash
 docker run -it -p 3300:3300 YOUR_REPO_NAME:TAG

@@ -1,39 +1,39 @@
 # Controllers
 
-Controllers are one of the most important parts of the framework. Framework works around [https://expressjs.com/](https://expressjs.com/) http framework and provide convenient way to build complex system around http infrastructure
+Controllers are one of the most important parts of the framework. The framework works around the [https://expressjs.com/](https://expressjs.com/) HTTP framework and provides a convenient way to build a complex system around HTTP infrastructure.
 
 :::note
 
-Controllers files part of [framework inheritance process ](03-files-inheritance.md).
+Controller files are part of the [framework inheritance process](03-files-inheritance.md).
 
 :::
 
-Framework provides from scratch error handling, controllers autoload (including subfolders) and request validation and casting
+The framework provides error handling, controller autoloading (including subfolders), and request validation and casting from scratch.
 
-## Controlles structure
+## Controller Structure
 
 ```js
 import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
 
 class ControllerName extends AbstractController {
   constructor(app, prefix) {
-    // optional constructor. In case you want to keep req.params from main router
-    // by default params from parent router omitted
-    // usefull when some params exists on "getHttpPath" path
+    // Optional constructor. In case you want to keep req.params from the main router.
+    // By default, params from the parent router are omitted.
+    // Useful when some params exist on the "getHttpPath" path.
     super(app, prefix, true);
   }
 
   get routes() {
-    // return routes info
-    // NECESSARY part
+    // Return routes info.
+    // NECESSARY part.
   }
-  getHttpPath() { 
-    // return path for exprress (in 99% cases optional)
+  getHttpPath() {
+    // Return the path for Express (in 99% of cases, optional).
   }
 
   static get middleware() {
     return new Map();
-    // return middlewares for THIS route only
+    // Return middlewares for THIS route only.
   }
 }
 export default ControllerName;
@@ -41,29 +41,29 @@ export default ControllerName;
 
 :::tip
 
-Only "routes" is necessary part. Other parts can be keep as it
+Only "routes" is a necessary part. Other parts can be kept as is.
 :::
 
 :::warning
 
-Controllers should extends "AbstractController" modules
+Controllers should extend the "AbstractController" module.
 :::
 
-## Name convention and loading
+## Name Convention and Loading
 
-Framework will load any file (except \*.test.js files) and initi is a http module. But the default name on the file will be a route name. But this behavior can be changed by providing own **getHttpPath** function
+The framework will load any file (except \*.test.(js|ts) files) and initialize it as an HTTP module. The default name of the file will be the route name. This behavior can be changed by providing your own **getHttpPath** function.
 
-For sample above
+For the sample above:
 
 ```js
 class ControllerName extends AbstractController {
 ```
 
-Route will be “http://localhost:3300/controllername”
+The route will be “http://localhost:3300/controllername”.
 
-Then any method from router will be appear to url
+Then, any method from the router will appear in the URL.
 
-If you want to have own path please provide you implementation of getHttpPath function
+If you want to have your own path, please provide your implementation of the `getHttpPath` function.
 
 ```js
   getHttpPath() {
@@ -71,15 +71,15 @@ If you want to have own path please provide you implementation of getHttpPath fu
   }
 ```
 
-By default getHttpPath resolved current folder and filename and use it as a route name
+By default, `getHttpPath` resolves the current folder and filename and uses it as a route name.
 
-## Request flow
+## Request Flow
 
 ![RequestFlow](/img/requestFlow.jpg)
 
 ## View
 
-By default the framework uses the express option to render views with a pug template. To render view you need to create view file on view folder and then call it with necessary parameters
+By default, the framework uses the Express option to render views with a Pug template. To render a view, you need to create a view file in the view folder and then call it with the necessary parameters.
 
 ```js
 res.render("template", { title: "Hey", message: "Hello there!" });
@@ -87,20 +87,20 @@ res.render("template", { title: "Hey", message: "Hello there!" });
 
 ## JSON
 
-JSON is the most common way to communicate on the modern internet. But it is too flexible and sometimes developers can be confused. How to use it in an appropriate way
+JSON is the most common way to communicate on the modern internet. But it is too flexible, and sometimes developers can be confused. How to use it in an appropriate way?
 
-We provide [basic documentation](https://andrey-systerr.notion.site/API-JSON-41f2032055ae4bddae5d033dc28eb1d3) of how we expect to work with JSON. Framework follow that rules
+We provide [basic documentation](https://andrey-systerr.notion.site/API-JSON-41f2032055ae4bddae5d033dc28eb1d3) of how we expect to work with JSON. The framework follows those rules.
 
 ## Configuration
 
-Configuration file located on “config/http.js”
+The configuration file is located in “config/http.js”.
 
-Please take a look into it
+Please take a look at it.
 
 Most notable options:
 
 ```js
-port; //port that server will be to use. By default process.env.HTTP_PORT or port 3300
-hostname; // ip to bind for. By default  process.env.HTTP_HOST or  '0.0.0.0' (any). Could be dangrous.
-corsDomains; // CORS allowed domain.
+port; // Port that the server will use. By default, process.env.HTTP_PORT or port 3300.
+hostname; // IP to bind to. By default, process.env.HTTP_HOST or '0.0.0.0' (any). Could be dangerous.
+corsDomains; // CORS-allowed domains.
 ```

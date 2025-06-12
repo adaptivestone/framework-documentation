@@ -1,12 +1,12 @@
 # Middleware
 
-You can read more about middlewares on [https://expressjs.com/en/guide/using-middleware.html](https://expressjs.com/en/guide/using-middleware.html)
+You can read more about middlewares at [https://expressjs.com/en/guide/using-middleware.html](https://expressjs.com/en/guide/using-middleware.html).
 
-In general it’s a function that accepts request, response and next callback. This function can analyze requests and add more details to it (like parse JSON, GET query params or check user token). Middleware can pass requests to the next level (next middleware or handler) or can respond directly and finish requests.
+In general, it’s a function that accepts a request, a response, and a `next` callback. This function can analyze requests and add more details to them (like parsing JSON, getting query params, or checking a user token). Middleware can pass requests to the next level (the next middleware or handler) or can respond directly and finish the request.
 
-This is really powerful and allow developer to reuse simple logic and build route on this simple building blocks
+This is really powerful and allows developers to reuse simple logic and build routes on these simple building blocks.
 
-Default
+Default:
 
 ```js
   static get middleware() {
@@ -14,13 +14,13 @@ Default
   }
 ```
 
-## Middleware order
+## Middleware Order
 
-Middleware will be executed in the provided order. Based on that you can chain middleware where input on second middleware depends on output first middleware
+Middleware will be executed in the order provided. Based on that, you can chain middleware where the input of the second middleware depends on the output of the first middleware.
 
-## Global middlewares
+## Global Middlewares
 
-Framework uses internally few middlewares. This middlewares not adjustable (for now) and executed on each request
+The framework internally uses a few middlewares. These middlewares are not adjustable (for now) and are executed on each request.
 
 [Cors](#cors)
 
@@ -34,9 +34,9 @@ Framework uses internally few middlewares. This middlewares not adjustable (for 
 
 [I18n](#i18n)
 
-## Including middlewares into controllers
+## Including Middlewares into Controllers
 
-Controllers level middleware adjusted based on “middleware” getter
+Controller-level middleware is adjusted based on the “middleware” getter.
 
 ```js
   static get middleware() {
@@ -45,14 +45,13 @@ Controllers level middleware adjusted based on “middleware” getter
   }
 ```
 
-Where
-'METHOD/path' is a method with a path. Any supported methods by express server supported here (GET, POST, PUT, DELETE, etc). Possible to start router with any method that supported by Express and middleware will be scoped by this method. If middleware route started from "/" then ALL method will be used
+Where 'METHOD/path' is a method with a path. Any methods supported by the Express server are supported here (GET, POST, PUT, DELETE, etc.). It is possible to start a router with any method that is supported by Express, and the middleware will be scoped by this method. If the middleware route starts with `/`, then ALL methods will be used.
 
-Path is part of the express regex path. [https://expressjs.com/en/5x/api.html#router.methods](https://expressjs.com/en/5x/api.html#router.methods)
+The path is part of the Express regex path: [https://expressjs.com/en/5x/api.html#router.methods](https://expressjs.com/en/5x/api.html#router.methods).
 
-Middleware array - array of middlewares (with params)
+The middleware array is an array of middlewares (with params).
 
-Sample
+Sample:
 
 ```javascript
   static get middleware() {
@@ -72,33 +71,33 @@ Sample
 ```
 
 :::warning
-Middleware here not a raw express middlewares. Please see below
+The middleware here are not raw Express middlewares. Please see below.
 :::
 
-## Including middlewares into route object
+## Including Middlewares into a Route Object
 
-Middlewares can also be added into route object (subchapter “Routes”)
+Middlewares can also be added into a route object (subchapter “Routes”).
 
-## Middleware parameters
+## Middleware Parameters
 
-Some middleware acept initial parameters pass into it,
+Some middleware accept initial parameters passed into them.
 
 ```javascript
   static get middleware() {
     return new Map([
       ['POST/someUrl', [
-        GetUserByToken // middleware with no parameters
+        GetUserByToken, // middleware with no parameters
         [RoleMiddleware, { roles: ['admin'] }] // middleware with parameters
       ]]
     ]);
   }
 ```
 
-To pass parameters wrap middleware into an array. First element will be middleware inself, second one - middleware parameters. Second on will be pass as it into middleware constructor
+To pass parameters, wrap the middleware in an array. The first element will be the middleware itself, and the second one will be the middleware parameters. The second one will be passed as is into the middleware constructor.
 
-## Build in middleware
+## Built-in Middleware
 
-Frameworks have few middlewares that you can use
+The framework has a few middlewares that you can use.
 
 ### Auth
 
@@ -106,11 +105,11 @@ Frameworks have few middlewares that you can use
 import Auth from "@adaptivestone/framework/services/http/middleware/Auth.js";
 ```
 
-Allow to pass only if the user provided. Please use any middleware that provide user instance before (like GetUserByToken)
+Allows passing only if the user is provided. Please use any middleware that provides a user instance beforehand (like `GetUserByToken`).
 
 #### Parameters
 
-No parameters
+No parameters.
 
 ### Cors
 
@@ -118,11 +117,11 @@ No parameters
 import Cors from "@adaptivestone/framework/services/http/middleware/Cors.js";
 ```
 
-Add cors headers if origin match config.
+Adds CORS headers if the origin matches the config.
 
 #### Parameters
 
-origins - array of strings of regexp to check original. Required parameter
+`origins` - an array of strings or regex to check the origin. Required parameter.
 
 ```javascript
   static get middleware() {
@@ -140,11 +139,11 @@ origins - array of strings of regexp to check original. Required parameter
 import GetUserByToken from "@adaptivestone/framework/services/http/middleware/GetUserByToken.js";
 ```
 
-Grab a token and try to parse the user from it. Will find user on databased by token. If user exist will add req.appInfo.user variable.
+Grabs a token and tries to parse the user from it. It will find the user in the database by the token. If the user exists, it will add the `req.appInfo.user` variable.
 
 #### Parameters
 
-No parameters
+No parameters.
 
 ### I18n
 
@@ -152,19 +151,19 @@ No parameters
 import I18n from "@adaptivestone/framework/services/http/middleware/I18n.js";
 ```
 
-Internationalization module based on [i18next](https://www.npmjs.com/package/i18next). Provides req.appInfo.i18n that can be used to translate
+An internationalization module based on [i18next](https://www.npmjs.com/package/i18next). It provides `req.appInfo.i18n` that can be used for translation.
 
-Middleware provides few detectors
+The middleware provides a few detectors:
 
 - X-Lang header
 - Query
 - User
 
-Please check [i18n documentation](08-i18n.md) for more details
+Please check the [i18n documentation](08-i18n.md) for more details.
 
 #### Parameters
 
-No parameters
+No parameters.
 
 ### IpDetector
 
@@ -172,20 +171,20 @@ No parameters
 import IpDetector from "@adaptivestone/framework/services/http/middleware/IpDetecor.js";
 ```
 
-This middleware will detect client IP. In works well with different proxy (AWS ELB, Nginx, etc) and detect real client ip.
+This middleware will detect the client's IP. It works well with different proxies (AWS ELB, Nginx, etc.) and detects the real client IP.
 
 :::note
-If request ip from trustedProxy (trusted sources) only then module will try to parse IP from provided headers "X-Forwarded-For" and grab client ip from there. Otherwise it will be used request ip
+If the request IP is from a `trustedProxy` (trusted source) only, then the module will try to parse the IP from the provided `X-Forwarded-For` header and grab the client IP from there. Otherwise, the request IP will be used.
 :::
-This is a code middleware and some other middlewares (like RateLimiter) depends on it 
+This is a core middleware, and some other middlewares (like `RateLimiter`) depend on it.
 
 #### Parameters
 
-All paramenter goes into config file. There are two parameneter there: headers and trustedProxy
+All parameters go into the config file. There are two parameters there: `headers` and `trustedProxy`.
 
-Headers is array of headers to parse ip address. By default it 'X-Forwarded-For'
+`headers` is an array of headers to parse the IP address from. By default, it is 'X-Forwarded-For'.
 
-trustedProxy is a ip, CIDR or range of ipv4 and ipv6 that trusted to parse headers
+`trustedProxy` is an IP, CIDR, or range of IPv4 and IPv6 that is trusted to parse headers from.
 
 ```javascript
   headers: ['X-Forwarded-For'],
@@ -197,18 +196,18 @@ trustedProxy is a ip, CIDR or range of ipv4 and ipv6 that trusted to parse heade
   ],
 ```
 
-Ip data available on
+IP data is available at:
 
 ```javascript
 req.appInfo.ip;
 ```
 
 :::warning
-Select trustedProxy really carefull as anyone can add any headers to you request. B 
+Select `trustedProxy` really carefully, as anyone can add any headers to your request.
 :::
 
+Nginx sample to add a header:
 
-Nginx sample to add header
 ```bash
 server {
     location xxxx/ {
@@ -216,7 +215,7 @@ server {
     }
   }
 
-````
+```
 
 ### Pagination
 
@@ -224,13 +223,13 @@ server {
 import Pagination from "@adaptivestone/framework/services/http/middleware/Pagination.js";
 ```
 
-Pagination middleware provides helper that grabs URL search parameters (page, limit) and calculate necessary appInfo properties (skip, limit and page)
+The pagination middleware provides a helper that grabs URL search parameters (`page`, `limit`) and calculates the necessary `appInfo` properties (`skip`, `limit`, and `page`).
 
 #### Parameters
 
-limit = 10 - default limit if not provided
+`limit` = 10 - default limit if not provided.
 
-maxLimit = 100 max limit for documents
+`maxLimit` = 100 - max limit for documents.
 
 ```javascript
   static get middleware() {
@@ -261,30 +260,30 @@ const { limit, skip, page } = req.appInfo.pagination;
 import PrepareAppInfo from "@adaptivestone/framework/services/http/middleware/PrepareAppInfo.js";
 ```
 
-PrepareApp info is a special small middleware that generates res.appInfo = {}. To make sure that all middleware after will use appInfo without checking if it exists.
-Done for internal usage
+`PrepareAppInfo` is a special small middleware that generates `res.appInfo = {}`. This is to make sure that all subsequent middleware can use `appInfo` without checking if it exists.
+It is for internal use.
 
 #### Parameters
 
-No parameters
+No parameters.
 
 ### RateLimiter
 
-Rate limiter middleware. Limit amount of request.
+A rate limiter middleware. Limits the amount of requests.
 
 ```js
 import RateLimiter from "@adaptivestone/framework/services/http/middleware/RateLimiter.js";
 ```
 
-As rate limited we are using [node-rate-limiter-flexible](https://github.com/animir/node-rate-limiter-flexible) module. Please refer to module documentation for more details
+For rate limiting, we are using the [node-rate-limiter-flexible](https://github.com/animir/node-rate-limiter-flexible) module. Please refer to the module documentation for more details.
 
-Basic idea of a rate limiter is that we have some weight of the call and some key that has ‘credits’ . Each call consumes ‘credits’ and when it is 0 then the request is blocked.
+The basic idea of a rate limiter is that we have some weight for the call and some key that has ‘credits’. Each call consumes ‘credits’, and when it reaches 0, the request is blocked.
 
-Same samples - login protection. We can generate rate limiters based on user email and limit for each email only by 5 calls per minute. Or we can construct more complex login that included user IPs, etc
+Some samples - login protection. We can generate rate limiters based on the user's email and limit each email to only 5 calls per minute. Or we can construct a more complex login that includes user IPs, etc.
 
 #### Parameters
 
-Be default rate key generated based on Route, IP and userID. But you can adjust it via config (global) or via middleware parameters
+By default, the rate key is generated based on the Route, IP, and userID. But you can adjust it via the config (globally) or via middleware parameters.
 
 ```javascript
   static get middleware() {
@@ -306,7 +305,7 @@ Be default rate key generated based on Route, IP and userID. But you can adjust 
   }
 ```
 
-Rate limited middleware allows you to include request components (req.body) for key generation. Please note that you have no access to req.appInfo.request on this stage
+The rate limiter middleware allows you to include request components (`req.body`) for key generation. Please note that you have no access to `req.appInfo.request` at this stage.
 
 ```javascript
   static get middleware() {
@@ -319,9 +318,9 @@ Rate limited middleware allows you to include request components (req.body) for 
   }
 ```
 
-You can find default parameters on ‘config/rateLimiter.js’. This parameters used if other parameters not provided.
+You can find the default parameters in ‘config/rateLimiter.js’. These parameters are used if other parameters are not provided.
 
-Rate limiter have multiple backends (memory, redis and mongo). Buy default 'memory' backend activated
+The rate limiter has multiple backends (memory, Redis, and Mongo). By default, the 'memory' backend is activated.
 
 ### RequestLogger
 
@@ -329,7 +328,7 @@ Rate limiter have multiple backends (memory, redis and mongo). Buy default 'memo
 import RequestLogger from "@adaptivestone/framework/services/http/middleware/RequestLogger.js";
 ```
 
-Small middleware that logs request info (route, method, status and time).
+A small middleware that logs request info (route, method, status, and time).
 
 Logs example:
 
@@ -340,7 +339,7 @@ Logs example:
 
 #### Parameters
 
-No parameters
+No parameters.
 
 ### RequestParser
 
@@ -348,17 +347,17 @@ No parameters
 import RequestParser from "@adaptivestone/framework/services/http/middleware/RequestParser.js";
 ```
 
-This is a main middleware to parse request (application/json, multipart/formdata, octet-stream, urlencoded)
+This is the main middleware to parse requests (`application/json`, `multipart/form-data`, `application/octet-stream`, `application/x-www-form-urlencoded`).
 It is based on the [formidable](https://www.npmjs.com/package/formidable) package.
-After parse data available on tre req.body
+After parsing, the data is available in `req.body`.
 
 #### Parameters
 
-No parameters
+No parameters.
 
 ### Role
 
-Check user role (user.roles property). If the user has no role then stop request and return error. OR logic (any role will pass user)
+Checks the user role (`user.roles` property). If the user does not have the role, it stops the request and returns an error. It uses OR logic (any of the specified roles will allow the user to pass).
 
 ```js
 import Role from "@adaptivestone/framework/services/http/middleware/Role.js";
@@ -366,7 +365,7 @@ import Role from "@adaptivestone/framework/services/http/middleware/Role.js";
 
 #### Parameters
 
-roles - array of roles to check. OR logic (any role)
+`roles` - an array of roles to check. It uses OR logic (any role will pass).
 
 ```javascript
   static get middleware() {
@@ -382,7 +381,7 @@ roles - array of roles to check. OR logic (any role)
 
 :::warning
 
-Decrecated and femoved in version 5. Better to use http server (nginx, etc) to handle static files
+Deprecated and removed in version 5. It is better to use an HTTP server (Nginx, etc.) to handle static files.
 :::
 
 ```bash
@@ -416,11 +415,11 @@ server {
 import StaticFiles from "@adaptivestone/framework/services/http/middleware/StaticFiles.js";
 ```
 
-Handle static files. Moslty for the dev purposes. In production better to handle files via webserver.
+Handles static files. Mostly for development purposes. In production, it is better to handle files via a web server.
 
 #### Parameters
 
-folders - array of folders to hanle files. Required parameter
+`folders` - an array of folders to handle files from. Required parameter.
 
 ```javascript
   static get middleware() {
@@ -432,16 +431,16 @@ folders - array of folders to hanle files. Required parameter
   }
 ```
 
-## Creating own middlewares (or integrate external)
+## Creating Your Own Middlewares (or Integrating External Ones)
 
-You can create your own middleware. To do that you should extend AbstractMiddleware and provide at least two own functions - description and middleware. Please check code bellow
+You can create your own middleware. To do that, you should extend `AbstractMiddleware` and provide at least two of your own functions: `description` and `middleware`. Please check the code below.
 
 ```js
 import AbstractMiddleware from "@adaptivestone/framework/services/http/middleware/AbstractMiddleware.js";
 
 class CustomMiddleware extends AbstractMiddleware {
   static get description() {
-    return "Middleware descrition";
+    return "Middleware description";
   }
 
   // optional
@@ -459,7 +458,7 @@ class CustomMiddleware extends AbstractMiddleware {
 
   // optional
   get relatedQueryParameters() {
-    // Yup object which defines middleware related req.query parameters, allows to validate and get those parameters in req.appInfo.query relative to the route in which the middleware is declared
+    // A Yup object that defines middleware-related `req.query` parameters. It allows you to validate and get those parameters in `req.appInfo.query` relative to the route in which the middleware is declared.
     return yup.object().shape({
       limit: yup.number(), // For example
     });
@@ -467,7 +466,7 @@ class CustomMiddleware extends AbstractMiddleware {
 
   // optional
   get relatedRequestParameters() {
-    // Yup object which defines middleware related req.body parameters, allows to validate and get those parameters in req.appInfo.request relative to the route in which the middleware is declared
+    // A Yup object that defines middleware-related `req.body` parameters. It allows you to validate and get those parameters in `req.appInfo.request` relative to the route in which the middleware is declared.
     return yup.object().shape({
       name: yup.string().required(), // For example
     });
@@ -480,9 +479,9 @@ class CustomMiddleware extends AbstractMiddleware {
       return res.status(400).json({});
     }
     if (this.params.iiii) {
-      // we can also check all params that we passed during init
+      // we can also check all the params that we passed during init
     }
-    // go to next one
+    // go to the next one
     return next();
   }
 }

@@ -1,12 +1,12 @@
 # Routes
 
-Routes relative to controller route. You SHOULD not use the full route here.
+Routes are relative to the controller route. You SHOULD NOT use the full route here.
 
-Route Objects have multiple levels.
+Route objects have multiple levels.
 
-## Route first level (method level)
+## Route First Level (Method Level)
 
-On a first level only ‘method’ (post, put, delete, etc) exists. Only request with this methods will go depers on real routes.
+On the first level, only the ‘method’ (post, put, delete, etc.) exists. Only requests with these methods will go deeper into the real routes.
 
 ```js
 import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
@@ -23,27 +23,27 @@ class ControllerName extends AbstractController {
       put: {
         // put routes
       },
-      // etc
+      // etc.
     };
   }
 }
 export default ControllerName;
 ```
 
-## Route second level (path level)
+## Route Second Level (Path Level)
 
-Inside methods (second level) we have a path. It follows https://expressjs.com/en/guide/routing.html#route-paths express documentation
+Inside the methods (second level), we have a path. It follows the https://expressjs.com/en/guide/routing.html#route-paths Express documentation.
 
 :::tip
-In most cases few options in enough
+In most cases, a few options are enough:
 
 ```js
 "/fullpath";
 
-// grab variables  paramOne and paramTwo into req.params
+// Grab variables paramOne and paramTwo into req.params
 "/fullpath/:paramOne/:paramTwo";
 
-// like previous but "paramTwo" snow optional
+// Like the previous one, but "paramTwo" is now optional
 "/fullpath/:paramOne/{:paramTwo}";
 ```
 
@@ -51,10 +51,10 @@ In most cases few options in enough
 
 :::note
 
-Order of routes matters. First matched route will be execute
+The order of routes matters. The first matched route will be executed.
 :::
 
-Example
+Example:
 
 ```js
 import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
@@ -66,9 +66,9 @@ class ControllerName extends AbstractController {
         "/someUrl": {
           handler: this.postSomeUrl,
           request: yup.object().shape({
-            count: yup.number().max(100)required(),
-          })
-        }
+            count: yup.number().max(100).required(),
+          }),
+        },
       },
     };
   }
@@ -76,20 +76,20 @@ class ControllerName extends AbstractController {
 export default ControllerName;
 ```
 
-## Route third level (route object level)
+## Route Third Level (Route Object Level)
 
-On the third level we have an "route object" special object that will describe our route.
+On the third level, we have a "route object," a special object that will describe our route.
 
 ```js
 {
   handler: this.postSomeUrl, // required
   request: yup.object().shape({ // optional
-    count: yup.number().max(100)required(),
+    count: yup.number().max(100).required(),
   }),
   query: yup.object().shape({ // optional
     page: yup.number().required(),
   }),
-  middleware: [RateLimiter] // optional
+  middleware: [RateLimiter], // optional
   description: yup.string() // optional
 }
 
@@ -98,123 +98,123 @@ On the third level we have an "route object" special object that will describe o
 Here:
 
 ```js
-Handler; // some async function (most likely on this controller file) that will do all job
-Request; //special interface that will do validation body parameters for you
-Query; //special interface that will do validation query parameters for you
-Middleware; // array of middlewares specially for current route
-Description; // description of this route (used when generating documentation)
+Handler; // Some async function (most likely in this controller file) that will do all the work.
+Request; // A special interface that will do validation of body parameters for you.
+Query; // A special interface that will do validation of query parameters for you.
+Middleware; // An array of middlewares specially for the current route.
+Description; // A description of this route (used when generating documentation).
 ```
 
 ## Request
 
-Request did a validation and casting of an upcoming req.body.
+Request does validation and casting of an upcoming `req.body`.
 
-As we want to use already well defined solutions we believe that [yup](https://github.com/jquense/yup) is a great sample of how schema should be validated.
+As we want to use already well-defined solutions, we believe that [yup](https://github.com/jquense/yup) is a great example of how a schema should be validated.
 
-But you still have ability to provide own validation based on interface
+But you still have the ability to provide your own validation based on an interface.
 
 :::warning
 Request works on a body level.
 :::
 
-Request contains all fields from req.body and pass it into validation
+Request contains all fields from `req.body` and passes them into validation.
 
 :::warning
-Please note that GET methods have no BODY
+Please note that GET methods have no BODY.
 :::
 
-Parameters after validation available as req.appInfo.request.
+Parameters after validation are available as `req.appInfo.request`.
 
 :::warning
-Do not use req.body directly. Always use parameters via req.appInfo.request
+Do not use `req.body` directly. Always use parameters via `req.appInfo.request`.
 
 :::
 
 ## Query
 
-Query did a validation and casting of an upcoming req.query.
+Query does validation and casting of an upcoming `req.query`.
 
-Yup scheme is described similarly to request.
+The Yup schema is described similarly to the request.
 
 :::warning
 Query works on a query level.
 :::
 
-Query contains all fields from req.query and pass it into validation
+Query contains all fields from `req.query` and passes them into validation.
 
-Parameters after validation available as req.appInfo.query
+Parameters after validation are available as `req.appInfo.query`.
 
 :::warning
-Do not use req.query directly. Always use parameters via req.appInfo.query
+Do not use `req.query` directly. Always use parameters via `req.appInfo.query`.
 
 :::
 
-## Yup validation
+## Yup Validation
 
 ```js
-  request: yup.object().shape({
-    count: yup.number().max(100)required("error text"),
-  })
-  query: yup.object().shape({
-    page: yup.number(),
-  })
+request: yup.object().shape({
+  count: yup.number().max(100).required("error text"),
+});
+query: yup.object().shape({
+  page: yup.number(),
+});
 ```
 
-Please follow yup documentation for a deeper understanding of how schemas work. All parameters is located here [https://github.com/jquense/yup#api](https://github.com/jquense/yup#api)
+Please follow the Yup documentation for a deeper understanding of how schemas work. All parameters are located here: [https://github.com/jquense/yup#api](https://github.com/jquense/yup#api).
 
 Example:
 
 ```js
 request: yup.object().shape({
-  name: yup.string().required("validation.name"), // you can use i18n keys here
-  email: yup.string().email().required("Email required field"), // or just text
+  name: yup.string().required("validation.name"), // You can use i18n keys here.
+  email: yup.string().email().required("Email required field"), // Or just text.
   message: yup
     .string()
     .required("Message required field")
-    .min(30, "minimum 30 chars"), // additional validators for different types exists
+    .min(30, "minimum 30 chars"), // Additional validators for different types exist.
   pin: yup.number().integer().min(1000).max(9999).required("pin.pinProvided"),
   status: yup
     .string()
     .required("Status required field")
-    .oneOf(["WAITING", "CANCELED"]), // pne of
+    .oneOf(["WAITING", "CANCELED"]), // One of.
   transaction: yup
-    .object() // ddep level object
+    .object() // Deep-level object.
     .shape({
       to: yup.string().required(),
       amount: yup.number().required(),
-      coinName: yup.string().oneOf(["btc", "etc"]).default("etc"), // default
+      coinName: yup.string().oneOf(["btc", "etc"]).default("etc"), // Default.
     })
     .required(),
 });
 ```
 
-### File validation
+### File Validation
 
-For a file validation we provide a special yup class YupFile. It really simple to use it
+For file validation, we provide a special Yup class, `YupFile`. It is really simple to use.
 
 ```js
 import { YupFile } from "@adaptivestone/framework/helpers/yup.js";
 
 request: yup.object().shape({
   someFileName: new YupFile().required("error text"),
-  otherFiled: yup.string().required(), // yes you can mix it with regular data
+  otherFiled: yup.string().required(), // Yes, you can mix it with regular data.
 });
 ```
 
 :::warning
-Please be aware that file only can be uploaded by ‘multipart/formdata’ and because of it you can’t use nested objects 
+Please be aware that a file can only be uploaded by ‘multipart/form-data’, and because of this, you can’t use nested objects.
 :::
 
-### Own validation
+### Own Validation
 
-To create own validator your object should have two methods:
+To create your own validator, your object should have two methods:
 
 ```js
-async validate(req.body) //throw an error on validation vailed
-async cast(req.body) // should strip unknown parametes
+async validate(req.body) // Throw an error on validation failed.
+async cast(req.body) // Should strip unknown parameters.
 ```
 
-Or error throw error object should provide “errors” array - error (why validation failed) and "path" string - body parameter
+The error object should provide an “errors” array - error (why validation failed) and a "path" string - body parameter.
 
 ```js
 try {
@@ -229,19 +229,19 @@ req.appInfo.request = request.cast;
 
 ### i18n
 
-On any fields that can generate an error (required, etc) you can use i18n keys to translate. Framework will handle translation for you
+In any fields that can generate an error (required, etc.), you can use i18n keys to translate. The framework will handle the translation for you.
 
-Please reffer to [i18n documentation](08-i18n.md)
+Please refer to the [i18n documentation](08-i18n.md).
 
 ## Handler
 
-Handler - some async function (most likely on this controller file) that will do all the job. Better to write function on the same file
+Handler - some async function (most likely in this controller file) that will do all the work. It is better to write the function in the same file.
 
 :::warning
-Handler only can be an **async** function.  
+The handler can only be an **async** function.
 :::
 
-req.appInfo.app
+`req.appInfo.app`
 
 ```js
 import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
@@ -253,20 +253,20 @@ class ControllerName extends AbstractController {
         '/': {
           handler: this.postSample,
           request: yup.object().shape({
-            count: yup.number().max(100)required(),
+            count: yup.number().max(100).required(),
           })
         }
       }
     }
   }
-  // send request with data  {count: "5000"}
-  // will produce error with status 400 and {errors: {count:['Text error']}}
+  // Send a request with data {count: "5000"}.
+  // Will produce an error with status 400 and {errors: {count:['Text error']}}.
 
-  postSample(req,res) =>{
-    // on success validate we pass here.
+  postSample(req, res) {
+    // On success validation, we pass here.
     // {count: "5000"}
     console.log(req.appInfo.request)
-    // {count: 5000} -> casted to number
+    // {count: 5000} -> casted to a number
 
     const SomeModel = this.app.getModel('SomeModel');
     const SomeModelAlternativeWay = req.appInfo.app.getModel('SomeModel');
@@ -275,7 +275,7 @@ class ControllerName extends AbstractController {
 
     const someModel = await SomeModel.findOne({count});
 
-    return res.status(200).json({modelId:someModel.id});
+    return res.status(200).json({modelId: someModel.id});
   }
 
 }
@@ -284,11 +284,11 @@ export default ControllerName;
 
 ### Middleware
 
-Middleware - array of middlewares specially for current route
+Middleware - an array of middlewares specially for the current route.
 
 :::warning
 
-Route middlewares takes precedence over middlewares into controllers
+Route middlewares take precedence over middlewares in controllers.
 
 :::
 
@@ -300,7 +300,7 @@ class ControllerName extends AbstractController {
     return {
       get: {
         '/routeName': {
-          handler: ...
+          handler: ...,
           middleware: [MiddlewareName, MiddlewareName, etc]
         }
       },
@@ -310,15 +310,15 @@ class ControllerName extends AbstractController {
 export default ControllerName;
 ```
 
-Similarly controller middlewares you can use middlewares with parameters
+Similarly to controller middlewares, you can use middlewares with parameters.
 
 :::note
 
-Rules for the design of middlewares with parameters are described in the subsection "Middleware"
+The rules for the design of middlewares with parameters are described in the subsection "Middleware".
 
 :::
 
-Sample
+Sample:
 
 ```javascript
 import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
@@ -329,7 +329,7 @@ class ControllerName extends AbstractController {
     return {
       get: {
         '/routeName': {
-          handler: ...
+          handler: ...,
           middleware: [[RoleMiddleware, { roles: ['client'] }]]
         }
       },
