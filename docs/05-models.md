@@ -1,8 +1,8 @@
 # Models
 
-The framework is based on the [mongoose](https://mongoosejs.com/) library and provides direct access to mongoose.
+The framework is based on the [Mongoose](https://mongoosejs.com/) library and provides direct access to it.
 
-The model takes care of the database connection.
+The model handles database connections.
 
 :::note
 
@@ -10,26 +10,26 @@ Model files are part of the [framework inheritance process](03-files-inheritance
 
 :::
 
-The model uses a class with statics and provides auto-typing for each model. There are also TypeScript helpers to extract types from the model class.
+The model uses a class with static methods and properties, providing auto-typing for each model. TypeScript helpers are also available to extract types from the model class.
 
 ## Lifecycle
 
-The framework can do the following for you:
+The framework can do the following:
 
 1. Load model files
 2. Initialize model files
 
-There are internal options to do this (see the Commands section). It is mostly used in commands where you can skip initializing the model or load the model but not initialize it (there are a few use cases, mostly for type generation).
+There are internal options for this (see the Commands section), which are mostly used in commands where you can skip model initialization or load the model without initializing it. This is useful in a few use cases, primarily for type generation.
 
-Under normal conditions, the framework will scan the model folder and load all models with the inheritance process.
+Under normal conditions, the framework scans the `model` folder and loads all models using the inheritance process.
 
-This is mostly needed to avoid model 'circular dependency'.
+This is primarily to avoid model 'circular dependencies.'
 
 ## Base Model
 
-Base model is a core for you model. It take care of structure and init model.
-We have provided typescript examply, but you can ignore types if you want to you JavaScript only.
-Types is a fully optional
+The base model is the core of your models. It handles their structure and initialization.
+We have provided a TypeScript example, but you can ignore the types if you only want to use JavaScript.
+Using types is fully optional.
 
 ```ts
 import { BaseModel } from "@adaptivestone/framework/modules/BaseModel.js";
@@ -37,25 +37,25 @@ import { BaseModel } from "@adaptivestone/framework/modules/BaseModel.js";
 // in case you need to access appInstance - appInstance.getConfig('s3');
 import { appInstance } from "@adaptivestone/framework/helpers/appInstance.js";
 
-// this is a typscript helpers
+// These are TypeScript helpers.
 import type {
-  GetModelTypeFromClass, // GetModelTypeFromClass return model types from class.
-  GetModelTypeLiteFromSchema, // Same, but only use schema to avoid curular linking
+  GetModelTypeFromClass, // `GetModelTypeFromClass` returns model types from the class.
+  GetModelTypeLiteFromSchema, // Same as above, but only uses the schema to avoid circular linking.
 } from "@adaptivestone/framework/modules/BaseModel.js";
 
 import type { Schema } from "mongoose";
 
-// type helper for static and instance methods
+// Type helper for static and instance methods.
 type SomeModelLite = GetModelTypeLiteFromSchema<typeof SomeModel.modelSchema>;
 
 class SomeModel extends BaseModel {
   static initHooks(schema: Schema): void {
-    // A place to initialize plugins, indexes, etc.
-    // As it happens after the class is loaded into Mongoose, but before Mongoose initializes the class.
+    // A place to initialize plugins, indexes, and so on.
+    // This happens after the class is loaded into Mongoose but before Mongoose initializes it.
     // schema.plugin(PLUGIN_NAME);
     schema.index({ name: "text" }); // or indexes.
 
-    // for hooks there are two types of 'this' - model asd queries
+    // For hooks, there are two types of `this`: model and queries.
     // https://mongoosejs.com/docs/middleware.html#types-of-middleware
     schema.pre(
       'save',
@@ -64,14 +64,14 @@ class SomeModel extends BaseModel {
       }
     );
     schema.pre('findOneAndDelete', async function () {
-      const docToDelete = await this.model.findOne<SomeModelLite>( // help to return proper model
+      const docToDelete = await this.model.findOne<SomeModelLite>( // Helps to return the correct model.
         this.getQuery(),
       );
     });
   }
 
-  // Here the Mongoose schema goes.
-  // This is a full Mongoose schema.
+  // The Mongoose schema goes here.
+  // This is a complete Mongoose schema.
   // Please refer to the Mongoose documentation: https://mongoosejs.com/docs/guide.html
   static get modelSchema() {
     return {
@@ -80,39 +80,39 @@ class SomeModel extends BaseModel {
       lastName: String,
       email: String,
       orders: {
-        type: mongoose.Schema.Types.ObjectId, // this is a correct type for ObjectID referenct. Only it generates valid types
-        ref: "Order", // you should not care of inited model schemas. Framework will load and init all models for you
+        type: mongoose.Schema.Types.ObjectId, // This is the correct type for an ObjectID reference. Only this type generates valid types.
+        ref: "Order", // You don't need to worry about initialized model schemas; the framework will load and initialize all models for you.
       },
-    } as const; // this helpt to generate better types. TS only
+    } as const; // This helps generate better types (TypeScript only).
   }
 
-  // Here the Mongoose schema options go.
+  // The Mongoose schema options go here.
   // Please refer to the Mongoose documentation: https://mongoosejs.com/docs/guide.html#options
   static get schemaOptions() {
     return {
       read: "primary",
-    } as const; // this helpt to generate better types. TS only
+    } as const; // This helps to generate better types. (TypeScript only)
   }
 
   /**
-   *  Object with a static methods
+   *  Object with static methods.
    * this.app.getModel('SomeModel').findByEmail('email');
    * this.app.getModel('SomeModel').getInfoStatic();
    *
    */
   static get modelStatics() {
-    type OrderModelType = GetModelTypeFromClass<typeof Order>; // to help on populate
+    type OrderModelType = GetModelTypeFromClass<typeof Order>; // To help with the `populate` method.
 
     return {
       findByEmail: async function findByEmail(
-        this: SomeModelLite, // type helper to map for proper this
+        this: SomeModelLite, // A type helper to map to the correct `this` context.
         email: string
       ) {
         const instance = await this.find({ email });
         return instance;
       },
       getInfoStatic: async function getInfoStatic(
-        model: InstanceType<SomeModelLite> // typescript type helper
+        model: InstanceType<SomeModelLite> // A TypeScript type helper.
       ) {
         await model.populate("orders");
         return {
@@ -121,7 +121,7 @@ class SomeModel extends BaseModel {
         };
       },
       getInfoStaticWithOrders: async function getInfoStatic(
-        // intersept model types to make sure that orders type is correctly (without interseption it going be only ObjectID)
+        // Intercepts model types to ensure that the `orders` type is correct (without interception, it will be just an `ObjectID`).
         model: InstanceType<SomeModelLite> & {
           orders: InstanceType<OrderModelType>[];
         }
@@ -137,7 +137,7 @@ class SomeModel extends BaseModel {
   }
 
   /**
-   * as well we should have instance methods for model to interact with
+   * We should also have instance methods for the model to interact with.
    * const SomeModel = appInstance.getModel('SomeModel');
    * const someModel = await SomeModel.findOne({email:"cfff"});
    * const data = await someModel.getInfo(); // call instance method
@@ -152,12 +152,12 @@ class SomeModel extends BaseModel {
           email: this.email,
         };
       },
-      anotherMethod,
+            // anotherMethod,
     } as const;
   }
 
   /**
-   * as well we should have viruals methods for model to interact with
+   * We should also have virtual methods for the model to interact with.
    * const SomeModel = appInstance.getModel('SomeModel');
    * const someModel = await SomeModel.findOne({email:"cfff"});
    * const fullName = await someModel.fullName // virtual field
@@ -171,11 +171,11 @@ class SomeModel extends BaseModel {
           type: Object, // schema
         },
         get(this: InstanceType<SomeModelLite>) {
-          // getter
+          // Getter
           return `${this.firtsName} ${this.lastName}`;
         },
         async set(this: InstanceType<SomeModelLite>, v: string) {
-          // setter
+          // Setter
           const firstName = v.substring(0, v.indexOf(" "));
           const lastName = v.substring(v.indexOf(" ") + 1);
           this.set({ firstName, lastName });
@@ -184,13 +184,13 @@ class SomeModel extends BaseModel {
     } as const;
   }
 
-  // Setters will also be a virtual.
+  // Setters will also be virtual.
   // const SomeModels = this.app.getModel("SomeModel").
   // const someModelInstance = new SomeModel();
   // Vanilla JavaScript assignment triggers the setter.
   // someModelInstance.fullName = 'Jean-Luc Picard';
   set fullName(v) {
-    // `v` is the value being set, so use the value to set
+    // `v` is the value being set, so use it to set
     // `firstName` and `lastName`.
     const firstName = v.substring(0, v.indexOf(" "));
     const lastName = v.substring(v.indexOf(" ") + 1);
@@ -200,19 +200,19 @@ class SomeModel extends BaseModel {
 
 export default SomeModel;
 
-// good practice to return type from model
+// It's good practice to return the type from the model.
 export type TSomeModel = GetModelTypeFromClass<SomeModel>;
 ```
 
 :::warning
 
-Models are united once per process, and then the united instances are cached. Do NOT expect constructor or `init` hook calls on every model loading.
+Models are instantiated once per process, and their instances are then cached. Do not expect constructor or `init` hook calls on every model load.
 
 :::
 
 :::tip
 
-Please do not name the model in plural form.
+Please do not use the plural form for model names.
 
 **Bad** - Coin**s**
 
@@ -235,7 +235,7 @@ const userInstance = await UserModel.findOne({ email: "user@email.com" });
 
 ## Configuration
 
-The main configuration variable is the "MONGO_DSN" environment variable. Based on it, the model will make a connection to the database.
+The main configuration variable is the `MONGO_DSN` environment variable, which the model uses to connect to the database.
 
 ## Built-in Models
 
@@ -243,18 +243,18 @@ The framework comes with a few built-in models.
 
 ### User
 
-It's a part of the authorization system. It takes care of storing users, hashing passwords, and provides some basic functions for token generation and getting users.
+It is part of the authorization system and handles user storage, password hashing, and provides basic functions for token generation and user retrieval.
 
-If you want to have your own user implementation, you should overwrite or disable it.
+If you want to create your own user implementation, you should override or disable this one.
 
-The auth controller depends on this model.
+The authentication controller depends on this model.
 
 #### API
 
 ```js
 const UserModel = this.app.getModel("User");
 const user = await UserModel.getUserByEmailAndPassword("email", "password");
-const userToken = await user.generateToken(); // generate and store token in the database
+const userToken = await user.generateToken(); // Generates and stores a token in the database
 const userPublic = await user.getPublic();
 const hashedPassword = await UserModel.hashPassword("password");
 const sameUser = await UserModel.getUserByToken(userToken);
@@ -274,23 +274,23 @@ const isSuccess2 = await user.sendVerificationEmail(i18n);
 
 ### Migration
 
-The migration model is a helper for the migration subsystem. It stores migrated files to make sure that a migration is executed only once.
+The migration model is a helper for the migration subsystem. It stores the names of migrated files to ensure that each migration is only executed once.
 
-Please refer to CLI/migrations for more details.
+Please refer to the `CLI/migrations` section for more details.
 
-You probably should not use this model directly.
+You should probably not use this model directly.
 
 ### Sequence
 
-The Sequence model allows you to generate sequences by name. This is a cross-server-safe method to generate sequences in a distributed environment.
+The Sequence model allows you to generate sequences by name. This is a cross-server-safe method for generating sequences in a distributed environment.
 
 ```javascript
 const SequenceModel = this.app.getModel("Sequence");
-// will be 1
+// Will be 1.
 const someTypeSequence = await SequenceModel.getSequence("someType");
-// will be 2
+// Will be 2.
 const someTypeSequence2 = await SequenceModel.getSequence("someType");
-// will be 1 as the type is different
+// Will be 1, as the type is different.
 const someAnotherTypeSequence = await SequenceModel.getSequence(
   "someAnotherType"
 );
@@ -298,11 +298,11 @@ const someAnotherTypeSequence = await SequenceModel.getSequence(
 
 ### Lock
 
-The Lock model is designed to provide the ability to lock some resources in a distributed environment.
+The Lock model provides the ability to lock resources in a distributed environment.
 
-This can be for external requests, some actions in the system, etc.
+This can be used for external requests, system actions, etc.
 
-Imagine that you have a lot of traffic that asks an external system for some data. You have a cache of this data as well, but initially, you shall ask the internal API to get this data. And you want to make sure that you are asking this API for that data only one time and other same-time requests will wait for the result instead of asking the API. This is where the Lock model can help you.
+Imagine you have a high volume of traffic requesting data from an external system. You also have a cache for this data, but you must initially query the internal API to retrieve it. To prevent overwhelming the API, you want to ensure that you only request the data once and that other simultaneous requests wait for the result instead of making redundant calls. This is where the Lock model can help.
 
 ```javascript
 
@@ -352,9 +352,9 @@ Example of usage:
 ```javascript
 
 async someHTTPRequestWithExpensiveExternalAPI(req, res) {
-  // We have some external requests (these can be same-time requests from different users).
+  // We have some external requests, which can be simultaneous requests from different users.
   const LockModel = this.app.getModel("Lock");
-  // Let's say it's an AI processing of a video (for example).
+  // Let's say it's AI processing of a video, for example.
   const { videoId } = req.appInfo.request;
 
   // Check if we already have it.
@@ -366,7 +366,7 @@ async someHTTPRequestWithExpensiveExternalAPI(req, res) {
 
   const lockName = `video-ai-processing-${videoId}`;
 
-  // We don't have that video, let's send it to processing with a lock.
+  // We don't have that video, so let's send it for processing using a lock.
   const isLockAcquired = await LockModel.acquireLock(lockName);
   if (isLockAcquired) {
     const result = await videoAIService.processVideo(videoId);
@@ -377,15 +377,15 @@ async someHTTPRequestWithExpensiveExternalAPI(req, res) {
     return res.json(videoModel.getPublic());
   }
 
-  // We don't have a lock, let's wait for it.
+  // We don't have a lock, so let's wait for one.
   await LockModel.waitForUnlock(lockName);
-  // It looks like the external process is done, let's check if we have the result.
+  // It looks like the external process is finished, so let's check for the result.
   const videoAI2 = await VideoAIModel.findOne({ videoId });
   if (videoAI2) {
     return res.json(videoAI.getPublic());
   }
 
-  // We don't have a result, let's return an error.
+  // If there's no result, we'll return an error.
   return res.status(500).json({ error: "Something went wrong" });
 }
 ```
