@@ -63,7 +63,7 @@ Example:
 global.testSetup = {
   disableUserCreate: true, // We disabled the default user creation
   beforeAll: async () => {
-    const User = global.server.app.getModel("User");
+    const User = appInstance.getModel("User");
     global.user = await User.create({
       email: "test@test.com",
       password: "testPassword",
@@ -85,9 +85,19 @@ global.testSetup = {
 
 ### Default User for Testing
 
-By default, a user with the email 'test@test.com' and password 'testPassword' is created. The user instance is available as `global.user` and the auth token as `global.authToken`.
+you able to call creating of default user. User not created by default. You should call in manually
 
-You can change this behavior with the global variable `global.testSetup.disableUserCreate`.
+```js
+import {
+  defaultUser, // instance if user if default user was created
+  defaultAuthToken, // default token for auth if user was created
+  createDefaultTestUser, // create default user and populate defaultUser and defaultAuthToken.
+} from "@adaptivestone/framework/tests/testHelpers.js";
+
+const { user, token } = await createDefaultTestUser();
+// defaultUser - same user
+// defaultAuthToken - same token
+```
 
 ## Mongo Instance
 
@@ -218,7 +228,10 @@ const url = getTestServerURL("/auth");
 Full example:
 
 ```js
-import { getTestServerURL } from "@adaptivestone/framework/tests/testHelpers.ts";
+import {
+  getTestServerURL,
+  defaultAuthToken,
+} from "@adaptivestone/framework/tests/testHelpers.ts";
 
 describe("module", () => {
   describe("function", () => {
@@ -228,7 +241,7 @@ describe("module", () => {
         method: "POST",
         headers: {
           "Content-type": "application/json",
-          Authorization: global.User.token.token,
+          Authorization: defaultAuthToken,
         },
         body: JSON.stringify({
           // request object
@@ -240,6 +253,22 @@ describe("module", () => {
     });
   });
 });
+```
+
+## Test Helpers
+
+Framework provides set of helpers to simplyfy testing
+
+```js
+import {
+  getTestServerURL, // return server url for teesting  getTestServerURL('auth');
+  defaultUser, // instance if user if default user was created
+  defaultAuthToken, // default token for auth if user was created
+  serverInstance, // server instance for low level interaction
+  createDefaultTestUser, // create default user and populate defaultUser and defaultAuthToken.
+  setDefaultUser, // in case you want to have own user implementation setDefaultUser(yourUser)
+  setDefaultAuthToken, // in case you want to have own user implementation setDefaultAuthToken(token)
+} from "@adaptivestone/framework/tests/testHelpers.js";
 ```
 
 ## Mock
