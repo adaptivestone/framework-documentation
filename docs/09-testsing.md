@@ -30,8 +30,8 @@ The minimum Vite config file should contain:
 
 ```js
   test: {
-    globalSetup: [ // This script will start Mongo
-      'node_modules/@adaptivestone/framework/tests/globalSetupVitest',
+    globalSetup: [ // This script will start Mongo (DIST in important there)
+      'node_modules/@adaptivestone/framework/dist/tests/globalSetupVitest',
     ],
     setupFiles: [
       './src/tests/setup.js', // This is a local config file (see below)
@@ -198,36 +198,44 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 ```
 
-## HTTP Endpoint Testing
+## Server isntance access
 
-The framework provides a special function `global.server.testingGetUrl` to detect the testing URL.
+Possible that in testing you will need to have low level access to server itself. We have helper there too
 
 ```js
-const url = global.server.testingGetUrl("/auth");
+import { serverInstance } from "@adaptivestone/framework/tests/testHelpers.ts";
+```
+
+## HTTP Endpoint Testing
+
+The framework provides a special function `getTestServerURL` to help you construct full url for testing.
+
+```js
+import { getTestServerURL } from "@adaptivestone/framework/tests/testHelpers.js";
+const url = getTestServerURL("/auth");
 ```
 
 Full example:
 
 ```js
+import { getTestServerURL } from "@adaptivestone/framework/tests/testHelpers.ts";
+
 describe("module", () => {
   describe("function", () => {
     it("test", async () => {
       expect.assertions(1);
-      const { status } = await fetch(
-        global.server.testingGetUrl("/some/endpoint"),
-        {
-          method: "POST",
-          headers: {
-            "Content-type": "application/json",
-            Authorization: global.User.token.token,
-          },
-          body: JSON.stringify({
-            // request object
-            oneData: 1,
-            secondDate: 2,
-          }),
-        }
-      ).catch(() => {});
+      const { status } = await fetch(getTestServerURL("/some/endpoint"), {
+        method: "POST",
+        headers: {
+          "Content-type": "application/json",
+          Authorization: global.User.token.token,
+        },
+        body: JSON.stringify({
+          // request object
+          oneData: 1,
+          secondDate: 2,
+        }),
+      }).catch(() => {});
       expect(status).toBe(400);
     });
   });
