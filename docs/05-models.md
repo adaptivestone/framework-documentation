@@ -153,7 +153,7 @@ class SomeModel extends BaseModel {
         };
       },
             // anotherMethod,
-    } as const;
+    };
   }
 
   /**
@@ -181,7 +181,7 @@ class SomeModel extends BaseModel {
           this.set({ firstName, lastName });
         },
       },
-    } as const;
+    }; // make sure that you not put it as a const
   }
 
 }
