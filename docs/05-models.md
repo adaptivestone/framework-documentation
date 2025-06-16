@@ -184,18 +184,6 @@ class SomeModel extends BaseModel {
     } as const;
   }
 
-  // Setters will also be virtual.
-  // const SomeModels = this.app.getModel("SomeModel").
-  // const someModelInstance = new SomeModel();
-  // Vanilla JavaScript assignment triggers the setter.
-  // someModelInstance.fullName = 'Jean-Luc Picard';
-  set fullName(v) {
-    // `v` is the value being set, so use it to set
-    // `firstName` and `lastName`.
-    const firstName = v.substring(0, v.indexOf(" "));
-    const lastName = v.substring(v.indexOf(" ") + 1);
-    this.set({ firstName, lastName });
-  }
 }
 
 export default SomeModel;
