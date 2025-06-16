@@ -34,62 +34,73 @@ The minimum Vite config file should contain:
       'node_modules/@adaptivestone/framework/dist/tests/globalSetupVitest',
     ],
     setupFiles: [
-      './src/tests/setup.js', // This is a local config file (see below)
-      '@adaptivestone/framework/tests/setupVitest', // This is the entry point for testing from the framework
+      '@adaptivestone/framework/tests/setupVitest', // This is the entry point for testing from the  framework
+      './src/tests/setup.ts', // This is a local config file (see below)
     ],
   }
 ```
 
-### global.testSetup
+### Global setup (once per test running)
 
-This is a special variable that configures the global behavior of tests.
+You are able to provide additional setup and teardown functions to global setup.
+Just add your implementation in an additional (or instead of) globalSetup
 
-You have two hooks that will happen globally before and after the test run:
-
+```js
+  test: {
+    globalSetup: [
+      'node_modules/@adaptivestone/framework/dist/tests/globalSetupVitest',
+      './src/tests/globalSetup.ts', // custom file for global setup and teardown
+    ],
+    // ...
+  }
 ```
-global.testSetup.beforeAll
-global.testSetup.afterAll
+
+### Custom hooks (beforeAll, etc) per test
+
+Testing helpers provide isolation of modules, and we run preparation of the framework and teardown for each test as well.
+
+```js
+  test: {
+    //...
+    setupFiles: [
+      '@adaptivestone/framework/tests/setupVitest', // This is the entry point for testing from the  framework
+      './src/tests/setup.ts', // <-- we are able to provide custom logic there
+    ],
+  }
 ```
 
-In addition, you have the ability to disable the default user creation by adjusting the variable:
-
-```
-global.testSetup.disableUserCreate
-```
+You can provide any amount of testing configs
 
 Example:
 
-```js src/tests/setup.js on project level
-global.testSetup = {
-  disableUserCreate: true, // We disabled the default user creation
-  beforeAll: async () => {
-    const User = appInstance.getModel("User");
-    global.user = await User.create({
-      email: "test@test.com",
-      password: "testPassword",
-      role: ["admin"], // This is new behavior
-    }).catch((e) => {
-      console.error(e);
-      console.info(
-        "That error can happen in case you have a custom user model. Please use the global.testSetup.disableUserCreate flag to skip user creation."
-      );
-    });
-    global.authToken = await global.user.generateToken();
-    // Here you can initialize some connections, like for a test instance of Elasticsearch or Redis.
-  },
-  afterAll: async () => {
-    // If you made a connection, do not forget to close it after the test.
-  },
-};
+```ts ./src/tests/setup.ts
+import { beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { createDefaultTestUser } from "./testHelpers.ts";
+
+beforeAll(async () => {
+  await createDefaultTestUser();
+});
+
+afterAll(async () => {
+  // do something
+});
+
+afterAll(async () => {
+  // do something
+});
+
+afterEach(async () => {
+  // do something
+});
 ```
 
 ### Default User for Testing
 
-you able to call creating of default user. User not created by default. You should call in manually
+You are able to call the creation of a default user. The user is not created by default. You should call it manually.
 
 ```js
 import {
-  defaultUser, // instance if user if default user was created
+  defaultUser, // instance of user if default user was created
   defaultAuthToken, // default token for auth if user was created
   createDefaultTestUser, // create default user and populate defaultUser and defaultAuthToken.
 } from "@adaptivestone/framework/tests/testHelpers.js";
@@ -208,9 +219,9 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 ```
 
-## Server isntance access
+## Server instance access
 
-Possible that in testing you will need to have low level access to server itself. We have helper there too
+It's possible that in testing you will need to have low-level access to the server itself. We have a helper there too.
 
 ```js
 import { serverInstance } from "@adaptivestone/framework/tests/testHelpers.ts";
@@ -218,7 +229,7 @@ import { serverInstance } from "@adaptivestone/framework/tests/testHelpers.ts";
 
 ## HTTP Endpoint Testing
 
-The framework provides a special function `getTestServerURL` to help you construct full url for testing.
+The framework provides a special function `getTestServerURL` to help you construct a full URL for testing.
 
 ```js
 import { getTestServerURL } from "@adaptivestone/framework/tests/testHelpers.js";
@@ -257,12 +268,12 @@ describe("module", () => {
 
 ## Test Helpers
 
-Framework provides set of helpers to simplyfy testing
+The framework provides a set of helpers to simplify testing.
 
 ```js
 import {
-  getTestServerURL, // return server url for teesting  getTestServerURL('auth');
-  defaultUser, // instance if user if default user was created
+  getTestServerURL, // return server URL for testing  getTestServerURL('auth');
+  defaultUser, // instance of user if default user was created
   defaultAuthToken, // default token for auth if user was created
   serverInstance, // server instance for low level interaction
   createDefaultTestUser, // create default user and populate defaultUser and defaultAuthToken.
@@ -273,7 +284,7 @@ import {
 
 ## Mock
 
-In most cases, your code depends on external services, but you still need to perform testing. Calling an external service for each test can be expensive and is not necessary. For this problem, Vitest provides mock options. That is when you, instead of calling the real SDK of a service, will call a fake function that provides the result without API calls.
+In most cases, your code depends on external services, but you still need to perform testing. Calling an external service for each test can be expensive and is not necessary. For this problem, Vitest provides mock options. This is when, instead of calling the real SDK of a service, you call a fake function that provides the result without API calls.
 
 [https://vitest.dev/api/vi.html#vi-mock](https://vitest.dev/api/vi.html#vi-mock)
 
@@ -281,7 +292,7 @@ In most cases, your code depends on external services, but you still need to per
 
 [https://vitest.dev/api/vi.html#mocking-functions-and-objects](https://vitest.dev/api/vi.html#mocking-functions-and-objects)
 
-You are able to redefine an import for your own import.
+You can redefine an import for your own import.
 
 ```js
 vi.doMock("../file.js", () => ({
@@ -314,7 +325,7 @@ jest.createMockFromModule("module");
 
 ### @google-cloud/translate example (NODE_MODULES)
 
-Assume that we have some translation helper (synthetic example) that just do and translation and register it in database for speed up for next time
+Assume that we have some translation helper (synthetic example) that just does a translation and registers it in the database to speed it up for the next time.
 
 /src/helpers/translateHelper.js
 
@@ -322,7 +333,7 @@ Assume that we have some translation helper (synthetic example) that just do and
 import { v2 } from "@google-cloud/translate";
 const translate = new v2.Translate();
 
-// no errors hanling because it example. You should hanlde error on production mode
+// no error handling because it's an example. You should handle errors in production mode
 // no model passing
 const translateHelper = async (text, language) => {
   const alreadyTranslatedData = await TranslatedModel.find({ text, language });
@@ -342,13 +353,13 @@ const translateHelper = async (text, language) => {
 export default translateHelper;
 ```
 
-Right now you want to test that function works correctly. So as @google-cloud/translate.js an node_modules module we creating file
+Right now you want to test that the function works correctly. So as @google-cloud/translate.js is a node_modules module, we are creating a file:
 
 ```js
 /__mocks__/@google-cloud/translate.js
 ```
 
-File extends original google translate and overwrite some function to avoid API calls
+The file extends the original Google Translate and overwrites some functions to avoid API calls.
 
 ```js /__mocks__/@google-cloud/translate.js
 const googleTranslate = jest.genMockFromModule("@google-cloud/translate");
@@ -363,7 +374,7 @@ googleTranslate.v2.Translate = Translate;
 export default googleTranslate;
 ```
 
-Now insside you helper test file
+Now inside your helper test file:
 
 ```js
 jest.mock('@google-cloud/translate');
@@ -378,9 +389,9 @@ describe('mock testing', () => {
     expect(translated).toBe("text_fr");
   })
 
-  it('should store text on database', async () => {
+  it('should store text in the database', async () => {
     expect.assertions(1);
-    const translated = await TranslatedModel.find({text:"text", "fr"});
+    const translated = await TranslatedModel.find({text:"text", language:"fr"});
     expect(translated.translatedText).toBe("text_fr");
   })
 })
