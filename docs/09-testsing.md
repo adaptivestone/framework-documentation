@@ -34,8 +34,9 @@ The minimum Vite config file should contain:
       'node_modules/@adaptivestone/framework/dist/tests/globalSetupVitest',
     ],
     setupFiles: [
+      './src/tests/setup.ts', // this is a config files with directory location
       '@adaptivestone/framework/tests/setupVitest', // This is the entry point for testing from the  framework
-      './src/tests/setup.ts', // This is a local config file (see below)
+      './src/tests/setupHook.ts', // This is a local config file (see below)
     ],
   }
 ```
@@ -63,8 +64,9 @@ Testing helpers provide isolation of modules, and we run preparation of the fram
   test: {
     //...
     setupFiles: [
+      './src/tests/setup.ts', // this is a config files with directory location
       '@adaptivestone/framework/tests/setupVitest', // This is the entry point for testing from the  framework
-      './src/tests/setup.ts', // <-- we are able to provide custom logic there
+      './src/tests/setupHooks.ts', // <-- we are able to provide custom logic there
     ],
   }
 ```
@@ -73,7 +75,7 @@ You can provide any amount of testing configs
 
 Example:
 
-```ts ./src/tests/setup.ts
+```ts ./src/tests/setupHooks.ts
 import { beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { createDefaultTestUser } from "./testHelpers.ts";
 
