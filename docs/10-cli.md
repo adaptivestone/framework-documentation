@@ -48,12 +48,13 @@ Where:
 
 All passed arguments on the command line are parsed with the help of the `parseArgs` module.
 
-```js
-import AbstractCommand from '../modules/AbstractCommand.ts';
+```ts
+import AbstractCommand from "@adaptivestone/framework/modules/AbstractCommand.js";
+import type { CommandArgumentToTypes } from "@adaptivestone/framework/modules/AbstractCommand.js";
 
 class CommandName extends AbstractCommand {
   static get description() {
-    return 'Some nice description of the command';
+    return "Some nice description of the command";
   }
 
   /**
@@ -63,28 +64,29 @@ class CommandName extends AbstractCommand {
   static get commandArguments() {
     return {
       id: {
-        type: 'string' as const,
-        description: 'User ID to find the user',
+        type: "string",
+        description: "User ID to find the user",
       },
       email: {
-        type: 'string' as const,
-        description: 'User email to find/create the user',
+        type: "string",
+        description: "User email to find/create the user",
       },
       password: {
-        type: 'string' as const,
-        description: 'New password for the user',
+        type: "string",
+        description: "New password for the user",
       },
       roles: {
-        type: 'string' as const,
+        type: "string",
+        required: true, // make sure that command will ask this from user
         description:
-          'User roles as a comma-separated string (--roles=user,admin,someOtherRoles)',
+          "User roles as a comma-separated string (--roles=user,admin,someOtherRoles)",
       },
       update: {
-        type: 'boolean' as const,
+        type: "boolean",
         default: false,
-        description: 'Update the user if they exist',
+        description: "Update the user if they exist",
       },
-    };
+    } as const; // <- this is important for type generation
   }
 
   static isShouldInitModels = true; // Default value. Can be omitted.
@@ -102,14 +104,15 @@ class CommandName extends AbstractCommand {
   }
 
   async run() {
-    const { id, email, password, roles, update } = this.args;
+    // CommandArgumentToTypes will generate types from  commandArguments description
+    const { id, email, password, roles, update } = this
+      .args as CommandArgumentToTypes<typeof CommandName.commandArguments>;
 
-    return new Promise((resolve, reject) => {})
+    return new Promise((resolve, reject) => {});
   }
 }
 
 export default CommandName;
-
 ```
 
 ## Framework Commands
