@@ -19,7 +19,7 @@ That is why the Adaptive Stone framework was born.
 - Winston logger (Sentry logger as a part of Winston logger)
 - Node cluster enabled by default (possibility to use with no cluster (dev mode))
 - Docker development environment (and production too)
-- Integrated ESLint and Prettier for code style
+- Integrated Biome (moder alternative to ESLint and Prettier) for code style
 - Cache system
 - Ability to overwrite any controller, model, and config that came with the framework
 - Multi-language support out of the box
