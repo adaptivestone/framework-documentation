@@ -87,7 +87,7 @@ afterAll(async () => {
   // do something
 });
 
-afterAll(async () => {
+beforeEach(async () => {
   // do something
 });
 
