@@ -115,6 +115,27 @@ class CommandName extends AbstractCommand {
 export default CommandName;
 ```
 
+:::tip
+
+For boolean types, we also support negative values (without a prefix).
+
+```js
+      update: {
+        type: "boolean",
+      },
+```
+```bash
+node src/cli.ts ourCommand --update
+```
+Update Argument will by true
+
+```bash
+node src/cli.ts ourCommand --no-update
+```
+update argumant will be false 
+
+:::
+
 ## Framework Commands
 
 The framework comes with a few built-in commands.
