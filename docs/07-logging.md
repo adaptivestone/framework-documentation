@@ -50,7 +50,7 @@ Please note that `this.logger` is an instance of `winston.logger`, and you can u
 
 ## Default Transports
 
-By default, the framework provides two transports: **console** and **Sentry** (via [winston-transport-sentry-node](https://github.com/aandrewww/winston-transport-sentry-node)).
+By default, the framework provides two transports: **console** and **Sentry**
 
 ## Configuration
 
@@ -62,12 +62,9 @@ Configuration files are located in ‘config/log.js’.
 export default {
   transports: [
     {
-      transport: "winston-transport-sentry-node", // transport name (npm package name)
+      transport: "sentry", // transport name (specail name or npm package name)
       transportOptions: {
         // options that will be passed to the transport instance
-        sentry: {
-          dsn: process.env.LOGGER_SENTRY_DSN,
-        },
         level: process.env.LOGGER_SENTRY_LEVEL || "info",
       },
       enable: process.env.LOGGER_SENTRY_ENABLE || false, // whether the transport is enabled or not
@@ -87,6 +84,10 @@ The transport **name** is an npm package name that the framework will require. Y
 The **transportOptions** field contains the transport options - you can pass any options here for the transport. Please refer to the transport documentation.
 
 And finally, the **enable** field will enable/disable modules for the logger. You can check [“NODE_ENV” in the config documentation](02-configs.md#node_env) to learn more about how you can use it depending on your environment.
+
+## Sentry transport 
+
+For Sentry, we assume it is already configured in the project and we will reuse the existing setup. If Sentry is not present in the system, the framework will display a message indicating that this feature is only available when Sentry is configured.
 
 ## Add Your Own Transport
 
