@@ -28,3 +28,27 @@ $ npm run build
 ```
 
 This command generates static content into the `build` directory and can be served using any static contents hosting service.
+
+### Generate LLM Context
+
+```
+$ npm run generate-llm-context
+```
+
+This command generates a single `llm-context.md` file in the `static/` folder containing all documentation merged together, optimized for use with AI assistants (ChatGPT, Claude, etc.).
+
+**Features:**
+- Concatenates all markdown files from the `docs/` directory
+- Maintains proper document order (sorted by filename)
+- Includes table of contents
+- Adds metadata (generation time, file count, statistics)
+- ~16,000 tokens - fits comfortably in most LLM context windows
+- **Accessible from website navbar** (after build/deploy)
+
+**Use cases:**
+- Provide complete documentation context to AI assistants
+- Training or fine-tuning language models
+- Quick reference for AI-powered development tools
+- Documentation analysis and processing
+
+The generated file is automatically excluded from git (added to `.gitignore`). It's also automatically generated before each build and deployment, and is accessible from the website's navigation menu.

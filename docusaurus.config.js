@@ -54,6 +54,12 @@ const config = {
 						label: "Docs",
 					},
 					{
+						href: "/llm-context.md",
+						label: "LLM Context",
+						position: "left",
+						target: "_blank",
+					},
+					{
 						href: "https://github.com/adaptivestone/framework-documenation",
 						label: "GitHub (docs)",
 						position: "right",
