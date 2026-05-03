@@ -149,7 +149,20 @@ Do not use `req.query` directly. Always use parameters via `req.appInfo.query`.
 
 :::
 
-## Yup Validation
+## Validation
+
+The framework dispatches validation through [Standard Schema](https://standardschema.dev/) — a vendor-neutral interface. Any conforming validator works as a route's `request:` or `query:` schema with no glue code:
+
+| Validator | Standard Schema support |
+|---|---|
+| [Yup](https://github.com/jquense/yup) | ≥1.7 |
+| [Zod](https://zod.dev/) | ≥3.24 |
+| [Valibot](https://valibot.dev/) | all current versions |
+| [ArkType](https://arktype.io/) | all current versions |
+
+Yup is shown in the examples below since the framework historically taught it, but the same shapes are accepted from any Standard Schema-conforming library.
+
+### Yup example
 
 ```js
 request: yup.object().shape({
@@ -160,9 +173,7 @@ query: yup.object().shape({
 });
 ```
 
-Please follow the Yup documentation for a deeper understanding of how schemas work. All parameters are located here: [https://github.com/jquense/yup#api](https://github.com/jquense/yup#api).
-
-Example:
+A more complete example:
 
 ```js
 request: yup.object().shape({
@@ -188,6 +199,50 @@ request: yup.object().shape({
 });
 ```
 
+For Yup schemas, the framework automatically strips unknown fields (security-relevant when handlers spread `req.appInfo.request` into model creates). You don't need `.noUnknown()` — the framework calls `cast(data, { stripUnknown: true })` for you.
+
+### Zod example
+
+```js
+import { z } from "zod";
+
+request: z.object({
+  count: z.number().max(100),
+  message: z.string().min(30, "minimum 30 chars"),
+});
+query: z.object({
+  page: z.number().optional(),
+});
+```
+
+Zod (and Valibot, ArkType) strip unknown fields by default — no extra configuration needed. To allow unknown fields explicitly, use the library's pass-through API (Zod's `.passthrough()`, Valibot's `looseObject`, ArkType's `'+': 'ignore'`).
+
+### TypeScript types from schemas
+
+Pull a typed shape from any Standard Schema validator with `StandardSchemaV1.InferOutput`:
+
+```ts
+import type { StandardSchemaV1 } from "@adaptivestone/framework/services/validate/types";
+import { object, string } from "yup";
+
+const loginSchema = object({
+  email: string().email().required(),
+  password: string().required(),
+});
+
+type LoginRequest = StandardSchemaV1.InferOutput<typeof loginSchema>;
+// → { email: string; password: string }
+
+async postLogin(
+  req: FrameworkRequest & { appInfo: { request: LoginRequest } },
+  res: Response,
+) {
+  // req.appInfo.request.email is typed as string
+}
+```
+
+Same call works for Zod, Valibot, ArkType — replace `loginSchema` with whichever library's schema and the inferred type follows.
+
 ### File Validation
 
 For file validation, we provide a special Yup class, `YupFile`. It is really simple to use.
@@ -205,26 +260,89 @@ request: yup.object().shape({
 Please be aware that a file can only be uploaded by ‘multipart/form-data’, and because of this, you can’t use nested objects.
 :::
 
-### Own Validation
+### Custom validators
 
-To create your own validator, your object should have two methods:
+To plug in a validator that doesn't already implement Standard Schema (e.g., raw [Joi](https://joi.dev/), or a hand-rolled function), implement the `~standard` slot directly. About 10 lines of glue:
 
-```js
-async validate(req.body) // Throw an error on validation failed.
-async cast(req.body) // Should strip unknown parameters.
+```ts
+import type { StandardSchemaV1 } from "@adaptivestone/framework/services/validate/types";
+
+interface ProductInput { sku: string; price: number }
+
+const productSchema: StandardSchemaV1<unknown, ProductInput> = {
+  "~standard": {
+    version: 1,
+    vendor: "mycustom",
+    validate(value) {
+      const data = value as Partial<ProductInput>;
+      if (typeof data.sku !== "string") {
+        return { issues: [{ message: "sku is required", path: ["sku"] }] };
+      }
+      if (typeof data.price !== "number") {
+        return { issues: [{ message: "price is required", path: ["price"] }] };
+      }
+      return { value: { sku: data.sku, price: data.price } };
+    },
+  },
+};
+
+// Use it on a route:
+request: productSchema;
 ```
 
-The error object should provide an “errors” array - error (why validation failed) and a "path" string - body parameter.
+You also get `InferOutput<typeof productSchema>` for free. Standard Schema's spec lives at https://standardschema.dev/.
 
-```js
-try {
-  await request.validate(req.body);
-} catch (e) {
-  // e.path
-  // e.errors
+### Registering vendor drivers
+
+For library-specific behavior (custom strip semantics, native JSON Schema export for OpenAPI, etc.), register a `ValidatorDriver`:
+
+```ts
+import { ValidateService, type ValidatorDriver } from "@adaptivestone/framework/services/validate/ValidateService";
+
+const myJoiDriver: ValidatorDriver = {
+  canHandle: (body) => body?.isJoi === true,
+  async validate(body, data) {
+    const { value, error } = body.validate(data, { stripUnknown: true });
+    if (error) throw new ValidationError(joiToFrameworkPayload(error));
+    return value;
+  },
+  toJsonSchema: (body) => myJoiToJsonSchema(body), // optional; for OpenAPI later
+};
+
+ValidateService.register(myJoiDriver);
+```
+
+Drivers are matched in registration order; user-registered drivers take priority over the built-ins.
+
+### ValidationError
+
+When validation fails, the framework throws a `ValidationError`. The instance's `.message` is the path-keyed payload object that ships out via `res.json({ errors: err.message })`, producing:
+
+```json
+{
+  "errors": {
+    "fieldName": ["error description"],
+    "anotherField": ["another field error"]
+  }
 }
+```
 
-req.appInfo.request = request.cast;
+Each value is always an array of messages. A field that fails multiple validators surfaces all of them: `{password: ["min8", "startUpper"]}`.
+
+For structured access (logging, observability), use `.issues`:
+
+```ts
+import { ValidationError } from "@adaptivestone/framework/services/validate/ValidationError";
+
+try {
+  /* ... */
+} catch (e) {
+  if (e instanceof ValidationError) {
+    for (const issue of e.issues) {
+      console.error(`[${issue.path?.join(".") ?? "root"}] ${issue.message}`);
+    }
+  }
+}
 ```
 
 ### i18n

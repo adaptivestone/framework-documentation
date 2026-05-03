@@ -458,7 +458,7 @@ class CustomMiddleware extends AbstractMiddleware {
 
   // optional
   get relatedQueryParameters() {
-    // A Yup object that defines middleware-related `req.query` parameters. It allows you to validate and get those parameters in `req.appInfo.query` relative to the route in which the middleware is declared.
+    // A Standard Schema-conformant schema (Yup, Zod, Valibot, ArkType, ...) that defines middleware-related `req.query` parameters. It allows you to validate and get those parameters in `req.appInfo.query` relative to the route in which the middleware is declared.
     return yup.object().shape({
       limit: yup.number(), // For example
     });
@@ -466,7 +466,7 @@ class CustomMiddleware extends AbstractMiddleware {
 
   // optional
   get relatedRequestParameters() {
-    // A Yup object that defines middleware-related `req.body` parameters. It allows you to validate and get those parameters in `req.appInfo.request` relative to the route in which the middleware is declared.
+    // A Standard Schema-conformant schema that defines middleware-related `req.body` parameters. It allows you to validate and get those parameters in `req.appInfo.request` relative to the route in which the middleware is declared.
     return yup.object().shape({
       name: yup.string().required(), // For example
     });
