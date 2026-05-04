@@ -229,6 +229,36 @@ It's possible that in testing you will need to have low-level access to the serv
 import { serverInstance } from "@adaptivestone/framework/tests/testHelpers.ts";
 ```
 
+## Test-only controllers
+
+When testing edge cases — broken handlers, unusual middleware combinations, schemas designed to fail — you don't have to put fixture controllers in your production controllers folder. Register them explicitly via `app.controllerManager.registerController(ControllerClass, prefix?)`.
+
+The framework's `Server.startServer()` accepts a `callbackBefore404` hook that runs after the controller manager initializes the auto-loaded controllers but before the 404 handler is attached, so explicitly registered controllers mount in the right order.
+
+```ts ./src/tests/setupHooks.ts
+import { beforeAll } from "vitest";
+import { serverInstance } from "@adaptivestone/framework/tests/testHelpers.js";
+import BrokenController from "./fixtures/BrokenController.ts";
+import FakeAuthMiddleware from "./fixtures/FakeAuthMiddleware.ts";
+
+// If you control startServer yourself, register inside callbackBefore404:
+//   await server.startServer(async () => {
+//     server.app.controllerManager?.registerController(BrokenController, "broken");
+//   });
+//
+// If you use the framework's standard test setup, register in beforeAll —
+// late registration still works for tests because the test's HTTP requests
+// only fire AFTER setup completes (so the 404 handler ordering is irrelevant
+// in practice; the controller's routes are reachable on Express).
+beforeAll(() => {
+  serverInstance.app.controllerManager?.registerController(BrokenController, "broken");
+});
+```
+
+`prefix` is the URL prefix segment — `registerController(BrokenController, "broken")` mounts on `/broken/brokencontroller/*`. Pass `''` (or omit) to mount at `/<classname>/`.
+
+This pattern keeps fixture controllers out of your production controllers folder and gives each test full control over which controllers exist for it.
+
 ## HTTP Endpoint Testing
 
 The framework provides a special function `getTestServerURL` to help you construct a full URL for testing.

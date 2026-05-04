@@ -59,6 +59,26 @@ Controllers should extend the "AbstractController" module.
 
 The framework will load any file (except for `*.test.js` and `*.test.ts` files) and initialize it as an HTTP module. By default, the filename will be used as the route name. This behavior can be customized by providing your own `getHttpPath` function.
 
+### Explicit registration
+
+In addition to file-based auto-loading, you can register a controller programmatically via `app.controllerManager.registerController(ControllerClass, prefix?)`. This is useful for:
+
+- **Test fixtures** — register a controller only for a specific test (see the [Testing](../09-testsing.md) chapter).
+- **Late registration** — controllers added after `Server.startServer()` boots, via the `callbackBefore404` hook so routes mount before the 404 handler.
+- **Conditional controllers** — only register based on config, feature flags, or runtime detection.
+
+```js
+import MyController from "./controllers/MyController.js";
+
+await server.startServer(async () => {
+  // Runs after framework controllers init, before the 404 handler.
+  // Routes mount on `/my/mycontroller/*` (prefix + lowercase class name).
+  server.app.controllerManager?.registerController(MyController, "my");
+});
+```
+
+Auto-loading internally uses the same `registerController` entry point — both paths produce identical instances.
+
 For the example above:
 
 ```js
