@@ -1,6 +1,6 @@
 # Controllers
 
-Controllers are a crucial component of the framework, which is built on top of the [Express.js](https://expressjs.com/) HTTP framework. They provide a convenient way to build complex systems with a robust HTTP infrastructure.
+Controllers are a crucial component of the framework. The framework uses [Express.js](https://expressjs.com/) for the HTTP lifecycle (listening, body parsing, response API, the third-party middleware ecosystem) and a tree-based `RouteRegistry` for path matching, parameter extraction, method dispatch, and middleware ordering. Controllers contribute subtrees to the global registry — auto-loaded from the controllers folder, mounted via a single Express middleware.
 
 :::note
 
@@ -22,24 +22,19 @@ Keep in mind that you cannot access one process from another. For complex scenar
 import AbstractController from "@adaptivestone/framework/modules/AbstractController.js";
 
 class ControllerName extends AbstractController {
-  constructor(app, prefix) {
-    // Optional constructor. In case you want to keep req.params from the main router.
-    // By default, params from the parent router are omitted.
-    // Useful when some params exist on the "getHttpPath" path.
-    super(app, prefix, true);
-  }
-
   get routes() {
     // Return routes info.
     // NECESSARY part.
   }
+
   getHttpPath() {
-    // Return the path for Express (in 99% of cases, optional).
+    // URL prefix for this controller. Default: `/{constructor-name-lowercase}`.
+    // Override in a subclass to customize (e.g., `Home` → `/`).
   }
 
   static get middleware() {
     return new Map();
-    // Return middlewares for THIS route only.
+    // Path-/method-scoped middlewares for routes in THIS controller.
   }
 }
 export default ControllerName;

@@ -32,26 +32,29 @@ export default ControllerName;
 
 ## Route Second Level (Path Level)
 
-Inside the methods (second level), we have a path. It follows the https://expressjs.com/en/guide/routing.html#route-paths Express documentation.
-
-:::tip
-In most cases, a few options are enough:
+Inside the methods (second level), we have a path. The framework's tree-based router supports a small, opinionated set of patterns:
 
 ```js
-"/fullpath";
-
-// Grab variables paramOne and paramTwo into req.params
-"/fullpath/:paramOne/:paramTwo";
-
-// Like the previous one, but "paramTwo" is now optional
-"/fullpath/:paramOne/{:paramTwo}";
+"/fullpath"                          // literal path
+"/fullpath/:paramOne/:paramTwo"      // named params → req.params.paramOne, paramTwo
+"/api/{*rest}"                       // catch-all splat → req.params.rest = "/v1/users/42"
 ```
 
-:::
+| Syntax | Matches | Captures |
+|---|---|---|
+| `/literal` | exact segment | nothing |
+| `:name` | exactly one segment | `req.params.name` |
+| `{*name}` | zero or more segments to end of path | `req.params.name` (joined with `/`) |
+
+**Specificity** (when patterns overlap): static segments win, then `:param`, then `{*splat}`. So `/users/me` registered alongside `/users/:id` always matches the literal first.
+
+**URL decoding** is per-segment (Spring `PathPatternParser` model). `%2F` inside a `:param` value stays as `/`; the matcher does not split on it. For `{*splat}` captures, segments are decoded individually then re-joined — encoded-slash distinction is lost (documented trade-off; use raw-body mode for the rare encoded-slash case).
+
+**Defaults**: case-insensitive, lenient trailing slash. Both flip in v6.
 
 :::note
 
-The order of routes matters. The first matched route will be executed.
+The order of routes matters when patterns overlap at the same specificity tier (e.g., two `:param` siblings). The first matched route is executed.
 :::
 
 Example:
@@ -217,9 +220,101 @@ query: z.object({
 
 Zod (and Valibot, ArkType) strip unknown fields by default — no extra configuration needed. To allow unknown fields explicitly, use the library's pass-through API (Zod's `.passthrough()`, Valibot's `looseObject`, ArkType's `'+': 'ignore'`).
 
-### TypeScript types from schemas
+### Typed handler signatures (codegen)
 
-Pull a typed shape from any Standard Schema validator with `StandardSchemaV1.InferOutput`:
+Running `npm run gen` (alias for `npm run cli generatetypes`) emits a `<File>.routes.gen.ts` next to every controller. The gen file exports one type alias per handler method (PascalCase suffixed with `Request`) — handlers import the alias instead of hand-writing `FrameworkRequest & { appInfo: { request: { ... } } }`:
+
+```ts
+// src/controllers/Auth.ts
+import type { PostLoginRequest } from "./Auth.routes.gen.ts";
+import { object, string } from "yup";
+
+class Auth extends AbstractController {
+  get routes() {
+    return {
+      post: {
+        "/login": {
+          handler: this.postLogin,
+          request: object().shape({
+            email: string().email().required(),
+            password: string().required(),
+          }),
+        },
+      },
+    };
+  }
+
+  async postLogin(req: PostLoginRequest, res: Response) {
+    // req.appInfo.request.email is typed as string (from the schema)
+    // req.appInfo.user is typed as InstanceType<TUser> | undefined
+    //   (from GetUserByToken middleware's `static get provides()`)
+    // req.appInfo.i18n.t(...) is typed (from BaseAppInfo)
+  }
+}
+```
+
+The gen file uses `InstanceType<typeof Controller>['routes'][...]['request']` type navigation, so schemas stay inline in the `routes` getter — no extracted named consts required. It also intersects in `provides` shapes from the middleware tuple at this route, so `req.appInfo.user` (and any other middleware-contributed fields) are typed automatically.
+
+The middleware chain in the gen file is read from the same `RouteRegistry.flatten()` the runtime uses — so the types you see at compile time match the middlewares that actually run at request time. No parallel matcher to drift.
+
+#### Setup
+
+Add to `package.json`:
+
+```json
+"gen": "node cliCommand.ts generatetypes",
+"check:types": "npm run gen && tsc --noEmit"
+```
+
+Add to `.gitignore`:
+
+```
+**/*.routes.gen.ts
+```
+
+The gen files are regenerated on every type-check, so they stay fresh; CI doesn't need any extra step.
+
+#### Naming convention
+
+Handler method `postLogin` → type `PostLoginRequest`. Method `verifyUser` → `VerifyUserRequest`. The convention is method name in PascalCase + `Request` suffix. Renames flow naturally with editor refactor tools.
+
+If the same handler method serves multiple routes (e.g., a backward-compatible POST and GET sharing one method), the type is a union of the per-route shapes — narrow with `req.method` inside the handler.
+
+#### Routes without schemas
+
+Bare-method-ref routes like `'/logout': this.postLogout` (no `request:` field) get a type that omits the schema-output override; `req.appInfo.request` falls through to the default `Record<string, unknown>` from `BaseAppInfo`.
+
+#### Middleware-provided types
+
+To make a middleware contribute typed fields to `req.appInfo`, add a `static get provides()` getter:
+
+```ts
+class GetUserByToken extends AbstractMiddleware {
+  static get provides() {
+    return {} as { user?: InstanceType<TUser> };
+  }
+
+  async middleware(req, res, next) {
+    // ... runtime logic ...
+  }
+}
+```
+
+The returned object is always `{}` — only the cast type matters. Codegen reads this; the runtime ignores it. Handlers downstream of this middleware (per the route's middleware chain) get `req.appInfo.user` typed.
+
+For app-wide globals (e.g., `requestId`, `sentryTransaction`) that aren't tied to a specific middleware, augment `AppInfoExtensions`:
+
+```ts
+declare module "@adaptivestone/framework/services/http/types" {
+  interface AppInfoExtensions {
+    requestId: string;
+  }
+}
+```
+
+#### Manual fallback (without codegen)
+
+If you'd rather not run codegen, you can pull a typed shape from any Standard Schema validator with `StandardSchemaV1.InferOutput`:
 
 ```ts
 import type { StandardSchemaV1 } from "@adaptivestone/framework/services/validate/types";
@@ -231,17 +326,16 @@ const loginSchema = object({
 });
 
 type LoginRequest = StandardSchemaV1.InferOutput<typeof loginSchema>;
-// → { email: string; password: string }
 
 async postLogin(
   req: FrameworkRequest & { appInfo: { request: LoginRequest } },
   res: Response,
 ) {
-  // req.appInfo.request.email is typed as string
+  // req.appInfo.request.email is typed
 }
 ```
 
-Same call works for Zod, Valibot, ArkType — replace `loginSchema` with whichever library's schema and the inferred type follows.
+This works for Zod, Valibot, ArkType too. Trade-off: middleware-contributed fields (`req.appInfo.user` and friends) need to be intersected by hand on every handler, and renames don't propagate.
 
 ### File Validation
 
@@ -253,6 +347,26 @@ import { YupFile } from "@adaptivestone/framework/helpers/yup.js";
 request: yup.object().shape({
   someFileName: new YupFile().required("error text"),
   otherFiled: yup.string().required(), // Yes, you can mix it with regular data.
+});
+```
+
+`YupFile` validates a single file. For multi-file uploads (e.g., `<input type="file" multiple>`), wrap with `yup.array`:
+
+```js
+request: yup.object().shape({
+  avatars: yup.array(new YupFile()).min(1, "at least one file"),
+});
+```
+
+For other Standard Schema validators (Zod, Valibot, ArkType), validate against the framework-exported `File` type:
+
+```ts
+import type { File } from "@adaptivestone/framework/types";
+import { z } from "zod";
+
+request: z.object({
+  avatar: z.instanceof(File),
+  avatars: z.array(z.instanceof(File)).nonempty(),
 });
 ```
 

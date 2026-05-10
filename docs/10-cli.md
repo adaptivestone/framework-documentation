@@ -198,29 +198,6 @@ This can be a dangerous command in case you have some unique index features.
 node src/cli.ts SyncIndexes
 ```
 
-### OpenAPI Documentation
-
-The framework can generate documentation in the OpenAPI (Swagger) format. That is a pretty standard format for exchanging documentation. The framework only generates a JSON file and does not provide any viewer like the online version at [https://petstore.swagger.io/](https://petstore.swagger.io/) or a self-hosted version.
-
-:::tip
-
-It is a good idea to set up documentation on the CI level for the stage environment and put the JSON file in the public directory. Then you can use online viewers to check the documentation.
-:::
-
-#### Run OpenAPI
-
-```js
-node src/cli.ts getopenapijson --output={PATH}
-```
-
-The output is optional.
-
-Usage example:
-
-```js
-node src/cli.ts getopenapijson --output='src/public/openApi.json'
-```
-
 ### CreateUser
 
 The `createuser` command creates a new user.
@@ -253,16 +230,33 @@ npm run cli generateRandomBytes
 
 ### Generate TypeScript Types
 
-A special command to generate types for TypeScript.
+Generates two kinds of TS source from the framework's introspection:
+
+1. **`genTypes.d.ts`** at the project root — augments `IApp` so `getConfig('foo')` and `getModel('Bar')` are typed.
+2. **`<File>.routes.gen.ts`** next to every controller — typed `<MethodName>Request` aliases for handler signatures (per-route schema output, middleware-provided `appInfo` fields, etc.). The middleware chain comes from `RouteRegistry.flatten()` — same matcher the runtime uses, so types match runtime behavior. See [Routes → Typed handler signatures (codegen)](06-Controllers/02-routes.md#typed-handler-signatures-codegen) for usage.
 
 #### Run Generate TypeScript Types
 
-```js
-node src/cli.ts generateTypes
+```bash
+node src/cli.ts generatetypes
+# or
+npm run cli generatetypes
 ```
 
-or
+#### Recommended setup
 
-```js
-npm run cli generateTypes
+Add to `package.json`:
+
+```json
+"gen": "node cliCommand.ts generatetypes",
+"check:types": "npm run gen && tsc --noEmit"
 ```
+
+Add to `.gitignore`:
+
+```
+genTypes.d.ts
+**/*.routes.gen.ts
+```
+
+Gen files regenerate on every type-check — no postinstall hook needed.
