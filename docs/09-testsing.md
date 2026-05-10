@@ -343,7 +343,8 @@ vi.spyOn(S3, "validateCreds").mockImplementation(() => true);
 
 There are many more mocking options. Please refer to the Vitest documentation for others.
 
-<!-- Manual mocks are defined by writing a module in a **mocks**/ subdirectory immediately adjacent to the module. For example, to mock a module called user in the models directory, create a file called user.js and put it in the models/**mocks** directory. Note that the **mocks** folder is case-sensitive, so naming the directory **MOCKS** will break on some systems.
+{/*
+Manual mocks are defined by writing a module in a **mocks** subdirectory immediately adjacent to the module. For example, to mock a module called user in the models directory, create a file called user.js and put it in the models/**mocks** directory. Note that the **mocks** folder is case-sensitive, so naming the directory **MOCKS** will break on some systems.
 
 :::note
 You should call moch load function before performing any operation on it
@@ -429,4 +430,5 @@ describe('mock testing', () => {
 })
 
 
-``` -->
+``` 
+*/}
