@@ -570,3 +570,38 @@ class ControllerName extends AbstractController {
 }
 export default ControllerName;
 ```
+
+## Debugging your routes
+
+### Boot-time route tree
+
+After all controllers are registered, the framework prints the full route tree at the `verbose` log level — useful for spotting cross-controller middleware accumulation, splat scopes, or unexpected route shapes. Set `LOGGER_CONSOLE_LEVEL=verbose` (or your transport's equivalent) to see it.
+
+```
+/  (mw: GetUserByToken)
+├── GET → home
+├── auth  (mw: GetUserByToken, RateLimiter)
+│   ├── login
+│   │   └── POST → postLogin  [request]
+│   └── logout
+│       └── POST → postLogout
+└── v1  (mw: ApiLimiter)
+    └── container  (mw: ApiLimiter)
+        ├── GET → getContainers  [query]
+        └── POST → getContainers  [query]
+```
+
+`[request]` / `[query]` markers indicate routes with body / query schemas. `{…}` after a middleware name means it was registered with parameters.
+
+### Warnings on misconfiguration
+
+The framework logs a `warn`-level message and skips the offending entry when it sees these problems in your `routes` getter or middleware `Map`:
+
+| Warning | Triggered when |
+|---|---|
+| `unknown verb 'X' in routes getter` | A key in `get routes()` isn't one of `get/post/put/patch/delete/head/options` |
+| `route X Y has no handler function` | A route's value is an object but its `handler` field is missing or not callable |
+| `middleware Map key is not a string` | A key in `static get middleware()`'s `Map` is not a string |
+| `middleware Map key 'X' has unknown method prefix 'Y'` | A `Map` key looks like `METHOD/path` but `METHOD` is not a known HTTP verb — the whole key is treated as a path, which is usually a typo |
+
+These warnings catch the common typos that used to silently produce 404s at request time.

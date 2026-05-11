@@ -45,9 +45,9 @@ Controller-level middleware is adjusted based on the “middleware” getter.
   }
 ```
 
-Where 'METHOD/path' is a method with a path. Any methods supported by the Express server are supported here (GET, POST, PUT, DELETE, etc.). It is possible to start a router with any method that is supported by Express, and the middleware will be scoped by this method. If the middleware route starts with `/`, then ALL methods will be used.
+Where 'METHOD/path' is a method with a path. Supported methods are `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, and the pseudo-verb `ALL` (matches all methods). If the middleware key starts with `/`, then `ALL` methods are used.
 
-The path is part of the Express regex path: [https://expressjs.com/en/5x/api.html#router.methods](https://expressjs.com/en/5x/api.html#router.methods).
+The path follows the same patterns as routes — literals, `:name` params, and `{*name}` splats. See [Routes › path syntax](02-routes.md#route-second-level-path-level) for the full reference.
 
 The middleware array is an array of middlewares (with params).
 
