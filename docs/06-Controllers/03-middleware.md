@@ -488,3 +488,29 @@ class CustomMiddleware extends AbstractMiddleware {
 
 export default CustomMiddleware;
 ```
+
+### Typed contributions to `req.appInfo`
+
+If your middleware sets fields on `req.appInfo`, declare them via `static get provides()` so codegen can type them on every downstream handler — no per-handler intersections required.
+
+```ts
+import type { MongoAbility } from "@casl/ability";
+import AbstractMiddleware from "@adaptivestone/framework/services/http/middleware/AbstractMiddleware.js";
+
+class UserWithRole extends AbstractMiddleware {
+  static get provides() {
+    // Phantom — the runtime returns this `{}` but only the cast matters.
+    return {} as { permissions: MongoAbility };
+  }
+
+  async middleware(req, res, next) {
+    req.appInfo.permissions = await buildPermissions(req.appInfo.user);
+    next();
+  }
+}
+```
+
+Any route with `UserWithRole` in its chain now has `req.appInfo.permissions` typed automatically. The cast type is the contract; the runtime value is ignored.
+
+See the [routes chapter codegen section](./02-routes.md#middleware-provided-types) for the full picture of how generated request types compose middleware-provided fields, schemas, and path params.
+

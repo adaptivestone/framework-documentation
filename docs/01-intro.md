@@ -64,7 +64,7 @@ Get started by **creating a new project**.
 The simplest way to create a new project is to clone the **template** and customize it:
 
 ```shell
-git clone git@gitlab.com:adaptivestone/example-project.git adaptivestone-example-rename-me
+git clone git@github.com:adaptivestone/framework-example-project.git adaptivestone-example-rename-me
 ```
 
 ## Start Your Project

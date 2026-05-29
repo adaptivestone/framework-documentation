@@ -255,6 +255,16 @@ class Auth extends AbstractController {
 
 The gen file uses `InstanceType<typeof Controller>['routes'][...]['request']` type navigation, so schemas stay inline in the `routes` getter — no extracted named consts required. It also intersects in `provides` shapes from the middleware tuple at this route, so `req.appInfo.user` (and any other middleware-contributed fields) are typed automatically.
 
+**What the generated type carries** (per route):
+
+| Source | Emitted into |
+|---|---|
+| Route path `:name` segments (e.g., `/users/:id`) | `req.params: { id: string }` |
+| Route path `{*name}` splats (e.g., `/files/{*path}`) | `req.params: { path: string }` — splats join captured segments with `/` (one string, not an array) |
+| Route `request:` schema | `req.appInfo.request: StandardSchemaV1.InferOutput<...>` |
+| Route `query:` schema | `req.appInfo.query: StandardSchemaV1.InferOutput<...>` |
+| Middleware-chain `static get provides()` returns | Merged into `req.appInfo` |
+
 The middleware chain in the gen file is read from the same `RouteRegistry.flatten()` the runtime uses — so the types you see at compile time match the middlewares that actually run at request time. No parallel matcher to drift.
 
 #### Setup
@@ -302,6 +312,26 @@ class GetUserByToken extends AbstractMiddleware {
 
 The returned object is always `{}` — only the cast type matters. Codegen reads this; the runtime ignores it. Handlers downstream of this middleware (per the route's middleware chain) get `req.appInfo.user` typed.
 
+The same pattern works for **project-side middlewares** that augment `req.appInfo`. Example — a `UserWithRole` middleware that resolves CASL permissions onto the request:
+
+```ts
+import type { MongoAbility } from "@casl/ability";
+import AbstractMiddleware from "@adaptivestone/framework/services/http/middleware/AbstractMiddleware.js";
+
+class UserWithRole extends AbstractMiddleware {
+  static get provides() {
+    return {} as { permissions: MongoAbility };
+  }
+
+  async middleware(req, res, next) {
+    req.appInfo.permissions = await buildPermissions(req.appInfo.user);
+    next();
+  }
+}
+```
+
+Any route with `UserWithRole` in its middleware chain now has `req.appInfo.permissions` typed as `MongoAbility` automatically.
+
 For app-wide globals (e.g., `requestId`, `sentryTransaction`) that aren't tied to a specific middleware, augment `AppInfoExtensions`:
 
 ```ts
@@ -311,6 +341,23 @@ declare module "@adaptivestone/framework/services/http/types" {
   }
 }
 ```
+
+#### Extending the framework's User model
+
+If your project's `User` model adds methods or fields beyond the framework's base (`getSuppliers()`, custom relations, etc.), `req.appInfo.user` from `GetUserByToken.provides` will still be typed as the framework's `TUser` — calls to project-specific methods won't compile.
+
+Augment the framework's `User` module to add your project's fields:
+
+```ts
+// somewhere in your project, loaded before handlers compile
+declare module "@adaptivestone/framework/models/User" {
+  interface IUserMethods {
+    getSuppliers(): Promise<string[]>;
+  }
+}
+```
+
+Now `req.appInfo.user.getSuppliers()` type-checks across all handlers.
 
 #### Manual fallback (without codegen)
 
