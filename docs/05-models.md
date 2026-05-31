@@ -377,3 +377,101 @@ async someHTTPRequestWithExpensiveExternalAPI(req, res) {
   return res.status(500).json({ error: "Something went wrong" });
 }
 ```
+
+### KeyValue
+
+A minimal persistent key/value store backed by MongoDB. Think of it as a tiny, shared "settings drawer" for your app: a place to keep small pieces of state that should survive restarts and be readable by every process — a lightweight cache, runtime configuration, feature flags, the cursor of a background job, and so on.
+
+The model is intentionally schema-only — it adds no custom methods. The key is the document `_id` (a string), and the value is a `Mixed` field, so it can hold anything Mongoose can serialise (string, number, boolean, array, or nested object). You interact with it through the standard Mongoose API that every model already exposes.
+
+```ts
+static get modelSchema() {
+  return {
+    _id: { type: String, required: true },
+    value: { type: Schema.Types.Mixed, required: true },
+  } as const;
+}
+```
+
+#### Usage
+
+```js
+const KeyValue = this.app.getModel("KeyValue");
+
+// Set (create or overwrite). `upsert: true` makes it idempotent.
+await KeyValue.findByIdAndUpdate(
+  "config:theme",
+  { value: "dark" },
+  { upsert: true },
+);
+
+// Get. Returns the document or `null` when the key is missing.
+const doc = await KeyValue.findById("config:theme");
+const theme = doc?.value ?? "light"; // fall back to a default
+
+// Any serialisable value works.
+await KeyValue.findByIdAndUpdate(
+  "config:features",
+  { value: { newDashboard: true, limits: [10, 50, 100] } },
+  { upsert: true },
+);
+
+// Read many keys at once.
+const docs = await KeyValue.find({ _id: { $in: ["config:theme", "config:features"] } });
+const map = new Map(docs.map((d) => [d._id, d.value]));
+
+// Delete.
+await KeyValue.deleteOne({ _id: "config:theme" });
+```
+
+:::tip
+
+Use a `namespace:key` convention for the `_id` (for example `config:theme`, `cache:user-42`, `flag:beta-signup`). It keeps keys readable and makes prefix queries with a regular expression easy:
+
+```js
+const allConfig = await KeyValue.find({ _id: /^config:/ });
+```
+
+:::
+
+#### Caching pattern
+
+Because every process reads the same collection, `KeyValue` is a convenient cross-server cache for values that are expensive to compute but cheap to store.
+
+```js
+async function getExchangeRates(app) {
+  const KeyValue = app.getModel("KeyValue");
+  const cached = await KeyValue.findById("cache:exchange-rates");
+  if (cached) {
+    return cached.value;
+  }
+
+  const rates = await fetchExpensiveRatesFromExternalApi();
+  await KeyValue.findByIdAndUpdate(
+    "cache:exchange-rates",
+    { value: rates },
+    { upsert: true },
+  );
+  return rates;
+}
+```
+
+Pair it with the [`Lock`](#lock) model when several requests might try to populate the same cache key at once, so the expensive work runs only once.
+
+:::note
+
+`KeyValue` is **persistent storage**, not an expiring cache — entries live until you delete them. There is no built-in time-to-live. If you need automatic expiration, add an `expireAt` date field and a TTL index in `initHooks`, the same way the `Lock` model does:
+
+```ts
+static initHooks(schema: Schema) {
+  schema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
+}
+```
+
+For request-scoped or in-memory caching, see the [Cache](11-cache.md) section instead.
+
+:::
+
+#### Concurrency
+
+`value` is a `Mixed` field, so it is replaced as a whole — concurrent writers are last-write-wins. Do not read a value, mutate it in your code, and write it back if multiple processes update the same key; you may lose updates. For counters or fields that must change atomically, use MongoDB update operators directly (`$inc`, `$set` on a sub-path) or reach for the [`Sequence`](#sequence) model.
