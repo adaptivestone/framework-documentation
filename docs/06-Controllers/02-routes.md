@@ -165,6 +165,10 @@ The framework dispatches validation through [Standard Schema](https://standardsc
 
 Yup is shown in the examples below since the framework historically taught it, but the same shapes are accepted from any Standard Schema-conforming library.
 
+:::note
+The framework no longer bundles a validator. `yup` is an **optional peer dependency** — install it only if you use yup schemas (or the deprecated `YupFile`). For dependency-free validation of simple shapes, use [`defineSchema`](#zero-dependency-schemas-defineschema) below.
+:::
+
 ### Yup example
 
 ```js
@@ -219,6 +223,29 @@ query: z.object({
 ```
 
 Zod (and Valibot, ArkType) strip unknown fields by default — no extra configuration needed. To allow unknown fields explicitly, use the library's pass-through API (Zod's `.passthrough()`, Valibot's `looseObject`, ArkType's `'+': 'ignore'`).
+
+### Zero-dependency schemas (`defineSchema`)
+
+When you want a small schema without pulling in a validator library, use `defineSchema` — a one-function adapter that wraps a plain validate callback into a Standard Schema object:
+
+```ts
+import { defineSchema } from "@adaptivestone/framework/services/validate/defineSchema.js";
+
+request: defineSchema<{ email: string }>((value) => {
+  const v = (value ?? {}) as Record<string, unknown>;
+  if (typeof v.email !== "string" || !v.email.includes("@")) {
+    return { issues: [{ message: "validation.email", path: ["email"] }] };
+  }
+  // Return only known keys — unknown input is stripped by construction.
+  return { value: { email: v.email } };
+});
+```
+
+- The `Output` generic (`{ email: string }`) is what the codegen reads for the typed handler signature (`req.appInfo.request`) — see below. You declare it; the runtime checks live in the callback.
+- Return `{ value }` on success (only the keys you copy survive — this is your strip-unknown), or `{ issues }` on failure. Each issue's `message` is an i18n key (or literal text); the framework auto-translates it like any other validator.
+- This is the mechanism the built-in `Auth` controller uses, so the framework itself ships validator-free.
+
+`defineSchema` is intentionally minimal — there are no `string()`/`object()` combinators. If you find yourself hand-writing many or deeply nested schemas, reach for a real validator library (Zod, etc.) instead.
 
 ### Typed handler signatures (codegen)
 
@@ -386,39 +413,87 @@ This works for Zod, Valibot, ArkType too. Trade-off: middleware-contributed fiel
 
 ### File Validation
 
-For file validation, we provide a special Yup class, `YupFile`. It is really simple to use.
+Files are uploaded via `multipart/form-data`. The parser preserves the raw form shape, which means **every multipart field arrives as an array** — a single value is a one-element array, several values are a longer array. Validate against the framework-exported `File` type, using your validator's own array support to declare cardinality:
+
+```ts
+import { File } from "@adaptivestone/framework/types.js";
+import { z } from "zod";
+
+request: z.object({
+  // one file: validate the one-element array, unwrap to a File for the handler
+  avatar: z.array(z.instanceof(File)).length(1).transform(([f]) => f),
+  // many files (`<input type="file" multiple>`): keep the array
+  avatars: z.array(z.instanceof(File)).nonempty(),
+});
+```
+
+`req.appInfo.request.avatar` is a `File`; `req.appInfo.request.avatars` is `File[]`.
+
+:::caution Cardinality is declared, not inferred from length
+A single value and a one-element array look identical on the wire (`["A"]`), so you must **declare** which fields are scalar — never auto-unwrap by array length. A `multiple` field that receives one file still arrives as `["A"]`; because `avatars` is declared `z.array(...)` (no transform), it correctly stays a one-element `File[]`. Only fields you explicitly transform to a scalar (`.length(1).transform(...)`) are unwrapped — and a scalar field that receives two values fails `.length(1)`, which is the right outcome.
+:::
+
+`File` is exported as both a value (so `instanceof` works) and a type. It aliases the parser's file class today and re-points at the web-standard `File` after the transport-neutral parser swap — so your validation code stays stable across that change. The same `File` works with every validator: `z.instanceof(File)`, `v.instance(File)`, `type.instanceOf(File)`, or yup's `mixed().test("file", "not a file", (v) => v instanceof File)`.
+
+#### How route types are generated for multipart
+
+Route-type generation is **parser-agnostic** — the multipart always-array shape never reaches it. Codegen emits `req.appInfo.request: StandardSchemaV1.InferOutput<...["request"]>`, which reads the request schema's **output** type. Because the schema above transforms the one-element array down to a `File`, the generated handler type is the unwrapped shape (`{ avatar: File; avatars: File[] }`) — and it matches the runtime value. The schema is the single source of truth for both runtime and types.
+
+:::info Planned — route-level single-element extraction
+A **route-level option** is planned so a route can declare which multipart fields are scalar, and the router unwraps their single-element arrays *before* validation. The schema then stays the clean logical shape (`avatar: z.instanceof(File)`), codegen reads that output type directly, and there's no per-field `.array().length(1).transform(...)` to write. This keeps the array-handling in the parser layer (where the array-ness originates) instead of the schema. Until it ships, use the validator's array handling shown above.
+:::
+
+:::warning Deprecated: `YupFile`
+The yup-specific `YupFile` helper (`@adaptivestone/framework/helpers/yup.js`) is **deprecated and will be removed in v6** — migrate to the `File` export above. It still works for now (and requires `yup` in your own dependencies, since the framework no longer bundles it):
 
 ```js
 import { YupFile } from "@adaptivestone/framework/helpers/yup.js";
 
 request: yup.object().shape({
   someFileName: new YupFile().required("error text"),
-  otherFiled: yup.string().required(), // Yes, you can mix it with regular data.
 });
 ```
-
-`YupFile` validates a single file. For multi-file uploads (e.g., `<input type="file" multiple>`), wrap with `yup.array`:
-
-```js
-request: yup.object().shape({
-  avatars: yup.array(new YupFile()).min(1, "at least one file"),
-});
-```
-
-For other Standard Schema validators (Zod, Valibot, ArkType), validate against the framework-exported `File` type:
-
-```ts
-import type { File } from "@adaptivestone/framework/types";
-import { z } from "zod";
-
-request: z.object({
-  avatar: z.instanceof(File),
-  avatars: z.array(z.instanceof(File)).nonempty(),
-});
-```
+:::
 
 :::warning
 Please be aware that a file can only be uploaded by ‘multipart/form-data’, and because of this, you can’t use nested objects.
+:::
+
+### Different schemas per Content-Type
+
+A single route can accept more than one `Content-Type` with a different body shape for each — for example, create a resource from JSON or upload it as `multipart/form-data`. Instead of one `request` schema, pass a **content-type map** (the shape mirrors OpenAPI's `requestBody.content`):
+
+```ts
+import { File } from "@adaptivestone/framework/types.js";
+import { z } from "zod";
+
+"/avatar": {
+  handler: this.setAvatar,
+  request: {
+    "application/json": z.object({ url: z.string().url() }),
+    "multipart/form-data": z.object({
+      file: z.array(z.instanceof(File)).length(1).transform(([f]) => f),
+    }),
+  },
+},
+```
+
+The body is parsed (the parser is already Content-Type-aware), then validated with the schema matching the request's `Content-Type`. An unmatched type returns **415 Unsupported Media Type**, listing the accepted ones.
+
+`req.appInfo.request` becomes a **discriminated union** keyed by an injected `contentType` field, so the handler narrows cleanly — and codegen emits the union for you:
+
+```ts
+async setAvatar(req: SetAvatarRequest, res: Response) {
+  if (req.appInfo.request.contentType === "multipart/form-data") {
+    req.appInfo.request.file; // File
+  } else {
+    req.appInfo.request.url; // string
+  }
+}
+```
+
+:::note
+Matching is on the media type only and is **case-insensitive** — parameters like `; charset=...` and `; boundary=...` are ignored. The injected `contentType` is the lower-cased media type, and it overwrites any body field of the same name, so don't declare a schema field named `contentType`. A `Content-Type` the body parser itself can't handle (e.g. malformed `multipart/form-data`) is rejected with a `400` by the parser *before* the `415` check. Middleware-declared request schemas (`relatedRequestParameters`) still apply on top, regardless of Content-Type.
 :::
 
 ### Custom validators
