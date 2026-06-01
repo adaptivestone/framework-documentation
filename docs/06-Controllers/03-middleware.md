@@ -456,17 +456,23 @@ class CustomMiddleware extends AbstractMiddleware {
     ];
   }
 
-  // optional
-  get relatedQueryParameters() {
-    // A Standard Schema-conformant schema (Yup, Zod, Valibot, ArkType, ...) that defines middleware-related `req.query` parameters. It allows you to validate and get those parameters in `req.appInfo.query` relative to the route in which the middleware is declared.
+  // optional — declared `static` so the framework reads the schema WITHOUT
+  // instantiating the middleware (no constructor side effects at route setup /
+  // codegen)
+  static get relatedQueryParameters() {
+    // A Standard Schema-conformant schema (Zod, Valibot, ArkType, yup ≥1.7, or
+    // `defineSchema`) for middleware-related `req.query` parameters. Validated
+    // and exposed on `req.appInfo.query`, relative to the route the middleware
+    // is declared on.
     return yup.object().shape({
       limit: yup.number(), // For example
     });
   }
 
   // optional
-  get relatedRequestParameters() {
-    // A Standard Schema-conformant schema that defines middleware-related `req.body` parameters. It allows you to validate and get those parameters in `req.appInfo.request` relative to the route in which the middleware is declared.
+  static get relatedRequestParameters() {
+    // Same, for middleware-related `req.body` parameters — exposed on
+    // `req.appInfo.request`.
     return yup.object().shape({
       name: yup.string().required(), // For example
     });
@@ -488,6 +494,10 @@ class CustomMiddleware extends AbstractMiddleware {
 
 export default CustomMiddleware;
 ```
+
+:::warning Deprecated: instance schema getters
+The non-static form — `get relatedQueryParameters()` / `get relatedRequestParameters()` (and `get relatedReqParameters()`) — is **deprecated and will be removed in v6**. It forces the framework to instantiate the middleware (running its constructor) just to read the schema, so use `static get` instead. The instance form still works through v5: when it's detected, the framework instantiates the middleware as a fallback and emits a one-per-class `DeprecationWarning` (`ASF_DEP_MW_INSTANCE_SCHEMA`).
+:::
 
 ### Typed contributions to `req.appInfo`
 
