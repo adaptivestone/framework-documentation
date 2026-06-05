@@ -115,6 +115,14 @@ class CommandName extends AbstractCommand {
 export default CommandName;
 ```
 
+:::note Model commands wait for the database connection
+
+`static isShouldInitModels = true` (the default) makes the framework load and initialize your models before the command runs **and wait for the MongoDB connection to be ready** — so your command's first query never races a not-yet-established connection (the cause of intermittent "buffering timed out" errors). You don't need to add your own connection-readiness check.
+
+Set it to `false` for commands that don't touch the database (e.g. code generation, crypto helpers) so they start instantly without connecting. `static isShouldGetModelPaths` loads model _paths_ only (for type/path resolution) — it does not initialize models or open a connection.
+
+:::
+
 :::tip
 
 For boolean types, we also support negative values (without a prefix).

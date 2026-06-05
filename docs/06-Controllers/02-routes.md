@@ -294,6 +294,39 @@ The gen file uses `InstanceType<typeof Controller>['routes'][...]['request']` ty
 
 The middleware chain in the gen file is read from the same `RouteRegistry.flatten()` the runtime uses — so the types you see at compile time match the middlewares that actually run at request time. No parallel matcher to drift.
 
+#### Keep `routes` declarative (codegen reads it without your constructor)
+
+`npm run gen` introspects each controller through a prototype-only "ghost" — it reads the `routes` getter **without running the constructor**. That keeps type generation free of constructor side effects (config reads, S3/OAuth client construction, timers).
+
+So your `routes` getter must be declarative: it may reference handler methods (`this.postLogin`), but it must not read state assigned in the constructor.
+
+```ts
+// ✅ fine — the constructor sets up clients, but `routes` only lists handlers
+class Files extends AbstractController {
+  constructor(app, prefix) {
+    super(app, prefix);
+    this.s3 = new S3Client(app.getConfig('s3')); // used inside handlers, not in routes
+  }
+  get routes() {
+    return { post: { '/upload': { handler: this.upload } } };
+  }
+}
+
+// ⚠️ deprecated — `routes` reads constructor-set state
+class Crud extends AbstractController {
+  constructor(app, prefix) {
+    super(app, prefix);
+    this.models = ['User', 'Order'];
+  }
+  get routes() {
+    // reading this.models here forces codegen to construct the controller
+    return Object.fromEntries(this.models.map((m) => [`/${m}`, { handler: this.list }]));
+  }
+}
+```
+
+If `routes` does read constructor state, nothing breaks: codegen detects it, falls back to constructing a real instance, and emits a one-per-class deprecation warning (`ASF_DEP_CTOR_ROUTES`). Move that state into handlers (or a module-level constant) to clear the warning — the instantiation fallback will be removed in v6.
+
 #### Setup
 
 Add to `package.json`:
