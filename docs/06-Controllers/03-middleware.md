@@ -411,26 +411,6 @@ server {
 
 ```
 
-```js
-import StaticFiles from "@adaptivestone/framework/services/http/middleware/StaticFiles.js";
-```
-
-Handles static files. Mostly for development purposes. In production, it is better to handle files via a web server.
-
-#### Parameters
-
-`folders` - an array of folders to handle files from. Required parameter.
-
-```javascript
-  static get middleware() {
-    return new Map([
-      ['POST/someUrl', [
-        [StaticFiles, { folders: ['/var/www/public','/opt/public'] }]
-      ]]
-    ]);
-  }
-```
-
 ## Creating Your Own Middlewares (or Integrating External Ones)
 
 You can create your own middleware. To do that, you should extend `AbstractMiddleware` and provide at least two of your own functions: `description` and `middleware`. Please check the code below.

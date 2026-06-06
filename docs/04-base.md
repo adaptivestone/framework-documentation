@@ -14,7 +14,7 @@ class A extends Base {
 
     // Get files with inheritance.
     const files = await this.getFilesPathWithInheritance(
-      `${__dirname}/../../migrations`,
+      `${import.meta.dirname}/../../migrations`,
       this.app.foldersConfig.migrations
     );
   }

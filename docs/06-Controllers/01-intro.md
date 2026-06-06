@@ -100,13 +100,13 @@ By default, `getHttpPath` resolves the current folder and filename and uses them
 
 ## View
 
-By default, the framework uses Express to render views with the Pug template engine. To render a view, create a template file in the `views` folder and then call it with the required parameters:
-++++...
-[message is too long]
+:::warning
 
-```js
-res.render("template", { title: "Hey", message: "Hello there!" });
-```
+Built-in view rendering was **removed in version 5**. The framework no longer ships a `views/` folder or a default template engine — it is API-first (returns JSON).
+
+:::
+
+If you need server-rendered HTML, the underlying Express 5 instance is available on `app.express`, so you can register a template engine yourself (see the [Express template-engine guide](https://expressjs.com/en/guide/using-template-engines.html)). For most applications, return JSON and render on the client.
 
 ## JSON
 

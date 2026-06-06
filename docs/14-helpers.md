@@ -23,7 +23,7 @@ const s3config = appInstance.getConfig("s3");
 A simplified way to connect to Redis. This helper loads the configuration and adds shutdown hooks.
 
 ```ts
-import { getRedisClient, getRedisClientSync } from '@adaptivestone/framework/helpers/redis/redisConnection.ts';
+import { getRedisClient, getRedisClientSync } from '@adaptivestone/framework/helpers/redis/redisConnection.js';
 const redisClient = await getRedisClient();
 const redisClientSync = await getRedisClientSync();
 ```

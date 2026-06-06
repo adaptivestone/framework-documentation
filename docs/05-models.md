@@ -172,7 +172,7 @@ class SomeModel extends BaseModel {
         },
         get(this: InstanceType<SomeModelLite>) {
           // Getter
-          return `${this.firtsName} ${this.lastName}`;
+          return `${this.firstName} ${this.lastName}`;
         },
         async set(this: InstanceType<SomeModelLite>, v: string) {
           // Setter

@@ -2,7 +2,7 @@
 
 :::warning
 
-This documentation for old model defenitions. Please do not use this type of models at all. Use ceuurnt model versions
+This documentation is for old model definitions. Please do not use this type of models at all. Use current model versions.
 :::
 
 Framework based on [mongoose](https://mongoosejs.com/) library and provide direct access to mongoose.

@@ -23,7 +23,7 @@ That is why the Adaptive Stone framework was born.
 - Cache system
 - Ability to overwrite any controller, model, and config that came with the framework
 - Multi-language support out of the box
-- ESM and CommonJS compatibility
+- ESM only (no CommonJS)
 - TypeScript support (you are able to write everything in JavaScript, but in JS you will have types as a bonus)
 
 ## Folder Structure
@@ -45,7 +45,6 @@ framework/
 ├─ public/ // Public stuff (served statically)
 ├─ services/ // Some services (email, http, etc.)
 ├─ tests/ // Folder contains basic tests
-├─ views/ // The framework is able to respond with a view (not only API). View files are stored here.
 ├─ Cli.ts // Main CLI class
 ├─ cliCommands.ts // CLI implementation
 ├─ cluster.ts  // Entry point for production for the cluster module

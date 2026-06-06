@@ -350,8 +350,7 @@ Manual mocks are defined by writing a module in a **mocks** subdirectory immedia
 You should call moch load function before performing any operation on it
 
 ```js
-jest.mock("path");
-jest.createMockFromModule("module");
+vi.mock("path");
 ```
 
 :::
@@ -395,22 +394,20 @@ Right now you want to test that the function works correctly. So as @google-clou
 The file extends the original Google Translate and overwrites some functions to avoid API calls.
 
 ```js /__mocks__/@google-cloud/translate.js
-const googleTranslate = jest.genMockFromModule("@google-cloud/translate");
-
+// A manual mock in __mocks__ just exports the fake module — no auto-mock helper needed.
 class Translate {
   translate(text, lang) {
     return [`${text}_${lang}`, "this is test"];
   }
 }
 
-googleTranslate.v2.Translate = Translate;
-export default googleTranslate;
+export default { v2: { Translate } };
 ```
 
 Now inside your helper test file:
 
 ```js
-jest.mock('@google-cloud/translate');
+vi.mock('@google-cloud/translate');
 
 import translateHelper from '/src/helpers/translateHelper.js';
 

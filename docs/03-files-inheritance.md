@@ -12,7 +12,7 @@ project/
 │  ├─ @adaptivestone/
 │  │  ├─ framework/
 │  │  │  ├─ models/
-│  │  │  │  ├─ User.ts // Built-in model. Mark it as "User_original"
+│  │  │  │  ├─ User.js // Built-in model (published as compiled .js). Mark it as "User_original"
 ├─ src/
 │  ├─ models/ // Contains model files
 │  │  ├─ User.ts // File that will be used. Mark it as "User_project"
@@ -35,7 +35,7 @@ That's easy. Just require the original file and extend it.
 Please note: TypeScript types are fully optional. You are able to use plain JavaScript too.
 
 ```ts
-import OriginalUserModel from "@adaptivestone/framework/models/User.ts";
+import OriginalUserModel from "@adaptivestone/framework/models/User.js";
 
 class User extends OriginalUserModel {
   static get modelStatics() {
