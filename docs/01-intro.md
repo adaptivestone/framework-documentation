@@ -88,3 +88,8 @@ The framework itself is written in TypeScript (erasable syntax), but the project
 You are able to use the modern Node.js runtime to run TypeScript files without any compilation.
 
 You are also able to mix TypeScript and JavaScript files in one project. Just remember that types will only work if the imported file is a TypeScript file and it is imported into a TypeScript file.
+
+## Guides
+
+- [Recipes](15-recipes.md) — a task-oriented cookbook: add a controller, validate a body, paginate, write middleware, override a built-in, test a controller.
+- [Anti-patterns](16-anti-patterns.md) — common mistakes and what to do instead.

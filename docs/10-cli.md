@@ -268,3 +268,19 @@ genTypes.d.ts
 ```
 
 Gen files regenerate on every type-check — no postinstall hook needed.
+
+#### When to run codegen
+
+Codegen only affects **types**, never runtime — so you run it whenever something that changes a handler's or `IApp`'s type shape changes, then type-check. In practice you wire it into `check:types` and forget it's there. The decision matrix:
+
+| You changed… | Run `gen`? | Why |
+|---|---|---|
+| A route's `request:` / `query:` schema | **Yes** | `req.appInfo.request` / `.query` types change |
+| A route path (added `:param` / `{*splat}`, renamed) | **Yes** | `req.params` and the `<Method>Request` alias change |
+| A controller's `static get middleware()` chain | **Yes** | which `provides` fields land on `req.appInfo` changes |
+| A middleware's `static get provides()` | **Yes** | downstream `req.appInfo` types change |
+| Added / renamed a model or config | **Yes** | `getModel('X')` / `getConfig('Y')` typings change |
+| Only handler body logic (no signature/schema change) | No | the generated types are unchanged |
+| Prose, comments, formatting | No | nothing type-bearing changed |
+
+When in doubt, just run it — it's idempotent and cheap. The standard wiring (`"check:types": "npm run gen && tsc --noEmit"`) regenerates before every type-check, so you never run it by hand in CI. See [Routes → Typed handler signatures](06-Controllers/02-routes.md#typed-handler-signatures-codegen).
