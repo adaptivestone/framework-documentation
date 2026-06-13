@@ -168,7 +168,7 @@ No parameters.
 ### IpDetector
 
 ```js
-import IpDetector from "@adaptivestone/framework/services/http/middleware/IpDetecor.js";
+import IpDetector from "@adaptivestone/framework/services/http/middleware/IpDetector.js";
 ```
 
 This middleware will detect the client's IP. It works well with different proxies (AWS ELB, Nginx, etc.) and detects the real client IP.
@@ -260,7 +260,7 @@ const { limit, skip, page } = req.appInfo.pagination;
 import PrepareAppInfo from "@adaptivestone/framework/services/http/middleware/PrepareAppInfo.js";
 ```
 
-`PrepareAppInfo` is a special small middleware that generates `res.appInfo = {}`. This is to make sure that all subsequent middleware can use `appInfo` without checking if it exists.
+`PrepareAppInfo` is a special small middleware that generates `req.appInfo = { app }`. This is to make sure that all subsequent middleware can use `appInfo` without checking if it exists.
 It is for internal use.
 
 #### Parameters

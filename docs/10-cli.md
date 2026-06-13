@@ -256,7 +256,7 @@ npm run cli generatetypes
 Add to `package.json`:
 
 ```json
-"gen": "node cliCommand.ts generatetypes",
+"gen": "node src/cli.ts generatetypes",
 "check:types": "npm run gen && tsc --noEmit"
 ```
 

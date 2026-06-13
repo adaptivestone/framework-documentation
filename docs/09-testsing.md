@@ -24,7 +24,7 @@ npm test
 
 ## Before Scripts
 
-The test entry point is at the project level in ‘src/test/setupVite.js’. This file prepares all folder configs, requires the framework setup, and prepares the global setup for tests.
+The test entry point is at the project level in ‘src/tests/setup.ts’. This file prepares all folder configs, requires the framework setup, and prepares the global setup for tests.
 
 The minimum Vite config file should contain:
 
@@ -36,7 +36,7 @@ The minimum Vite config file should contain:
     setupFiles: [
       './src/tests/setup.ts', // this is a config files with directory location
       '@adaptivestone/framework/tests/setupVitest', // This is the entry point for testing from the  framework
-      './src/tests/setupHook.ts', // This is a local config file (see below)
+      './src/tests/setupHooks.ts', // This is a local config file (see below)
     ],
   }
 ```

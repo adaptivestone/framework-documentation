@@ -26,6 +26,10 @@ That is why the Adaptive Stone framework was born.
 - ESM only (no CommonJS)
 - TypeScript support (you are able to write everything in JavaScript, but in JS you will have types as a bonus)
 
+:::info Requirements
+The framework requires **MongoDB** and an **`AUTH_SALT`** secret — it fails fast at boot if either is missing (set the `MONGO_DSN` env var; generate a salt with `npm run cli generateRandomBytes`). The runtime requires **Node ≥ 24**.
+:::
+
 ## Folder Structure
 
 ```js
@@ -46,10 +50,10 @@ framework/
 ├─ services/ // Some services (email, http, etc.)
 ├─ tests/ // Folder contains basic tests
 ├─ Cli.ts // Main CLI class
-├─ cliCommands.ts // CLI implementation
-├─ cluster.ts  // Entry point for production for the cluster module
+├─ index.ts // Main entry point (creates and starts the Server)
+├─ cluster.ts  // Entry point for production (cluster module)
 ├─ folderConfig.ts // Folder configuration
-├─ server.ts // Main entry point to the framework
+├─ server.ts // Server class
 ```
 
 ## Framework Structure

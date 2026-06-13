@@ -18,7 +18,7 @@ pm2 startup
 Then load your code to the server and go to the server directory.
 
 ```bash
-NODE_ENV=production pm2 start --name YOUR_APP_NAME src/index.js
+NODE_ENV=production pm2 start --name YOUR_APP_NAME src/index.ts
 pm2 save
 ```
 
@@ -73,7 +73,7 @@ CMD [ "node", "src/index.ts"]
 To build it, use:
 
 ```bash
-docker build --platform --platform linux/amd64,linux/arm64 -t YOUR_REPO_NAME:TAG .
+docker build --platform linux/amd64 -t YOUR_REPO_NAME:TAG .
 ```
 
 You can also use `buildx`:
