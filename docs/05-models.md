@@ -256,9 +256,85 @@ const verificationToken = await UserModel.generateUserVerificationToken(user);
 const sameUserAgain3 = await UserModel.getUserByVerificationToken(
   verificationToken
 );
-await UserModel.removeVerificationToken(verificationToken);
 const isSuccess2 = await user.sendVerificationEmail(i18n);
 ```
+
+#### Customizing the User model
+
+To replace the framework's `User`, drop your own `User.ts` into your project's
+`models/` folder. The [inheritance process](03-files-inheritance.md) makes it win
+over the framework's, and `getModel("User")` / `req.appInfo.user` are typed
+against **your** model automatically (run `generatetypes` after adding it).
+
+There are two ways to customize it.
+
+**Add fields** — extend the framework's `User` and spread its schema:
+
+```ts title="/src/models/User.ts"
+import FrameworkUser from "@adaptivestone/framework/models/User.js";
+
+export default class User extends FrameworkUser {
+  static get modelSchema() {
+    return {
+      ...FrameworkUser.modelSchema,
+      company: { type: String },
+    } as const;
+  }
+}
+```
+
+The inherited auth statics and instance methods (`getUserByEmailAndPassword`,
+`generateToken`, `getPublic`, …) keep working on your model with no casts.
+
+**Reshape fields** — when you need to change a field's _shape_ (for example an
+i18n `name`, or a singular `role` instead of `roles[]`), TypeScript can't express
+a type _replacement_ through `extends` (the static-getter override is checked
+covariantly, so it fails with `TS2417`). Compose instead: extend `BaseModel` and
+reuse the framework's auth logic by spreading it in.
+
+```ts title="/src/models/User.ts"
+import { BaseModel } from "@adaptivestone/framework/modules/BaseModel.js";
+import FrameworkUser from "@adaptivestone/framework/models/User.js";
+import type { Schema } from "mongoose";
+
+export default class User extends BaseModel {
+  static get modelSchema() {
+    return {
+      name: { native: { type: String }, machine: { type: String } },
+      email: { type: String },
+      password: String,
+      sessionTokens: [{ token: String, valid: Date }],
+      role: { type: String },
+      // …the rest of your schema
+    } as const;
+  }
+
+  static get modelStatics() {
+    return { ...FrameworkUser.modelStatics } as const;
+  }
+
+  static get modelInstanceMethods() {
+    return { ...FrameworkUser.modelInstanceMethods } as const;
+  }
+
+  static initHooks(schema: Schema) {
+    FrameworkUser.initHooks(schema); // keeps the password-hashing pre-save hook
+  }
+}
+```
+
+The shipped auth helpers are typed against small structural contracts
+(`UserAuthDoc` / `UserAuthInstance` / `UserAuthModel`), so they stay callable on
+your reshaped model without casts.
+
+:::note
+
+The auth statics (`getUserByEmailAndPassword`, `getUserByToken`, …) only read a
+few fields — `email`, `password`, and the token arrays. Any model that keeps
+those reuses them as-is. `getPublic` returns the framework's public shape, so
+override it if your model reshapes the fields it reads (such as `name`).
+
+:::
 
 ### Migration
 

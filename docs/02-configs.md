@@ -100,3 +100,53 @@ const sampleConfig = this.app.updateConfig("sample", {
   anotherVariable: 4,
 });
 ```
+
+## Typed config
+
+The base `getConfig(name)` signature is `Record<string, unknown>`, but the
+framework's [type generation](10-cli.md) (`node src/cli.ts generatetypes`) emits
+a `genTypes.d.ts` that types each call against your **actual** config file — so
+`this.app.getConfig("http").port` is precise, with no cast.
+
+The type is derived from the config's runtime **shape**, not its values, so a
+secret value is never written into the generated file. A key read straight from
+the environment with **no default** is a special case: at generation time
+`process.env.X` may be unset, so the framework reads it from the config
+**source** and types it honestly as `string | undefined`.
+
+```ts title="/src/config/hubspot.ts"
+export default {
+  apiKey: process.env.HUBSPOT_API_KEY, // typed: string | undefined
+  region: process.env.HUBSPOT_REGION ?? "eu", // has a default → typed: string
+  baseUrl: "https://api.hubspot.com", // literal → typed: string
+};
+```
+
+```ts
+const { apiKey } = this.app.getConfig("hubspot");
+// apiKey is `string | undefined` — guard it; no `as` cast needed
+if (!apiKey) {
+  throw new Error("HUBSPOT_API_KEY is not set");
+}
+```
+
+:::tip
+
+If a value is guaranteed present (you assert it at boot), add a non-null
+assertion in the config so the generated type is `string`:
+
+```ts
+apiKey: process.env.HUBSPOT_API_KEY!, // typed: string
+```
+
+:::
+
+:::note
+
+Recovery follows only inline `process.env.X` reads in a config's own
+default-exported object. A key whose env read is spread in from another config
+(`{ ...baseConfig }`) or hidden behind an indirection isn't followed across that
+boundary. Regenerate after changing a config's shape; `generatetypes --check`
+fails CI if the committed types are stale.
+
+:::
