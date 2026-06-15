@@ -208,6 +208,60 @@ Please do not use the plural form for model names.
 
 :::
 
+## Typing plugin-reshaped fields
+
+Some Mongoose plugins reshape a field's value at runtime: `mongoose-intl` turns a
+`String` field into a `{ native, machine }` sub-document, an encryption plugin
+swaps a string for a cipher object, a custom getter returns a different type. The
+framework infers a field's type from `type:` (here, `string`), so the static type
+no longer matches what is actually stored — and you end up casting at every read.
+
+Mark such a field with `TsTypeOverride<T>` to declare its real compile-time type.
+The marker is a phantom (`__tsType`, never set at runtime), so the plugin keeps
+doing the reshaping; only the static type changes.
+
+```ts title="/src/models/Event.ts"
+import { BaseModel } from "@adaptivestone/framework/modules/BaseModel.js";
+import type { TsTypeOverride } from "@adaptivestone/framework/modules/BaseModel.js";
+import type { IntlSubDocValue } from "mongoose-intl"; // your plugin's value type
+
+// A small factory keeps schemas readable: a `String` field the intl plugin
+// reshapes into an `IntlSubDocValue` at runtime.
+function intlString<C extends object>(field: C) {
+  return field as C & TsTypeOverride<IntlSubDocValue<string>>;
+}
+
+export default class Event extends BaseModel {
+  static get modelSchema() {
+    return {
+      title: intlString({ type: String, intl: true }),
+      schedule: [{ title: intlString({ type: String, intl: true }) }],
+      plainField: { type: String }, // unmarked → still `string`
+    } as const;
+  }
+}
+```
+
+The static type now follows the runtime value everywhere — no casts:
+
+```ts
+const Event = this.app.getModel("Event");
+const event = await Event.findOne();
+event?.title?.native; // `title` is IntlSubDocValue<string>
+event?.schedule?.[0]?.title?.machine; // any depth (nested + subdoc arrays)
+event?.plainField; // unmarked field is still `string`
+```
+
+:::note
+
+The override is **opt-in** and a strict **no-op** for any field without the
+marker — existing models are unaffected. It recurses into nested objects and
+subdocument arrays, so a reshaped field can appear at any depth. The same marker
+works for any runtime-reshaping plugin (encrypted fields, custom getters, …), not
+just `mongoose-intl`.
+
+:::
+
 ## API
 
 ```ts
