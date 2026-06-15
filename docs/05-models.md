@@ -208,6 +208,27 @@ Please do not use the plural form for model names.
 
 :::
 
+:::tip Annotating `this` on instance methods
+
+An instance method may declare an explicit `this:` to type its body — handy when
+the body assumes a narrower shape than the raw document (a populated ref, a
+non-null [plugin-reshaped field](#typing-plugin-reshaped-fields), sibling
+methods):
+
+```ts
+getInfo: async function (this: SomeModelLite) {
+  return { _id: this._id, email: this.email };
+},
+```
+
+That annotation types the **body only**. You still call the method directly on
+the document — `doc.getInfo()` — on any model handle; the framework drops the
+authored `this` from the caller-facing type, since a method accessed on its own
+document always has the right `this` at runtime. No `(schema.methods.x as …)
+.call(doc, …)` cast is needed.
+
+:::
+
 ## Typing plugin-reshaped fields
 
 Some Mongoose plugins reshape a field's value at runtime: `mongoose-intl` turns a
@@ -259,6 +280,70 @@ marker — existing models are unaffected. It recurses into nested objects and
 subdocument arrays, so a reshaped field can appear at any depth. The same marker
 works for any runtime-reshaping plugin (encrypted fields, custom getters, …), not
 just `mongoose-intl`.
+
+:::
+
+## Typing populated references
+
+A reference field (`{ type: Schema.Types.ObjectId, ref: "User" }`) is typed as an
+`ObjectId` — that is what is stored, and what you get back when the field is
+**not** populated. After `.populate(...)` the runtime value is the referenced
+document, but the inferred type stays `ObjectId` (Mongoose cannot know at the
+schema level which queries populate it). There are two cast-free ways to type the
+populated value, depending on how often you populate the field.
+
+**Per call — `.populate<T>()`.** When you populate occasionally, pass the
+populated shape as the type argument at the call site. The returned document is
+typed with that field replaced:
+
+```ts
+const Boat = this.app.getModel("Boat");
+const boat = await Boat.findOne();
+const populated = await boat!.populate<{ owner: { email: string } }>("owner");
+populated.owner.email; // typed — no cast
+```
+
+**Always — mark the field.** When a field is almost always read populated, mark it
+with `TsTypeOverride` as the **union** of both states (`ObjectId` when not
+populated, the document when it is). Reads then narrow without a cast:
+
+```ts title="/src/models/Boat.ts"
+import { BaseModel } from "@adaptivestone/framework/modules/BaseModel.js";
+import type { TsTypeOverride } from "@adaptivestone/framework/modules/BaseModel.js";
+import { Schema, type Types } from "mongoose";
+
+type PopulatedOwner = { email: string; name: string };
+
+function ref<C extends object, T>(field: C) {
+  return field as C & TsTypeOverride<Types.ObjectId | T>;
+}
+
+export default class Boat extends BaseModel {
+  static get modelSchema() {
+    return {
+      owner: ref<{ type: typeof Schema.Types.ObjectId; ref: "User" }, PopulatedOwner>({
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      }),
+    } as const;
+  }
+}
+```
+
+```ts
+const boat = await this.app.getModel("Boat").findOne();
+// `owner` is `ObjectId | PopulatedOwner | undefined` — narrow before use:
+if (boat?.owner && "email" in boat.owner) {
+  boat.owner.email; // typed as PopulatedOwner
+}
+```
+
+:::note
+
+Refs that are not marked stay plain `ObjectId`, and `.populate<T>()` always works
+regardless. Prefer the marker only for fields you consistently populate — the
+union forces a narrowing check, which is the honest cost of a field that is
+sometimes an id and sometimes a document.
 
 :::
 
