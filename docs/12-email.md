@@ -22,22 +22,89 @@ npm i @adaptivestone/framework-module-email
 
 ## Templates
 
-We support two types of templates: HTML files (not templates) or Pug templates. It’s easy to add your own template language too.
-
-For each email, you should provide an HTML version, a text version (optional), and a subject. These should be provided as separate files inside the template directory.
+A template is a folder of files; each file's extension selects the engine that renders it. For each email you provide an HTML version, a subject, and (optionally) a text version, as separate files inside the template directory.
 
 If the text version of the email is not provided, it will be generated from the HTML version by removing all HTML tags with the help of the [html-to-text](https://www.npmjs.com/package/html-to-text) package.
 
 The template directory is located at `src/services/messaging/email/templates/{templateName}` in your project. You can change it in the config.
 
-Example of a folder:
+By default the module ships only plain-text engines — `html`, `text` and `css` (files are read as-is):
 
 ```js
-html.pug; // HTML markup of the email
-subject.pug; // Subject to generate
-text.pug; // Text version of the email
+html.html; // HTML markup of the email
+subject.text; // Subject to generate
+text.text; // Text version of the email (optional)
 style.css; // Styles to inline inside the HTML
 ```
+
+To use a real template language such as Pug, register its engine first (see [Template engines](#template-engines)); then your files can be `html.pug`, `subject.pug`, and so on.
+
+## Template engines
+
+:::warning Breaking change in v2
+
+Before v2, Pug was bundled and `.pug` templates worked out of the box. As of **v2 the module ships no template-engine dependency** — only the plain-text `html`, `text` and `css` engines. To keep using `.pug` (or any other language) you must install that engine and register it yourself.
+
+:::
+
+Register an engine by mapping a file extension to a render function. The function receives the absolute path to the template file and the render data, and returns the rendered string (sync or async):
+
+```js
+import pug from "pug";
+import ejs from "ejs";
+import Mailer from "@adaptivestone/framework-module-email";
+
+// Pug — was bundled by default before v2; now opt-in
+Mailer.registerTemplateEngine("pug", (fullPath, data) =>
+  pug.compileFile(fullPath)(data),
+);
+
+// any engine works the same way
+Mailer.registerTemplateEngine("ejs", (fullPath, data) =>
+  ejs.renderFile(fullPath, data),
+);
+```
+
+### Where to register
+
+Engines live in a **single process-wide registry** shared by every `Mailer` instance, so register them **once at process startup, before any email is sent** — not per request and not per `Mailer` instance.
+
+The natural place is the worker bootstrap (`src/server.ts`), the file each worker process runs. Register before `startServer()`:
+
+```js
+// src/server.ts
+import Server from "@adaptivestone/framework/server.js";
+import Mailer from "@adaptivestone/framework-module-email";
+import pug from "pug";
+import folderConfig from "./folderConfig.ts";
+
+Mailer.registerTemplateEngine("pug", (fullPath, data) =>
+  pug.compileFile(fullPath)(data),
+);
+
+const server = new Server(folderConfig);
+await server.startServer();
+```
+
+:::note
+
+The registry is per **process**. If your app uses the cluster manager (`src/index.ts` forking workers), register in `src/server.ts` (which every worker runs), not in the master `src/index.ts` (which never sends mail).
+
+:::
+
+### Registering more than once
+
+`registerTemplateEngine` can be called as many times as you like:
+
+- **Different extensions accumulate** — call it once per engine you want (`pug`, `ejs`, `mjml`, …).
+- **The same extension overrides** — the last registration for a given extension wins, so you can replace a built-in or re-register safely. There is no error on re-registration.
+- Extensions are normalized, so `"pug"`, `".pug"` and `".PUG"` all target the same engine.
+
+### Helpers
+
+- `Mailer.registerTemplateEngine(extension, engine)` — register/override an engine for a file extension (leading dot optional, case-insensitive).
+- `Mailer.unregisterTemplateEngine(extension)` — remove an engine; returns `true` if one was removed.
+- `Mailer.hasTemplateEngine(extension)` — check whether an engine is registered.
 
 ### Inline Images
 
@@ -138,3 +205,4 @@ EMAIL_PORT; // 2525 by default
 EMAIL_USER;
 EMAIL_PASSWORD;
 EMAIL_TRANSPORT; // smtp by default
+```
