@@ -105,8 +105,10 @@ Handler; // Some async function (most likely in this controller file) that will 
 Request; // A special interface that will do validation of body parameters for you.
 Query; // A special interface that will do validation of query parameters for you.
 Middleware; // An array of middlewares specially for the current route.
-Description; // A description of this route (used when generating documentation).
+Description; // A description of this route — becomes the OpenAPI operation summary.
 ```
+
+The route `description` together with the `request:` / `query:` schemas and the middleware chain are what the framework reads to generate an [OpenAPI 3.1 document](../17-openapi.md).
 
 ## Request
 
@@ -575,7 +577,7 @@ const myJoiDriver: ValidatorDriver = {
     if (error) throw new ValidationError(joiToFrameworkPayload(error));
     return value;
   },
-  toJsonSchema: (body) => myJoiToJsonSchema(body), // optional; for OpenAPI later
+  toJsonSchema: (body) => myJoiToJsonSchema(body), // optional — supplies the OpenAPI body schema
 };
 
 ValidateService.register(myJoiDriver);

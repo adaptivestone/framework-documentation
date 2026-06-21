@@ -284,3 +284,14 @@ Codegen only affects **types**, never runtime — so you run it whenever somethi
 | Prose, comments, formatting | No | nothing type-bearing changed |
 
 When in doubt, just run it — it's idempotent and cheap. The standard wiring (`"check:types": "npm run gen && tsc --noEmit"`) regenerates before every type-check, so you never run it by hand in CI. See [Routes → Typed handler signatures](06-Controllers/02-routes.md#typed-handler-signatures-codegen).
+
+### Generate OpenAPI
+
+Generates an OpenAPI 3.1 document from your controllers (paths, parameters, request bodies, security, tags) — derived from the route definitions you already write. Opens no database/network connection and binds no port, so it's safe in CI.
+
+```bash
+node src/cli.ts openapi                       # print to stdout
+node src/cli.ts openapi --output openapi.json # write to a file
+```
+
+See the [OpenAPI chapter](17-openapi.md) for what's documented, how schemas are introspected, and how middlewares contribute security schemes.
