@@ -295,3 +295,33 @@ node src/cli.ts openapi --output openapi.json # write to a file
 ```
 
 See the [OpenAPI chapter](17-openapi.md) for what's documented, how schemas are introspected, and how middlewares contribute security schemes.
+
+### List Routes
+
+Prints your project's route tree — every mounted method, full path, path/splat parameters, and the middleware chain that runs for each route — by walking the same route registry the server logs at boot. Like `openapi`, it opens no database/network connection and binds no port.
+
+```bash
+node src/cli.ts routes
+```
+
+Example output:
+
+```text
+Registered routes:
+/
+├── GET     /
+└── auth  (mw: GetUserByToken, RateLimiter)
+    ├── login
+    │   └── POST    /auth/login  [request]
+    └── verify
+        └── POST    /auth/verify  [request]
+
+3 route(s) across 5 node(s) in the tree.
+```
+
+Reading the annotations:
+
+- **`(mw: A, B)`** — middleware newly attached at this node. Inherited middleware from parent nodes is shown as `pmw:` so each route line is self-contained about what runs before it.
+- **`[request]` / `[query]`** — this route **validates** a request body / query string. They are presence flags, not the schema itself: a route either declares a validator or it doesn't. To see the actual field shapes, run `openapi` — it resolves each schema to JSON Schema (where the validator supports introspection). Imperative validators such as `defineSchema` have no introspectable shape, so they appear here as `[request]` and degrade to a placeholder in the OpenAPI document.
+
+Useful for answering "what's actually mounted in my app?" without starting the server. For the full request/response contract, use [`openapi`](#generate-openapi).
