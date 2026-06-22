@@ -94,6 +94,47 @@ If you want to define a custom path, you can provide your own implementation of 
 
 By default, `getHttpPath` resolves the current folder and filename and uses them to construct the route name.
 
+### Project boot hook (`bootHttp`)
+
+For app-wide HTTP wiring that doesn't belong to any single controller — webhooks, healthchecks, OAuth callbacks, or boot-time setup — pass a **`bootHttp`** function to the `Server` constructor. The framework calls it with the live `app` during `startServer`, after controllers are registered but before the adapter mounts, so anything it adds is in place from the first request.
+
+Define it inline — `app` is inferred, no annotation needed:
+
+```ts title="src/index.ts"
+import Server from "@adaptivestone/framework/server.js";
+
+const server = new Server({
+  folders: {
+    /* … */
+  },
+  bootHttp: async (app) => {
+    // `httpServer` is set by the time bootHttp runs (typed nullable, so use `?.`).
+    // An ad-hoc route that doesn't fit the controller convention:
+    app.httpServer?.routeRegistry.registerRoute("POST", "/webhooks/stripe", {
+      handler: stripeWebhookHandler,
+    });
+
+    // Or app-wide Express middleware (runs before the router):
+    // app.httpServer?.express.use(myGlobalMiddleware);
+  },
+});
+await server.startServer();
+```
+
+There's no required file or folder for it — it's just a function. If it grows, extract it to its own module and type it with `BootHttpHook`:
+
+```ts title="src/bootHttp.ts"
+import type { BootHttpHook } from "@adaptivestone/framework/server.js";
+
+const bootHttp: BootHttpHook = async (app) => {
+  /* … */
+};
+
+export default bootHttp;
+```
+
+It's wired **explicitly**, not auto-discovered from a folder: the framework finds everything else through configured folders, and those are all spoken for — `config/` merges its files as config, `controllers/` auto-loads its files as controllers — so there's no conflict-free folder to scan. `bootHttp` is **HTTP-specific** by design: it needs `app.httpServer`, which only exists once the HTTP server boots (CLI and worker processes never run it). Unlike the `callbackBefore404` hook (which you pass to `startServer` and which runs _after_ the adapter mounts), `bootHttp` runs _before_ the mount.
+
 ## Request Flow
 
 ![RequestFlow](/img/requestFlow.jpg)
