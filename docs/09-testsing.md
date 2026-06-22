@@ -1,6 +1,6 @@
 # Testing
 
-The framework comes with [Vitest](https://vitest.dev/) support. When you name files with the `.test.(js|ts)` extension, they will be added to the tests.
+The framework comes with [Vitest](https://vitest.dev/) support. When you name files with the `.test.(js|ts)` extension, they will be added to the tests. The test lifecycle is runner-agnostic, so you can also drive it from Node's built-in [`node:test`](https://nodejs.org/api/test.html) — see [Using with `node:test`](#using-with-nodetest).
 
 :::tip
 Please put test files near the main files that you are testing and give them the same name.
@@ -35,7 +35,7 @@ The minimum Vite config file should contain:
     ],
     setupFiles: [
       './src/tests/setup.ts', // this is a config files with directory location
-      '@adaptivestone/framework/tests/setupVitest', // This is the entry point for testing from the  framework
+      '@adaptivestone/framework/tests/setupVitest.js', // This is the entry point for testing from the  framework
       './src/tests/setupHooks.ts', // This is a local config file (see below)
     ],
   }
@@ -65,7 +65,7 @@ Testing helpers provide isolation of modules, and we run preparation of the fram
     //...
     setupFiles: [
       './src/tests/setup.ts', // this is a config files with directory location
-      '@adaptivestone/framework/tests/setupVitest', // This is the entry point for testing from the  framework
+      '@adaptivestone/framework/tests/setupVitest.js', // This is the entry point for testing from the  framework
       './src/tests/setupHooks.ts', // <-- we are able to provide custom logic there
     ],
   }
@@ -111,6 +111,63 @@ const { user, token } = await createDefaultTestUser();
 // defaultUser - same user
 // defaultAuthToken - same token
 ```
+
+## Using with `node:test`
+
+The framework's test lifecycle is **runner-agnostic**: the setup logic lives in plain async functions (`@adaptivestone/framework/tests/setupFramework`) with no vitest dependency, so you can drive it from Node's built-in [`node:test`](https://nodejs.org/api/test.html) runner. `vitest` is an optional peer dependency — node:test users don't need it installed.
+
+Wire it per file (mirrors `setupVitest`):
+
+```ts
+import "@adaptivestone/framework/tests/setupNodeTest.js"; // server per file + per-test redis isolation
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { getTestServerURL } from "@adaptivestone/framework/tests/testHelpers.js";
+
+test("returns 400 on a bad body", async () => {
+  const { status } = await fetch(getTestServerURL("/some/endpoint"), { method: "POST" });
+  assert.equal(status, 400);
+});
+```
+
+### The one difference: global Mongo
+
+vitest runs all files in one process and starts the in-memory Mongo once via `globalSetup`. node:test runs **each file in its own process**, so there is no per-file place to start a shared Mongo. Use node:test's [global setup hook](https://nodejs.org/api/test.html#global-setup-and-teardown) (`--test-global-setup`) — the exact analog of vitest's `globalSetup`. Write a tiny entry module:
+
+```ts title="globalSetup.ts"
+import {
+  startTestMongo,
+  stopTestMongo,
+} from "@adaptivestone/framework/tests/setupFramework.js";
+
+export async function globalSetup() {
+  await startTestMongo(); // sets TEST_MONGO_URI; every test process inherits it
+}
+
+export async function globalTeardown() {
+  await stopTestMongo();
+}
+```
+
+Run the whole suite through it (one Mongo, shared across every file):
+
+```bash
+node --test --test-global-setup=./globalSetup.ts
+```
+
+:::note
+`--test-global-setup` is experimental (Stability 1) but ships in every Node ≥ 24 — the framework's own node:test suite uses it. If you'd rather avoid the flag, point `TEST_MONGO_URI` at an external Mongo (a CI service or a local instance) and skip the in-memory server.
+:::
+
+The runner-agnostic building blocks (exported from `@adaptivestone/framework/tests/setupFramework`):
+
+| Export | Runs | Purpose |
+|---|---|---|
+| `startTestMongo` / `stopTestMongo` | once per run | in-memory Mongo replica set; sets `TEST_MONGO_URI` |
+| `startTestServer` / `stopTestServer` | per file | boot / tear down a server against a fresh DB |
+| `setTestRedisNamespace` / `clearTestRedisNamespace` | per test | isolate the cache / rate-limiter keyspace |
+
+`setupVitest` and `setupNodeTest` are thin wrappers that wire these into each runner's hooks.
 
 ## Mongo Instance
 
@@ -226,7 +283,7 @@ jobs:
 It's possible that in testing you will need to have low-level access to the server itself. We have a helper there too.
 
 ```js
-import { serverInstance } from "@adaptivestone/framework/tests/testHelpers.ts";
+import { serverInstance } from "@adaptivestone/framework/tests/testHelpers.js";
 ```
 
 ## Test-only controllers
@@ -274,7 +331,7 @@ Full example:
 import {
   getTestServerURL,
   defaultAuthToken,
-} from "@adaptivestone/framework/tests/testHelpers.ts";
+} from "@adaptivestone/framework/tests/testHelpers.js";
 
 describe("module", () => {
   describe("function", () => {
