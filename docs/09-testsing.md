@@ -231,6 +231,12 @@ tests:
 
 It is better to look at the [repo](https://github.com/adaptivestone/framework/blob/main/.github/workflows/test.yml).
 
+:::note
+
+The `redis` service below is only needed if your tests exercise the **redis** cache or rate-limiter driver. With the default in-memory cache (and the default `mongo` rate limiter), you can drop the `redis` service and `REDIS_URI` entirely — `clearTestRedisNamespace` is a no-op when no Redis is reachable.
+
+:::
+
 ```yml
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 

@@ -22,6 +22,12 @@ const s3config = appInstance.getConfig("s3");
 
 A simplified way to connect to Redis. This helper loads the configuration and adds shutdown hooks.
 
+:::note
+
+`@redis/client` is an **optional peer dependency**. Install it (`npm i @redis/client`) before using this helper or the redis cache / rate-limiter driver. A project on the default in-memory cache never loads it.
+
+:::
+
 ```ts
 import { getRedisClient, getRedisClientSync } from '@adaptivestone/framework/helpers/redis/redisConnection.js';
 const redisClient = await getRedisClient();

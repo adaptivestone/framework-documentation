@@ -320,7 +320,7 @@ The rate limiter middleware allows you to include request components (`req.body`
 
 You can find the default parameters in ‘config/rateLimiter.js’. These parameters are used if other parameters are not provided.
 
-The rate limiter has multiple backends (memory, Redis, and Mongo). By default, the 'memory' backend is activated.
+The rate limiter has multiple backends, selected via the `driver` option (`'mongo'`, `'memory'`, or `'redis'`). The default is `'mongo'`. The `'redis'` backend lazy-loads `@redis/client`, which is an **optional peer dependency** — install it (`npm i @redis/client`) when you choose that driver; the `'memory'` and `'mongo'` backends never load it.
 
 ### RequestLogger
 

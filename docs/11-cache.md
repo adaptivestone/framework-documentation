@@ -22,7 +22,7 @@ The API is simple:
   ): Promise<any>;
 ```
 
-By default, the store time is 5 minutes.
+By default, the store time is 5 minutes. A store time of `0` means **"don't cache"** — the callback runs on every call and nothing is written.
 
 Example:
 
@@ -63,6 +63,33 @@ Please note that it works that way **per process**, as checking promises happens
 
 :::
 
+## Drivers
+
+The cache is built on a small `CacheDriver` interface (`get` / `set` / `del`), with two first-party drivers:
+
+- **`memory`** — **the default.** A per-process `Map` with per-key TTL. Needs no external service, so a plain install works out of the box and never loads `@redis/client`. Because it is per-process, each clustered worker has its own cache — fine for development and single-node deployments.
+- **`redis`** — a shared cache backed by Redis. Use this for **multi-node deployments** (or anywhere multiple processes must see the same cached values). It lazy-loads `@redis/client`, which is an **optional peer dependency** — install it yourself (`npm i @redis/client`) when you select this driver.
+
+The orchestration around the driver — namespacing, single-flight request dedup, serialization, and fail-soft degradation (a cache outage degrades to running your callback, it never fails the request) — is identical across drivers.
+
 ## Configuration
 
-For now, the cache subsystem has no configuration. But please follow the Redis configuration, as the cache depends on it.
+The driver is selected in `config/cache.ts`:
+
+```ts title="config/cache.ts"
+export default {
+  // 'memory' (default) or 'redis'. Overridable via the CACHE_DRIVER env var.
+  driver: (process.env.CACHE_DRIVER || "memory") as "memory" | "redis",
+};
+```
+
+Two related settings live in `config/redis.ts` rather than here, because they are **shared with the rate limiter**:
+
+- **`namespace`** — a key prefix applied to **every** cache (and rate-limiter) key, regardless of driver. Despite living in `redis.ts`, it is _not_ redis-specific: the in-memory driver prefixes its keys with it too. Think of it as a keyspace/tenant label (e.g. per environment). Keeping it in one place means the cache and rate limiter never drift apart, and the test helper `setTestRedisNamespace` can isolate both with a single switch.
+- **`url`** — the Redis connection string, used only by the `redis` backends (this cache and the rate limiter's redis driver share one client). Irrelevant when both run on non-redis drivers.
+
+:::tip Custom driver
+
+You can supply your own backend by setting `driver` to an object implementing `CacheDriver` (`get`, `set`, `del`) instead of a string.
+
+:::
