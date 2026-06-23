@@ -147,7 +147,7 @@ Built-in view rendering was **removed in version 5**. The framework no longer sh
 
 :::
 
-If you need server-rendered HTML, the underlying Express 5 instance is available on `app.express`, so you can register a template engine yourself (see the [Express template-engine guide](https://expressjs.com/en/guide/using-template-engines.html)). For most applications, return JSON and render on the client.
+If you need server-rendered HTML, the underlying Express 5 instance is available on `app.httpServer.express` (once the HTTP server has booted), so you can register a template engine yourself (see the [Express template-engine guide](https://expressjs.com/en/guide/using-template-engines.html)). For most applications, return JSON and render on the client.
 
 ## JSON
 

@@ -114,7 +114,7 @@ const { user, token } = await createDefaultTestUser();
 
 ## Using with `node:test`
 
-The framework's test lifecycle is **runner-agnostic**: the setup logic lives in plain async functions (`@adaptivestone/framework/tests/setupFramework`) with no vitest dependency, so you can drive it from Node's built-in [`node:test`](https://nodejs.org/api/test.html) runner. `vitest` is an optional peer dependency — node:test users don't need it installed.
+The framework's test lifecycle is **runner-agnostic**: the setup logic lives in plain async functions (`@adaptivestone/framework/tests/setupFramework.js`) with no vitest dependency, so you can drive it from Node's built-in [`node:test`](https://nodejs.org/api/test.html) runner. `vitest` is an optional peer dependency — node:test users don't need it installed.
 
 Wire it per file (mirrors `setupVitest`):
 
@@ -159,7 +159,7 @@ node --test --test-global-setup=./globalSetup.ts
 `--test-global-setup` is experimental (Stability 1) but ships in every Node ≥ 24 — the framework's own node:test suite uses it. If you'd rather avoid the flag, point `TEST_MONGO_URI` at an external Mongo (a CI service or a local instance) and skip the in-memory server.
 :::
 
-The runner-agnostic building blocks (exported from `@adaptivestone/framework/tests/setupFramework`):
+The runner-agnostic building blocks (exported from `@adaptivestone/framework/tests/setupFramework.js`):
 
 | Export | Runs | Purpose |
 |---|---|---|

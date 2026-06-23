@@ -99,7 +99,7 @@ class CommandName extends AbstractCommand {
   /**
    * Return the name of the connection that you want to use.
    */
-  static getMongoConnectionName(commandName, commandArguments) {
+  static getMongoConnectionName(commandName, args) {
     return `CLI: ${commandName} ${JSON.stringify(args)}`;
   }
 

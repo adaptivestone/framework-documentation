@@ -43,7 +43,7 @@ import type {
   GetModelTypeLiteFromSchema, // Same as above, but only uses the schema to avoid circular linking.
 } from "@adaptivestone/framework/modules/BaseModel.js";
 
-import type { Schema } from "mongoose";
+import mongoose, { type Schema } from "mongoose";
 
 // Type helper for static and instance methods.
 type SomeModelLite = GetModelTypeLiteFromSchema<typeof SomeModel.modelSchema>;
@@ -383,15 +383,19 @@ const UserModel = this.app.getModel("User");
 const user = await UserModel.getUserByEmailAndPassword("email", "password");
 const userToken = await user.generateToken(); // Generates and stores a token in the database
 const userPublic = await user.getPublic();
-const hashedPassword = await UserModel.hashPassword("password");
+// `hashPassword` is a standalone helper, not a model static:
+// import { hashPassword } from "@adaptivestone/framework/helpers/crypto.js";
+const hashedPassword = await hashPassword("password");
 const sameUser = await UserModel.getUserByToken(userToken);
 const sameUserAgain = await UserModel.getUserByEmail(user.email);
-const recoveryToken = await UserModel.generateUserPasswordRecoveryToken(user);
+// The token generators live in `userHelpers`, not on the model:
+// import { userHelpers } from "@adaptivestone/framework/models/User.js";
+const recoveryToken = await userHelpers.generateUserPasswordRecoveryToken(user);
 const sameUserAgain2 = await UserModel.getUserByPasswordRecoveryToken(
   recoveryToken
 );
 const isSuccess = await user.sendPasswordRecoveryEmail(i18n);
-const verificationToken = await UserModel.generateUserVerificationToken(user);
+const verificationToken = await userHelpers.generateUserVerificationToken(user);
 const sameUserAgain3 = await UserModel.getUserByVerificationToken(
   verificationToken
 );

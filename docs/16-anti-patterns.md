@@ -28,7 +28,7 @@ The route schemas validate and coerce before the handler runs, produce a typed `
 ❌ A `routes` getter that reads `this.something` assigned in the constructor.
 ✅ Keep `routes` declarative — list handler methods and inline schemas only.
 
-`npm run gen` reads `routes` through a constructor-free "ghost", so type generation stays free of constructor side effects. If `routes` touches constructor state, codegen falls back to constructing the controller and warns once per class (`ASF_DEP_CTOR_ROUTES`) — and that fallback is removed in v6. Move the state into handlers or a module-level constant. See [Keep `routes` declarative](06-Controllers/02-routes.md#keep-routes-declarative-codegen-reads-it-without-your-constructor).
+`npm run gen` reads `routes` **statically from the source AST** — it never imports or constructs your controller, so type generation stays free of constructor side effects. The cost: if the `routes` getter isn't a plain object literal (it reads `this.something`, loops, or otherwise computes the route shape), codegen can't analyze it and **the run fails** — there is no constructor fallback. Move the dynamic part into handlers or a module-level constant so the returned shape stays literal. See [Keep `routes` declarative](06-Controllers/02-routes.md#keep-routes-declarative-codegen-reads-the-source-never-your-constructor).
 
 ## Don't reach into raw Express when `req.appInfo` already has it
 

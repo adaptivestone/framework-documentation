@@ -20,19 +20,19 @@ Middleware will be executed in the order provided. Based on that, you can chain 
 
 ## Global Middlewares
 
-The framework internally uses a few middlewares. These middlewares are not adjustable (for now) and are executed on each request.
+The framework internally uses a few middlewares. These middlewares are not adjustable (for now) and are executed on each request, in this order (security response headers are applied first, before any of these):
 
-[Cors](#cors)
+[RequestLogger](#requestlogger)
 
 [PrepareAppInfo](#prepareappinfo)
 
 [IpDetector](#ipdetector)
 
-[RequestLogger](#requestlogger)
+[I18n](#i18n)
+
+[Cors](#cors)
 
 [RequestParser](#requestparser)
-
-[I18n](#i18n)
 
 ## Including Middlewares into Controllers
 

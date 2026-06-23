@@ -36,6 +36,10 @@ Please note: TypeScript types are fully optional. You are able to use plain Java
 
 ```ts
 import OriginalUserModel from "@adaptivestone/framework/models/User.js";
+import type {
+  GetModelTypeLiteFromSchema,
+  ExtractProperty,
+} from "@adaptivestone/framework/modules/BaseModel.js";
 
 class User extends OriginalUserModel {
   static get modelStatics() {
@@ -46,7 +50,7 @@ class User extends OriginalUserModel {
 
     return {
       ...OriginalUserModel.modelStatics, // Grab the original model methods
-      getPublic: function getPublic(this: InstanceType<UserModel>) {
+      getPublic: function getPublic(this: InstanceType<UserModelLite>) {
         return {
           userName: this.name,
         };

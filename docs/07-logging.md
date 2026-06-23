@@ -56,7 +56,7 @@ By default, the framework provides two transports: **console** and **Sentry**
 
 We try to keep the configuration simple and powerful - you are able to enable/disable loggers and add your own with all available options passed to the transport.
 
-Configuration files are located in ‘config/log.js’.
+Configuration files are located in ‘config/log.ts’.
 
 ```js
 export default {
@@ -172,7 +172,7 @@ Model have no hooks - message
 
 #### Sentry Transport
 
-**LOGGER_SENTRY_DSN** - Sentry DSN.
+The framework's Sentry transport reuses the Sentry SDK your app already initialized — it does **not** read a DSN itself. Configure the DSN in your own `Sentry.init({ dsn: ... })` at startup (the project template uses the `LOGGER_SENTRY_DSN` env var there by convention). The framework reads only:
 
 **LOGGER_SENTRY_LEVEL** - the log level that should go into Sentry. Default: 'info'.
 

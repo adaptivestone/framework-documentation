@@ -82,8 +82,8 @@ You can use the same approach for different environments (dev, stage, testing, e
 ## API
 
 ```ts
-getConfig(configName: string): {};
-updateConfig(configName: string, config: {}): {};
+getConfig(configName: string): Record<string, unknown>;
+updateConfig(configName: string, config: Record<string, unknown>): Record<string, unknown>;
 ```
 
 Returns the config based on the config name. It also caches it in memory.

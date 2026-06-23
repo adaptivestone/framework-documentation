@@ -19,7 +19,7 @@ Models files part of [framework inheritance process ](03-files-inheritance.md).
 
 ## Access mongoose instance
 
-Inside the class mongoose avaialable as
+Inside the class mongoose is available as
 
 ```js
 this.mongooseModel;
@@ -44,8 +44,8 @@ class SomeModel extends AbstractModel {
   }
 
   // here mongoose scheme go
-  // this is a fullu mongoose scheme
-  // Please reffer to mongoose documentation https://mongoosejs.com/docs/guide.html
+  // this is a full mongoose schema
+  // Please refer to mongoose documentation https://mongoosejs.com/docs/guide.html
   get modelSchema() {
     return {
       someString: { type: String, required: true },
@@ -56,15 +56,15 @@ class SomeModel extends AbstractModel {
   }
 
   // here mongoose scheme options go
-  // this is a fullu mongoose scheme
-  // Please reffer to mongoose documentation https://mongoosejs.com/docs/guide.html#options
+  // this is a full mongoose schema
+  // Please refer to mongoose documentation https://mongoosejs.com/docs/guide.html#options
   get modelSchemaOptions() {
     return {
       read: "primary",
     };
   }
 
-  // Static method will be part on monngose class
+  // Static method will be part of the mongoose class
   // this.app.getModel('SomeModel').someStaticMethod()
   static async someStaticMethod() {
     const somedata = await this
@@ -116,7 +116,7 @@ export default SomeModel;
 If you have some relations ("ref") on a mongoose model that you should care to load schema. As mongoose can only build relationships with schemas in memory. Google place to do that - inside constructor. Be aware on loop linking models
 
 ```js
-constructoror(app){
+constructor(app){
 	super(app);
 	this.app.getModel(“ReferenceModelName”);
 }
@@ -150,7 +150,7 @@ Example:
 
 ```js
 const UserModel = this.app.getModel("User");
-const userInstace = await UserModel.findOne({ email: "user@email.com" });
+const userInstance = await UserModel.findOne({ email: "user@email.com" });
 ```
 
 ## Configuration
@@ -173,8 +173,8 @@ Auth controller depends on this model
 
 ```js
 const UserModel = this.app.getModel("User");
-const user = await UserModel.getUserByEmailAndPassword("email","password"):
-const userToken = await user.generateToken(); // generate and store token on databse
+const user = await UserModel.getUserByEmailAndPassword("email","password");
+const userToken = await user.generateToken(); // generate and store token in the database
 const userPublic = await user.getPublic();
 const hashedPassword = await UserModel.hashPassword("password");
 const sameUser = await UserModel.getUserByToken(userToken);
@@ -183,8 +183,7 @@ const recoveryToken = await UserModel.generateUserPasswordRecoveryToken(user);
 const sameUSerAgain2 = await UserModel.getUserByPasswordRecoveryToken(recoveryToken);
 const isSuccess = await user.sendPasswordRecoveryEmail(i18n);
 const verificationToken = await UserModel.generateUserVerificationToken(user);
-const sameUSerAgain3 = awaitUserModel.getUserByVerificationToken(verificationToken);
-await UserModel.removeVerificationToken(verificationToken);
+const sameUserAgain3 = await UserModel.getUserByVerificationToken(verificationToken);
 const isSuccess2 = await user.sendVerificationEmail(i18n);
 ```
 

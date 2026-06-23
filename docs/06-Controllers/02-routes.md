@@ -93,7 +93,7 @@ On the third level, we have a "route object," a special object that will describ
     page: yup.number().required(),
   }),
   middleware: [RateLimiter], // optional
-  description: yup.string() // optional
+  description: "Create a sample" // optional — a plain string; becomes the OpenAPI operation summary
 }
 
 ```
@@ -296,14 +296,14 @@ The gen file uses `InstanceType<typeof Controller>['routes'][...]['request']` ty
 
 The middleware chain in the gen file is read from the same `RouteRegistry.flatten()` the runtime uses — so the types you see at compile time match the middlewares that actually run at request time. No parallel matcher to drift.
 
-#### Keep `routes` declarative (codegen reads it without your constructor)
+#### Keep `routes` declarative (codegen reads the source, never your constructor)
 
-`npm run gen` introspects each controller through a prototype-only "ghost" — it reads the `routes` getter **without running the constructor**. That keeps type generation free of constructor side effects (config reads, S3/OAuth client construction, timers).
+`npm run gen` analyzes each controller **statically, from its source AST** — it never imports, constructs, or runs your controller. That keeps type generation free of side effects (config reads, S3/OAuth client construction, timers, DB connections) and fast.
 
-So your `routes` getter must be declarative: it may reference handler methods (`this.postLogin`), but it must not read state assigned in the constructor.
+The trade-off: the `routes` (and `static get middleware()` / `getHttpPath()`) getter must return a **plain object literal** that the parser can read directly. It may reference handler methods (`handler: this.postLogin`) and inline schemas, but it must not be computed — no reading constructor state, no loops, conditionals, computed keys, or `super` calls in the returned shape.
 
 ```ts
-// ✅ fine — the constructor sets up clients, but `routes` only lists handlers
+// ✅ fine — the constructor sets up clients, but `routes` returns a literal
 class Files extends AbstractController {
   constructor(app, prefix) {
     super(app, prefix);
@@ -314,27 +314,27 @@ class Files extends AbstractController {
   }
 }
 
-// ⚠️ deprecated — `routes` reads constructor-set state
+// ❌ not analyzable — `routes` is computed from constructor state
 class Crud extends AbstractController {
   constructor(app, prefix) {
     super(app, prefix);
     this.models = ['User', 'Order'];
   }
   get routes() {
-    // reading this.models here forces codegen to construct the controller
+    // a computed return — the AST can't read these route shapes
     return Object.fromEntries(this.models.map((m) => [`/${m}`, { handler: this.list }]));
   }
 }
 ```
 
-If `routes` does read constructor state, nothing breaks: codegen detects it, falls back to constructing a real instance, and emits a one-per-class deprecation warning (`ASF_DEP_CTOR_ROUTES`). Move that state into handlers (or a module-level constant) to clear the warning — the instantiation fallback will be removed in v6.
+If a `routes` getter isn't a static literal, codegen can't analyze it and **`npm run gen` fails** (declarative-only — there is no constructor fallback). Move the dynamic part into handlers or a module-level constant so the returned shape stays literal.
 
 #### Setup
 
 Add to `package.json`:
 
 ```json
-"gen": "node cliCommand.ts generatetypes",
+"gen": "node src/cli.ts generatetypes",
 "check:types": "npm run gen && tsc --noEmit"
 ```
 
@@ -735,20 +735,23 @@ export default ControllerName;
 After all controllers are registered, the framework prints the full route tree at the `verbose` log level — useful for spotting cross-controller middleware accumulation, splat scopes, or unexpected route shapes. Set `LOGGER_CONSOLE_LEVEL=verbose` (or your transport's equivalent) to see it.
 
 ```
+Registered routes:
 /  (mw: GetUserByToken)
-├── GET → home
-├── auth  (mw: GetUserByToken, RateLimiter)
+├── GET     /
+├── auth  (mw: RateLimiter; pmw: GetUserByToken)
 │   ├── login
-│   │   └── POST → postLogin  [request]
+│   │   └── POST    /auth/login  [request]
 │   └── logout
-│       └── POST → postLogout
-└── v1  (mw: ApiLimiter)
-    └── container  (mw: ApiLimiter)
-        ├── GET → getContainers  [query]
-        └── POST → getContainers  [query]
+│       └── POST    /auth/logout
+└── v1  (mw: ApiLimiter; pmw: GetUserByToken)
+    └── container
+        ├── GET     /v1/container  [query]
+        └── POST    /v1/container  [query]
+
+5 route(s) across 6 node(s) in the tree.
 ```
 
-`[request]` / `[query]` markers indicate routes with body / query schemas. `{…}` after a middleware name means it was registered with parameters.
+Each method line is `METHOD` (padded) followed by the route's full path — handler names aren't printed. `[request]` / `[query]` markers indicate routes with body / query schemas. For middleware: `(mw: …)` lists what's newly attached at that node or route, `pmw: …` lists the inherited chain that already runs above it (deduped, in run order), and `{…}` after a middleware name means it was registered with parameters.
 
 ### Warnings on misconfiguration
 
