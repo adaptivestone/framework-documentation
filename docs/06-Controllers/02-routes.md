@@ -168,6 +168,10 @@ The framework dispatches validation through [Standard Schema](https://standardsc
 Yup is shown in the examples below since the framework historically taught it, but the same shapes are accepted from any Standard Schema-conforming library.
 
 :::note
+`request:` validates the request **body** and `query:` validates the **query string** — **path params (`:id`) are not validated**. A raw param passed to Mongoose (`findById(req.params.id)`) throws a `CastError` → 500 on a malformed id. Guard params yourself — see [Recipes → Validate an ObjectId](../15-recipes.md#validate-an-objectid).
+:::
+
+:::note
 The framework no longer bundles a validator. `yup` is an **optional peer dependency** — install it only if you use yup schemas (or the deprecated `YupFile`). For dependency-free validation of simple shapes, use [`defineSchema`](#zero-dependency-schemas-defineschema) below.
 :::
 

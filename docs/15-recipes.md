@@ -51,6 +51,10 @@ export default Article;
 
 These handlers read only `req.params` and the model, so the base `FrameworkRequest` is enough. To customize the prefix, override `getHttpPath()`. See [Controllers](06-Controllers/01-intro.md).
 
+:::warning
+`req.params.id` is **not** validated by the framework. Passing a malformed id to `findById` throws a Mongoose `CastError` (a 500). Guard it — see [Validate an ObjectId](#validate-an-objectid).
+:::
+
 ## Add a route with a body schema
 
 Declare a `request:` schema inline. The framework validates and casts the body **before** your handler runs, strips unknown keys, and exposes the typed result on `req.appInfo.request`. Run `npm run gen` to emit `Article.routes.gen.ts` (where `PostCreateRequest` lives) and type the handler with it.
@@ -87,6 +91,51 @@ class Article extends AbstractController {
 ```
 
 The handler type `PostCreateRequest` is generated from the method name (`postCreate` → `PostCreateRequest`). Any [Standard Schema](https://standardschema.dev/) validator works (yup, zod, valibot, arktype), or the zero-dependency [`defineSchema`](14-helpers.md). See [Routes → Validation](06-Controllers/02-routes.md#validation).
+
+## Validate an ObjectId
+
+The framework validates `request:` (body) and `query:` schemas before your handler runs — but **not** path params. A handler that passes a raw `:id` straight to Mongoose (`Model.findById(req.params.id)`) throws a Mongoose **`CastError`** on a malformed id, and a `CastError` is not a `ValidationError`, so it surfaces as a **500**, not a clean 400. Validate ids explicitly.
+
+**Body / query fields** — add the check to the schema you already declare. A strict 24-hex pattern is enough:
+
+```ts
+import { object, string } from "yup";
+
+// in a route:
+query: object().shape({
+  authorId: string().matches(/^[0-9a-fA-F]{24}$/, "must be a valid id"),
+}),
+// zod equivalent: z.object({ authorId: z.string().regex(/^[0-9a-fA-F]{24}$/) })
+```
+
+A bad value is rejected with the framework's standard `{ errors: { authorId: [...] } }` 400 — it never reaches your handler.
+
+**Path params (`:id`)** — params aren't schema-validated, so guard them in the handler before touching the model:
+
+```ts
+import mongoose from "mongoose";
+import type { FrameworkRequest } from "@adaptivestone/framework/services/http/HttpServer.js";
+import type { Response } from "express";
+
+async getOne(req: FrameworkRequest, res: Response) {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    // Match the framework's validation-error shape: { errors: { field: [msg] } }
+    return res.status(400).json({ errors: { id: ["must be a valid id"] } });
+  }
+  const Article = this.app.getModel("Article");
+  return res.status(200).json({ data: await Article.findById(req.params.id) });
+}
+```
+
+:::note Strict vs loose
+`mongoose.isValidObjectId` is lenient — it also accepts any 12-character string (and some numbers). For a tighter check, use the 24-hex regex (`/^[0-9a-fA-F]{24}$/`).
+:::
+
+For many `:id` routes, factor the guard into a small reusable middleware (see [Write a middleware that contributes to `req.appInfo`](#write-a-middleware-that-contributes-to-reqappinfo)) and just list it in each route's `middleware`.
+
+:::note Planned
+A declarative `params:` route schema — validating and coercing path params the same way `request:` / `query:` do, with the typed result on `req.appInfo.params` — is planned for a future release. Until then, validate params in the handler (or a middleware) as shown above.
+:::
 
 ## Wire pagination
 
