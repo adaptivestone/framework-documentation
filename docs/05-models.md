@@ -25,6 +25,30 @@ Under normal conditions, the framework scans the `model` folder and loads all mo
 
 This is primarily to avoid model 'circular dependencies.'
 
+### Duplicate framework copies
+
+Every model extends `BaseModel` from `@adaptivestone/framework`. If **two different copies** of the framework end up installed (a duplicate/undeduped install), a model can extend `BaseModel` from one copy while the loader runs from the other. `instanceof BaseModel` compares prototype identity, so it is `false` across that copy boundary — and boot used to silently misroute such a model into the legacy (`AbstractModel`) branch, surfacing only later as a confusing downstream failure.
+
+Boot now recognizes the model by its static shape (a `BaseModel` subclass without the `instanceof`) and **fails fast**, naming the offending model:
+
+```text
+Model 'Article' extends BaseModel from a DIFFERENT copy of @adaptivestone/framework than the one loading models, so `instanceof BaseModel` is false and it cannot be initialized. This means @adaptivestone/framework is installed more than once (a duplicate/undeduped install). Fix the duplication so a single copy is shared: run `npm ls @adaptivestone/framework` to find the extra copy, then dedupe (align versions, delete node_modules and reinstall, and check your lockfile).
+```
+
+The model loader prefixes this with the model name and file (`Failed to initialize model '<Name>' (<file>): …`). The fix is to collapse the duplicate so a single copy is shared:
+
+```bash
+npm ls @adaptivestone/framework
+```
+
+then dedupe — align versions, delete `node_modules` and reinstall, and check your lockfile. Genuinely legacy (`AbstractModel`-based) models still route to the legacy branch unchanged.
+
+:::tip Module authors
+
+If you publish a package that defines framework models (or otherwise imports `@adaptivestone/framework`), declare the framework as a **peer dependency**, not a regular dependency — that way the host app supplies the single shared copy instead of your package pulling in a second one. `npm link` during local development is the most common trigger for a duplicate copy, since the linked package resolves the framework from its own `node_modules`.
+
+:::
+
 ## Base Model
 
 The base model is the core of your models. It handles their structure and initialization.

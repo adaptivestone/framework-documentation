@@ -18,6 +18,31 @@ const s3config = appInstance.getConfig("s3");
 // etc
 ```
 
+### `getAppInstance()` (recommended for early code)
+
+The `Server` constructor is what sets the `appInstance` singleton. Code that reads the raw `appInstance` binding **before** the `Server` is constructed — module scope, lazy imports, external modules — sees `undefined` and fails later with an opaque `TypeError: cannot read properties of undefined` that gives no hint at the cause.
+
+Prefer the `getAppInstance()` getter in that code: it returns the same singleton, or throws a guided error when nothing is set yet.
+
+```ts
+import { getAppInstance } from "@adaptivestone/framework/helpers/appInstance.js";
+
+const app = getAppInstance();
+const Model = app.getModel("ModelName");
+```
+
+If the singleton is not set, the getter throws:
+
+```text
+App instance is not initialized yet — construct the Server first (its constructor sets the singleton). In tests, use setAppInstance() to inject one and resetAppInstance() to clear it.
+```
+
+:::note Test hooks
+
+The same module exports `setAppInstance(app)` and `resetAppInstance()` for tests that need to run app-instance-dependent code without a full `Server`. `setAppInstance` throws if an instance is already set (only one `Server` per process is supported), and `resetAppInstance()` clears it. Prefer per-file isolation — as the shipped vitest setup does — and reach for `resetAppInstance()` only when a runner can't isolate per file (it does **not** clean up mongoose-registered models, redis client state, or env vars).
+
+:::
+
 ## Redis connection
 
 A simplified way to connect to Redis. This helper loads the configuration and adds shutdown hooks.
