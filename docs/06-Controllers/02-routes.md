@@ -604,6 +604,8 @@ When validation fails, the framework throws a `ValidationError`. The instance's 
 
 Each value is always an array of messages. A field that fails multiple validators surfaces all of them: `{password: ["min8", "startUpper"]}`.
 
+Validation errors cover input that fails the declared schema **before** the handler runs. For errors thrown **inside** the handler — typed HTTP errors like `NotFoundError`, third-party errors you map yourself, escaped Mongoose validation — see [Error handling](04-error-handling.md).
+
 For structured access (logging, observability), use `.issues`:
 
 ```ts
