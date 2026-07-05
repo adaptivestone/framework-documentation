@@ -179,6 +179,8 @@ But when a constraint slips through, `doc.save()` throws a Mongoose `ValidationE
 - If **every** failing model path is a field the client actually sent (a key of the validated `request:`/`query:` input), the client gets `400 {"errors": {"name": "..."}}` — same shape as route validation errors — and the framework logs a `warn`: your route schema is missing a constraint worth mirroring.
 - If **any** failing path is internal or renamed (the client sent `name`, the model field is `userName`), it stays an honest **500**. Model field names are never leaked to the client, and a server-side data bug is never blamed on the client.
 
+Each message is **rebuilt from the validation kind and the schema constraint** — `maxlength` → `"Must be at most 255 characters"`, a `Number` cast failure → `"Must be a number"`, `enum` → `"Must be one of: …"` — and **never includes the value the client submitted**. Mongoose's own default messages interpolate that value (a phone number, a password pasted into the wrong field), which would otherwise leak it into the response and the log. For the same reason a *custom* message set on the model (`maxLength: [50, 'Name too long']`) is **not** passed through — it's rebuilt generically, since a custom string can't be told apart from a templated default that embedded the value. The `warn` log line for a handled error is sanitized the same way; a failure that stays a 500 logs the original error in full. These fallback messages are plain English and not translated; put user-facing, i18n wording on the route schema.
+
 Note this covers Mongoose *validation* errors only. A duplicate-key violation (`E11000`) is a `MongoServerError` from the driver, not a `ValidationError` — map it yourself as shown above if you want a 409.
 
 :::tip
