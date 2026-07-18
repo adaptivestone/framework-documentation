@@ -341,16 +341,18 @@ selected options object directly to the existing middleware tuple:
 
 ```ts
 import { getAppInstance } from '@adaptivestone/framework/helpers/appInstance.js';
-import AbstractController from '@adaptivestone/framework/modules/AbstractController.js';
+import AbstractController, {
+  type TMiddleware,
+} from '@adaptivestone/framework/modules/AbstractController.js';
 import RateLimiter from '@adaptivestone/framework/services/http/middleware/RateLimiter.js';
 
 const { policy } = getAppInstance().getConfig('rateLimiter');
 
 class Person extends AbstractController {
-  static get middleware() {
+  static get middleware(): Map<string, TMiddleware> {
     return new Map([
       ['/{*splat}', []],
-      ['POST/', [[RateLimiter, policy.personCreate] as const]],
+      ['POST/', [[RateLimiter, policy.personCreate]]],
     ]);
   }
 }
