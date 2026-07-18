@@ -62,17 +62,7 @@ await runCluster(
   },
   {
     workers: 'auto',
-    restart: {
-      maxInWindow: 20,
-      windowMs: 60_000,
-      backoff: {
-        initialMs: 500,
-        maxMs: 30_000,
-        multiplier: 2,
-        jitter: true,
-      },
-    },
-    drainTimeoutMs: 30_000,
+    shutdownTimeoutMs: 30_000,
   },
 );
 ```
@@ -84,19 +74,21 @@ NODE_ENV=production node src/index.ts
 ```
 
 The primary forks the configured workers and the callback executes only in
-those workers. An abnormal worker exit is restarted with bounded exponential
-backoff; exceeding the rolling restart budget shuts down the cluster with a
-non-zero exit status. A clean worker exit is not restarted.
+those workers. An abnormal worker exit is restarted after a fixed safety delay;
+exceeding the framework's fixed rolling crash limit shuts down the cluster with
+a non-zero exit status. A clean worker exit is not restarted. Backoff, jitter,
+and rolling-deployment policy belong to an external process supervisor and are
+deliberately not part of this API.
 
 On `SIGTERM` or `SIGINT`, the primary stops scheduling restarts and forwards the
 signal to every worker. Each framework server stops accepting requests and
-drains its open connections. Workers still alive after `drainTimeoutMs` are
+drains its open connections. Workers still alive after `shutdownTimeoutMs` are
 force-terminated and the primary exits non-zero.
 
 `workers: 'auto'` uses Node's available parallelism. A positive integer pins
-the worker count. Early lifecycle messages use `console` by default; pass
-`logger: { info, warn, error }` to integrate another logger before the
-application itself exists.
+the worker count. Early lifecycle messages use `console` by default. Pass an
+`onEvent` callback to send structured primary, worker-exit, shutdown, and error
+events to an observability provider before the application itself exists.
 
 ### Which entry should I run?
 
