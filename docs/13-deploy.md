@@ -1,32 +1,118 @@
-# Deploy
+# Deployment and process lifecycle
 
-There are multiple ways to deploy your app.
+Run each application process through exactly one supervisor. Docker,
+Kubernetes, systemd, and PM2 already manage replica count and restarts, so they
+should normally run the framework's single-process server entry. Use the
+framework cluster runner only when one Node primary should supervise multiple
+workers on the same host.
 
-## On a Server
+Do not nest supervisors. For example, do not run `runCluster()` inside PM2
+cluster mode or start several clustered processes in one Kubernetes pod.
 
-This is the simplest way. There are multiple options here, but we are recommending a PM2 + Nginx setup.
+## Single process under an external supervisor (recommended)
 
-### PM2 Setup
+Keep server construction in a dedicated module:
 
-You need to install PM2 and make it autoload.
+```ts title="src/server.ts"
+import Server from '@adaptivestone/framework/server.js';
+import folderConfig from './folderConfig.ts';
+
+const server = new Server(folderConfig);
+await server.startServer();
+```
+
+Run that entry directly:
+
+```bash
+NODE_ENV=production node src/server.ts
+```
+
+### PM2
+
+Install PM2 and configure it to start with the host:
 
 ```bash
 npm install pm2@latest -g
 pm2 startup
 ```
 
-Then load your code to the server and go to the server directory.
+Start one application process. PM2 owns its restart lifecycle:
 
 ```bash
-NODE_ENV=production pm2 start --name YOUR_APP_NAME src/index.ts
+NODE_ENV=production pm2 start src/server.ts --name YOUR_APP_NAME
 pm2 save
 ```
 
-That is all from the Node.js side. The app is already there and listening on localhost:3300.
+If you choose PM2's own cluster mode, continue to run `src/server.ts`; do not
+also use the framework cluster runner.
 
-### Nginx Setup
+## Framework cluster runner
 
+For a standalone Node deployment on one host, use the public Node-only
+`runCluster()` helper:
+
+```ts title="src/index.ts"
+import { runCluster } from '@adaptivestone/framework/cluster.js';
+
+await runCluster(
+  async () => {
+    // Dynamic import is important: this callback runs only in workers, so the
+    // primary never constructs a Server or opens application connections.
+    await import('./server.ts');
+  },
+  {
+    workers: 'auto',
+    restart: {
+      maxInWindow: 20,
+      windowMs: 60_000,
+      backoff: {
+        initialMs: 500,
+        maxMs: 30_000,
+        multiplier: 2,
+        jitter: true,
+      },
+    },
+    drainTimeoutMs: 30_000,
+  },
+);
 ```
+
+Start it without file watching:
+
+```bash
+NODE_ENV=production node src/index.ts
+```
+
+The primary forks the configured workers and the callback executes only in
+those workers. An abnormal worker exit is restarted with bounded exponential
+backoff; exceeding the rolling restart budget shuts down the cluster with a
+non-zero exit status. A clean worker exit is not restarted.
+
+On `SIGTERM` or `SIGINT`, the primary stops scheduling restarts and forwards the
+signal to every worker. Each framework server stops accepting requests and
+drains its open connections. Workers still alive after `drainTimeoutMs` are
+force-terminated and the primary exits non-zero.
+
+`workers: 'auto'` uses Node's available parallelism. A positive integer pins
+the worker count. Early lifecycle messages use `console` by default; pass
+`logger: { info, warn, error }` to integrate another logger before the
+application itself exists.
+
+### Which entry should I run?
+
+| Deployment | Entry | Process-count owner |
+|---|---|---|
+| Docker/Kubernetes | `src/server.ts` | Orchestrator |
+| systemd | `src/server.ts` | systemd/unit replicas |
+| PM2 fork or cluster mode | `src/server.ts` | PM2 |
+| Standalone multi-core host | `src/index.ts` with `runCluster()` | Framework cluster primary |
+
+## Nginx
+
+The Node process listens on localhost port 3300 in the default configuration.
+Proxy requests to it from Nginx:
+
+```nginx
 server {
 
 	root /var/www/YOUR_FOLDER/src/public;
@@ -56,7 +142,8 @@ server {
 
 You can create a Docker image with all your data and run it on any server, including Kubernetes.
 
-The Dockerfile can look like this:
+Run one Node process per container and let the orchestrator scale replicas. The
+Dockerfile can look like this:
 
 ```dockerfile
 FROM node:latest
@@ -67,7 +154,7 @@ USER node
 RUN npm ci
 COPY --chown=node:node src/ ./src/
 EXPOSE 3300
-CMD [ "node", "src/index.ts"]
+CMD ["node", "src/server.ts"]
 ```
 
 To build it, use:

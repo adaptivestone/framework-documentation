@@ -22,6 +22,46 @@ import { appInstance } from "@adaptivestone/framework/helpers/appInstance.js";
 npm test
 ```
 
+## Validation messages: assert i18n keys
+
+The standard test bootstrap does **not** load the consumer project's locale folder unless you
+explicitly set `TEST_FOLDER_LOCALES`. Validation schemas should still emit i18n keys, but HTTP
+validation responses normally contain those stable raw keys in tests. Assert the status and key,
+not localized English or other rendered prose:
+
+```ts
+const response = await fetch(getTestServerURL('/auth/login'), {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({}),
+});
+
+expect(response.status).toBe(400);
+expect(await response.json()).toEqual({
+  errors: {
+    email: ['auth.emailProvided'],
+    password: ['auth.passwordProvided'],
+  },
+});
+```
+
+This is intentional: translation wording can change without breaking API-behavior tests, while a
+wrong validation key still fails loudly. The HTTP runtime automatically translates the same keys
+when the application's locale resources are loaded; do not add controller-side translation just
+to make a test pass.
+
+For the uncommon test that specifically verifies rendered copy, opt in before the framework test
+setup runs:
+
+```ts title="src/tests/setup.ts"
+import path from 'node:path';
+
+const here = import.meta.dirname;
+process.env.TEST_FOLDER_LOCALES = path.resolve(here, '../locales');
+```
+
+Keep localized-copy tests separate from ordinary validation/status tests.
+
 ## Before Scripts
 
 The test entry point is at the project level in ‘src/tests/setup.ts’. This file prepares all folder configs, requires the framework setup, and prepares the global setup for tests.

@@ -17,7 +17,12 @@ Rule of thumb: if the handler reads `req.appInfo.request` / `.query` / `.user` /
 
 ## Add a controller
 
-Drop a file in `src/controllers/`. The filename becomes the route prefix (`Article.ts` → `/article`), and every method listed in `routes` becomes an endpoint. No registration step — the framework auto-loads the file.
+Drop a file in `src/controllers/`. The framework auto-loads it, but the filename does **not**
+define the route. The default mount is the controller folder prefix plus the lowercased **class
+name** (`src/controllers/admin/Article.ts` exporting `class Article` → `/admin/article`). Name the
+file after the class for clarity, and never export the same controller class from two files—the
+autoloader registers both. Every method listed in `routes` becomes an endpoint with no manual
+registration step.
 
 ```ts
 // src/controllers/Article.ts
