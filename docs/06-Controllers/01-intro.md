@@ -52,7 +52,16 @@ Controllers should extend the "AbstractController" module.
 
 ## Name Convention and Loading
 
-The framework will load any file (except for `*.test.js` and `*.test.ts` files) and initialize it as an HTTP module. By default, the filename will be used as the route name. This behavior can be customized by providing your own `getHttpPath` function.
+The framework loads every file in `src/controllers/` except `*.test.js` and
+`*.test.ts`. The default mount path comes from the controller's folder prefix
+plus its **lowercased class name**. The filename does not determine the URL:
+`src/controllers/admin/ImpactSurveys.ts` exporting `class ImpactSurveys`
+mounts at `/admin/impactsurveys`.
+
+Filename still matters for framework-internal controller overrides, so name the
+file after the class. Never export the same controller class from two files:
+the loader initializes both files and mounts the controller twice. Override
+`getHttpPath()` when the default class-name path is not the URL you want.
 
 ### Explicit registration
 
@@ -80,19 +89,23 @@ For the example above:
 class ControllerName extends AbstractController {
 ```
 
-The route will be “http://localhost:3300/controllername”.
+The route will be `http://localhost:3300/controllername` because the class is
+named `ControllerName`; renaming only its file would not change this URL.
 
 Then, any method from the router will be accessible via the URL.
 
-If you want to define a custom path, you can provide your own implementation of the `getHttp-Path` function.
+If you want to define a custom path, provide your own implementation of
+`getHttpPath()`:
 
 ```js
   getHttpPath() {
-    return "superDuperMegaSpecialRoute";
+    return "/super-duper-mega-special-route";
   }
 ```
 
-By default, `getHttpPath` resolves the current folder and filename and uses them to construct the route name.
+By default, `getHttpPath()` combines the folder prefix with the lowercased
+class name. It does not kebab-case multi-word names: `ImpactSurveys` becomes
+`/impactsurveys`, so use an override when `/impact-surveys` is required.
 
 ### Project boot hook (`bootHttp`)
 

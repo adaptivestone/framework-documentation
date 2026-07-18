@@ -315,8 +315,58 @@ The rate limiter middleware allows you to include request components (`req.body`
         [RateLimiter,{consumeKeyComponents: { ip: false, request:['email','phone'] }}]
       ]]
     ]);
-  }
+}
 ```
+
+#### Typed named policies from config
+
+Keep reusable operational limits in the application's typed configuration
+instead of repeating numbers across controllers:
+
+```ts title="src/config/rateLimiter.ts"
+import defaults from '@adaptivestone/framework/config/rateLimiter.js';
+
+export default {
+  ...defaults,
+  policy: {
+    personCreate: {
+      limiterOptions: { points: 3, duration: 60 * 60 },
+    },
+  },
+};
+```
+
+Read the final merged config once when the controller module loads and pass the
+selected options object directly to the existing middleware tuple:
+
+```ts
+import { getAppInstance } from '@adaptivestone/framework/helpers/appInstance.js';
+import AbstractController from '@adaptivestone/framework/modules/AbstractController.js';
+import RateLimiter from '@adaptivestone/framework/services/http/middleware/RateLimiter.js';
+
+const { policy } = getAppInstance().getConfig('rateLimiter');
+
+class Person extends AbstractController {
+  static get middleware() {
+    return new Map([
+      ['/{*splat}', []],
+      ['POST/', [[RateLimiter, policy.personCreate] as const]],
+    ]);
+  }
+}
+```
+
+Run `npm run gen` after adding the config. Generated config types preserve the
+policy names, so `policy.personCreate` is autocompleted and a misspelling fails
+TypeScript; `RateLimiter` receives the actual options object and performs no
+string lookup.
+
+Declare the policy catalogue in the base config, then override policy values in
+environment-specific config files. Controller modules capture the effective
+boot-time value; a later `app.updateConfig()` does not mutate limiter instances
+that already exist. Config merging uses `deepmerge`, so array fields are
+concatenated rather than replaced—most policies should override scalar
+`limiterOptions` such as `points` and `duration`.
 
 You can find the default parameters in ‘config/rateLimiter.js’. These parameters are used if other parameters are not provided.
 
@@ -506,4 +556,3 @@ class UserWithRole extends AbstractMiddleware {
 Any route with `UserWithRole` in its chain now has `req.appInfo.permissions` typed automatically. The cast type is the contract; the runtime value is ignored.
 
 See the [routes chapter codegen section](./02-routes.md#middleware-provided-types) for the full picture of how generated request types compose middleware-provided fields, schemas, and path params.
-

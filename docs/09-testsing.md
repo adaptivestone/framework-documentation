@@ -89,6 +89,19 @@ afterEach(async () => {
 The framework hooks are already registered by `setupNodeTest.js`. Project hooks
 should contain only application-specific preparation and cleanup.
 
+### Validation messages and application locales
+
+The framework test helper loads its built-in locale folder by default. It does
+not automatically load the application's locale folder: set
+`TEST_FOLDER_LOCALES` in `src/tests/setup.ts` when a suite specifically needs
+rendered application copy.
+
+Without that opt-in, application-specific validation message keys remain raw
+in HTTP 400 responses. This is intentional for ordinary API tests—assert the
+stable key and status code rather than translated prose that can change between
+locales. A copy-specific test may point `TEST_FOLDER_LOCALES` at
+`src/locales`, but should do so before `setupNodeTest.js` loads.
+
 ### Package scripts
 
 Use a small command for local tests and watch mode. Keep coverage and reporters
