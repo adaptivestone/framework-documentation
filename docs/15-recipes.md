@@ -278,9 +278,10 @@ The framework boots a real test server and an in-memory Mongo. Use `getTestServe
 
 ```ts
 // src/controllers/Article.test.ts
+import assert from "node:assert/strict";
+import { beforeEach, describe, it } from "node:test";
 import { appInstance } from "@adaptivestone/framework/helpers/appInstance.js";
 import { getTestServerURL } from "@adaptivestone/framework/tests/testHelpers.js";
-import { beforeEach, describe, expect, it } from "vitest";
 
 describe("Article controller", () => {
   beforeEach(async () => {
@@ -293,7 +294,7 @@ describe("Article controller", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Hello world", body: "..." }),
     });
-    expect(res.status).toBe(201);
+    assert.equal(res.status, 201);
   });
 });
 ```

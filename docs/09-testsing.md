@@ -1,293 +1,328 @@
 # Testing
 
-The framework comes with [Vitest](https://vitest.dev/) support. When you name files with the `.test.(js|ts)` extension, they will be added to the tests. The test lifecycle is runner-agnostic, so you can also drive it from Node's built-in [`node:test`](https://nodejs.org/api/test.html) — see [Using with `node:test`](#using-with-nodetest).
+The framework supports Node.js's built-in test runner and Vitest. New Node.js
+24 projects should use the built-in runner: it executes TypeScript test files
+natively, has no additional test-runner dependency, and integrates with the
+framework's shared MongoDB and per-test isolation helpers.
 
-:::tip
-Please put test files near the main files that you are testing and give them the same name.
-If you want to test “Auth.js”, please create a file named “Auth.test.js” and put it in the same folder.
+Name tests `*.test.ts` or `*.test.js` and keep them next to the file they cover.
+For example, test `src/controllers/Auth.ts` in
+`src/controllers/Auth.test.ts`.
 
-:::
+## Install the test database
 
-## Framework (app) Instance
+The framework loads `mongodb-memory-server` lazily, so applications that use
+the supplied in-memory MongoDB global setup must install it directly:
 
-Of course, inside a test, you need to have access to the framework instance. It will be available via appInstanceHelper
-
-```js
-import { appInstance } from "@adaptivestone/framework/helpers/appInstance.js";
+```bash
+npm install --save-dev mongodb-memory-server
 ```
 
-## Run Tests
+Redis is optional during tests. When `REDIS_URI` is configured, the framework
+uses a fresh namespace for each test and clears it afterward.
+
+## Node.js test-runner setup
+
+Node.js runs every test file in a separate process. The framework therefore
+splits its lifecycle into:
+
+- a global setup that starts one MongoDB replica set for the complete run;
+- per-file hooks that start and stop a framework server with a fresh database;
+- per-test hooks that isolate the Redis namespace.
+
+### Project test configuration
+
+Keep project-specific test configuration in `src/tests/setup.ts`. This file can
+set test folder locations or other environment required before the framework
+server starts.
+
+Create one preload file at `src/tests/setupNodeTest.ts`:
+
+```ts
+import './setup.ts';
+import '@adaptivestone/framework/tests/setupNodeTest.js';
+import './setupHooks.ts';
+```
+
+The runner preloads this file for every test file. Do not import it from each
+individual test.
+
+### Global MongoDB setup
+
+Create `src/tests/globalSetupNodeTest.ts`:
+
+```ts
+export {
+  globalSetup,
+  globalTeardown,
+} from '@adaptivestone/framework/tests/globalSetupNodeTest.js';
+```
+
+`globalSetup` starts MongoDB once and passes `TEST_MONGO_URI` to the child test
+processes. `globalTeardown` stops it after every test file has finished.
+
+### Custom hooks
+
+Project hooks can live in `src/tests/setupHooks.ts`:
+
+```ts
+import { after, afterEach, before, beforeEach } from 'node:test';
+import { createDefaultTestUser } from './testHelpers.ts';
+
+before(async () => {
+  await createDefaultTestUser();
+});
+
+after(async () => {
+  // Clean up project-level test state.
+});
+
+beforeEach(async () => {
+  // Prepare each test.
+});
+
+afterEach(async () => {
+  // Clean up each test.
+});
+```
+
+The framework hooks are already registered by `setupNodeTest.js`. Project hooks
+should contain only application-specific preparation and cleanup.
+
+### Package scripts
+
+Use a small command for local tests and watch mode. Keep coverage and reporters
+in the CI command so ordinary development runs stay fast:
+
+```json
+{
+  "scripts": {
+    "test": "node --import=./src/tests/setupNodeTest.ts --test --test-global-setup=./src/tests/globalSetupNodeTest.ts \"src/**/*.test.ts\"",
+    "t": "node --import=./src/tests/setupNodeTest.ts --test --watch --test-global-setup=./src/tests/globalSetupNodeTest.ts \"src/**/*.test.ts\"",
+    "test:ci": "node --import=./src/tests/setupNodeTest.ts --test --experimental-test-coverage --test-coverage-exclude=\"src/**/*.test.ts\" --test-coverage-exclude=\"src/tests/**\" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=75 --test-global-setup=./src/tests/globalSetupNodeTest.ts --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \"src/**/*.test.ts\""
+  }
+}
+```
+
+Run the suite once:
 
 ```bash
 npm test
 ```
 
-## Validation messages: assert i18n keys
-
-The standard test bootstrap does **not** load the consumer project's locale folder unless you
-explicitly set `TEST_FOLDER_LOCALES`. Validation schemas should still emit i18n keys, but HTTP
-validation responses normally contain those stable raw keys in tests. Assert the status and key,
-not localized English or other rendered prose:
-
-```ts
-const response = await fetch(getTestServerURL('/auth/login'), {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({}),
-});
-
-expect(response.status).toBe(400);
-expect(await response.json()).toEqual({
-  errors: {
-    email: ['auth.emailProvided'],
-    password: ['auth.passwordProvided'],
-  },
-});
-```
-
-This is intentional: translation wording can change without breaking API-behavior tests, while a
-wrong validation key still fails loudly. The HTTP runtime automatically translates the same keys
-when the application's locale resources are loaded; do not add controller-side translation just
-to make a test pass.
-
-For the uncommon test that specifically verifies rendered copy, opt in before the framework test
-setup runs:
-
-```ts title="src/tests/setup.ts"
-import path from 'node:path';
-
-const here = import.meta.dirname;
-process.env.TEST_FOLDER_LOCALES = path.resolve(here, '../locales');
-```
-
-Keep localized-copy tests separate from ordinary validation/status tests.
-
-## Before Scripts
-
-The test entry point is at the project level in ‘src/tests/setup.ts’. This file prepares all folder configs, requires the framework setup, and prepares the global setup for tests.
-
-The minimum Vite config file should contain:
-
-```js
-  test: {
-    globalSetup: [ // This script will start Mongo (DIST in important there)
-      'node_modules/@adaptivestone/framework/dist/tests/globalSetupVitest',
-    ],
-    setupFiles: [
-      './src/tests/setup.ts', // this is a config files with directory location
-      '@adaptivestone/framework/tests/setupVitest.js', // This is the entry point for testing from the  framework
-      './src/tests/setupHooks.ts', // This is a local config file (see below)
-    ],
-  }
-```
-
-### Global setup (once per test running)
-
-You are able to provide additional setup and teardown functions to global setup.
-Just add your implementation in an additional (or instead of) globalSetup
-
-```js
-  test: {
-    globalSetup: [
-      'node_modules/@adaptivestone/framework/dist/tests/globalSetupVitest',
-      './src/tests/globalSetup.ts', // custom file for global setup and teardown
-    ],
-    // ...
-  }
-```
-
-### Custom hooks (beforeAll, etc) per test
-
-Testing helpers provide isolation of modules, and we run preparation of the framework and teardown for each test as well.
-
-```js
-  test: {
-    //...
-    setupFiles: [
-      './src/tests/setup.ts', // this is a config files with directory location
-      '@adaptivestone/framework/tests/setupVitest.js', // This is the entry point for testing from the  framework
-      './src/tests/setupHooks.ts', // <-- we are able to provide custom logic there
-    ],
-  }
-```
-
-You can provide any amount of testing configs
-
-Example:
-
-```ts ./src/tests/setupHooks.ts
-import { beforeAll, afterAll, beforeEach, afterEach } from "vitest";
-import { createDefaultTestUser } from "./testHelpers.ts";
-
-beforeAll(async () => {
-  await createDefaultTestUser();
-});
-
-afterAll(async () => {
-  // do something
-});
-
-beforeEach(async () => {
-  // do something
-});
-
-afterEach(async () => {
-  // do something
-});
-```
-
-### Default User for Testing
-
-You are able to call the creation of a default user. The user is not created by default. You should call it manually.
-
-```js
-import {
-  defaultUser, // instance of user if default user was created
-  defaultAuthToken, // default token for auth if user was created
-  createDefaultTestUser, // create default user and populate defaultUser and defaultAuthToken.
-} from "@adaptivestone/framework/tests/testHelpers.js";
-
-const { user, token } = await createDefaultTestUser();
-// defaultUser - same user
-// defaultAuthToken - same token
-```
-
-## Using with `node:test`
-
-The framework's test lifecycle is **runner-agnostic**: the setup logic lives in plain async functions (`@adaptivestone/framework/tests/setupFramework.js`) with no vitest dependency, so you can drive it from Node's built-in [`node:test`](https://nodejs.org/api/test.html) runner. `vitest` is an optional peer dependency — node:test users don't need it installed.
-
-Wire it per file (mirrors `setupVitest`):
-
-```ts
-import "@adaptivestone/framework/tests/setupNodeTest.js"; // server per file + per-test redis isolation
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { getTestServerURL } from "@adaptivestone/framework/tests/testHelpers.js";
-
-test("returns 400 on a bad body", async () => {
-  const { status } = await fetch(getTestServerURL("/some/endpoint"), { method: "POST" });
-  assert.equal(status, 400);
-});
-```
-
-### The one difference: global Mongo
-
-vitest runs all files in one process and starts the in-memory Mongo once via `globalSetup`. node:test runs **each file in its own process**, so there is no per-file place to start a shared Mongo. Use node:test's [global setup hook](https://nodejs.org/api/test.html#global-setup-and-teardown) (`--test-global-setup`) — the exact analog of vitest's `globalSetup`. Write a tiny entry module:
-
-```ts title="globalSetup.ts"
-import {
-  startTestMongo,
-  stopTestMongo,
-} from "@adaptivestone/framework/tests/setupFramework.js";
-
-export async function globalSetup() {
-  await startTestMongo(); // sets TEST_MONGO_URI; every test process inherits it
-}
-
-export async function globalTeardown() {
-  await stopTestMongo();
-}
-```
-
-Run the whole suite through it (one Mongo, shared across every file):
+Run it in watch mode:
 
 ```bash
-node --test --test-global-setup=./globalSetup.ts
+npm run t
 ```
 
-:::note
-`--test-global-setup` is experimental (Stability 1) but ships in every Node ≥ 24 — the framework's own node:test suite uses it. If you'd rather avoid the flag, point `TEST_MONGO_URI` at an external Mongo (a CI service or a local instance) and skip the in-memory server.
-:::
+Run the CI configuration with coverage thresholds and LCOV output:
 
-The runner-agnostic building blocks (exported from `@adaptivestone/framework/tests/setupFramework.js`):
+```bash
+npm run test:ci
+```
 
-| Export | Runs | Purpose |
-|---|---|---|
-| `startTestMongo` / `stopTestMongo` | once per run | in-memory Mongo replica set; sets `TEST_MONGO_URI` |
-| `startTestServer` / `stopTestServer` | per file | boot / tear down a server against a fresh DB |
-| `setTestRedisNamespace` / `clearTestRedisNamespace` | per test | isolate the cache / rate-limiter keyspace |
+The example thresholds are 80% for lines, 80% for branches, and 75% for
+functions. Adjust them deliberately as the project grows. The LCOV report is
+written to `coverage/lcov.info`.
 
-`setupVitest` and `setupNodeTest` are thin wrappers that wire these into each runner's hooks.
+## Writing a Node.js test
 
-## Mongo Instance
+Use `node:test` with the standard strict assertion module:
 
-As the framework is designed to work with MongoDB and provide easy integration with it, it also comes with MongoDB integration in tests.
+```ts
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { getTestServerURL } from '@adaptivestone/framework/tests/testHelpers.js';
 
-The integration is done with the help of the [MongoDbMemoryServer](https://github.com/nodkz/mongodb-memory-server) package.
+describe('person', () => {
+  it('creates a person', async () => {
+    const response = await fetch(getTestServerURL('/person'), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Example Person',
+        age: 30,
+      }),
+    });
 
-By default, the framework starts the Mongo memory server and stops it afterward. So you can use Mongo during your tests.
+    assert.equal(response.status, 200);
+  });
+});
+```
 
-### Mongo Tests on ARM64 Machines (Docker)
+The preload and global setup belong in the runner command, not in this file.
 
-For ARM64, we have an interesting situation. Mongo Inc. provides binaries for Ubuntu but not for Debian, but official Node images exist for Debian but not for Ubuntu.
+## Framework and server access
 
-To solve this situation, we provide our own Node Docker image based on Ubuntu. You can find it here: [ubuntu-node-docker](https://gitlab.com/adaptivestone/ubuntu-node).
+Use `appInstance` for the initialized framework application:
 
-## Running Tests in CI (GitLab)
+```ts
+import { appInstance } from '@adaptivestone/framework/helpers/appInstance.js';
+```
 
-An important thing about testing is that tests should be executed automatically on every Git commit. That is where CI (Continuous Integration) comes in.
+Use `serverInstance` when a test needs lower-level access to the server:
 
-A `.gitlab-ci.yml` sample is below:
+```ts
+import { serverInstance } from '@adaptivestone/framework/tests/testHelpers.js';
+```
+
+## HTTP endpoint testing
+
+The framework starts each test server on a random available port.
+`getTestServerURL()` returns the correct URL:
+
+```ts
+import assert from 'node:assert/strict';
+import { it } from 'node:test';
+import {
+  defaultAuthToken,
+  getTestServerURL,
+} from '@adaptivestone/framework/tests/testHelpers.js';
+
+it('rejects an invalid request', async () => {
+  const response = await fetch(getTestServerURL('/some/endpoint'), {
+    method: 'POST',
+    headers: {
+      authorization: defaultAuthToken,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ invalid: true }),
+  });
+
+  assert.equal(response.status, 400);
+});
+```
+
+Do not catch and discard `fetch()` errors in tests. A rejected request should
+fail the test and preserve the original error.
+
+## Default test user
+
+The framework does not create a user automatically. Call
+`createDefaultTestUser()` from project setup when a suite needs one:
+
+```ts
+import {
+  createDefaultTestUser,
+  defaultAuthToken,
+  defaultUser,
+} from '@adaptivestone/framework/tests/testHelpers.js';
+
+const { user, token } = await createDefaultTestUser();
+```
+
+`defaultUser` and `defaultAuthToken` reference the values created by the helper.
+Projects with a custom User model should implement their own creation helper and
+use `setDefaultUser()` and `setDefaultAuthToken()`.
+
+## Test helpers
+
+The public helpers are exported from
+`@adaptivestone/framework/tests/testHelpers.js`:
+
+```ts
+import {
+  createDefaultTestUser,
+  defaultAuthToken,
+  defaultUser,
+  getTestServerURL,
+  serverInstance,
+  setDefaultAuthToken,
+  setDefaultUser,
+} from '@adaptivestone/framework/tests/testHelpers.js';
+```
+
+- `getTestServerURL(path)` returns the active test server URL.
+- `serverInstance` exposes the current test server.
+- `createDefaultTestUser()` creates the framework's default User and token.
+- `setDefaultUser()` and `setDefaultAuthToken()` support custom User models.
+
+## MongoDB and Docker
+
+The global setup uses `MongoMemoryReplSet` with one `wiredTiger` member. Each
+test file receives a unique database, and the framework drops it during
+teardown.
+
+MongoDB publishes ARM64 binaries for Ubuntu, but not for every Debian release
+used by official Node.js Docker images. Use the project's Ubuntu-based Node
+image for GitLab and ARM64 Docker testing:
+
+```text
+registry.gitlab.com/adaptivestone/ubuntu-node:latest
+```
+
+When installation and tests run in separate CI jobs, use the same image for
+both. This prevents Linux, libc, Node.js, and native dependency mismatches. The
+current Ubuntu image supports MongoMemoryServer's automatic distro and MongoDB
+version selection; application setup should not normally set
+`MONGOMS_DISTRO` or `MONGOMS_VERSION`.
+
+## GitLab CI
+
+The following pipeline installs dependencies once and runs quality checks and
+tests with the exact same Ubuntu/Node artifact:
 
 ```yaml
 stages:
   - install
   - checks
 
+default:
+  # Keep dependency installation and execution on the same Ubuntu/Node image.
+  # Ubuntu is also required for mongodb-memory-server binary availability.
+  image: registry.gitlab.com/adaptivestone/ubuntu-node:latest
+
 install:
   stage: install
-  image: registry.gitlab.com/adaptivestone/ubuntu-node:latest
   script:
-    - node -v
-    - npm install
+    - npm ci
   artifacts:
     paths:
       - node_modules/
-    expire_in: 2 hour
+    expire_in: 2 hours
 
-codestyle:
+quality:
   stage: checks
-  image: registry.gitlab.com/adaptivestone/ubuntu-node:latest
   needs:
     - install
-  dependencies:
-    - install
-  allow_failure: true
   script:
-    - npm run codestyle
+    - npm run check
 
 tests:
   stage: checks
-  image: registry.gitlab.com/adaptivestone/ubuntu-node:latest
   needs:
     - install
-  dependencies:
-    - install
+  services:
+    - redis:latest
+  variables:
+    EMAIL_TRANSPORT: stub
+    REDIS_URI: redis://redis
   script:
-    - npm run test
+    - npm run test:ci
+  coverage: '/[Aa]ll files[^|]*\|[^|]*\s+([\d\.]+)/'
+  artifacts:
+    when: always
+    paths:
+      - coverage/lcov.info
 ```
 
-## Running Tests in CI (GitHub)
+## GitHub Actions
 
-It is better to look at the [repo](https://github.com/adaptivestone/framework/blob/main/.github/workflows/test.yml).
+GitHub-hosted Ubuntu runners can use Node.js 24 directly:
 
-:::note
-
-The `redis` service below is only needed if your tests exercise the **redis** cache or rate-limiter driver. With the default in-memory cache (and the default `mongo` rate limiter), you can drop the `redis` service and `REDIS_URI` entirely — `clearTestRedisNamespace` is a no-op when no Redis is reachable.
-
-:::
-
-```yml
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-
+```yaml
 name: Test
 
 on:
   push:
-    branches: ["*"]
+    branches: ['*']
 
 jobs:
   test:
+    name: Node 24
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -299,236 +334,74 @@ jobs:
           - 6379:6379
 
     env:
-      LOGGER_CONSOLE_LEVEL: "error"
+      LOGGER_CONSOLE_LEVEL: error
       REDIS_URI: redis://localhost
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: "latest"
-          cache: "npm"
+          node-version: '24'
+          cache: npm
 
-      - name: npm clean install
+      - name: Install dependencies
         run: npm ci
 
-      - name: Run Test
-        run: npm test
+      - name: Run tests
+        run: npm run test:ci
 
-      - name: Upload results to Codecov
-        uses: codecov/codecov-action@v5
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 ```
 
-## Server instance access
+## Mocking
 
-It's possible that in testing you will need to have low-level access to the server itself. We have a helper there too.
+Node.js provides function and method mocks through each test's `MockTracker`:
 
-```js
-import { serverInstance } from "@adaptivestone/framework/tests/testHelpers.js";
-```
+```ts
+import assert from 'node:assert/strict';
+import { it } from 'node:test';
+import S3 from '../S3.ts';
 
-## Test-only controllers
+it('validates credentials', (t) => {
+  const validateCreds = t.mock.method(S3, 'validateCreds', () => true);
 
-When testing edge cases — broken handlers, unusual middleware combinations, schemas designed to fail — you don't have to put fixture controllers in your production controllers folder. Register them explicitly via `app.controllerManager.registerController(ControllerClass, prefix?)`.
-
-The framework's `Server.startServer()` accepts a `callbackBefore404` hook that runs after the controller manager initializes the auto-loaded controllers but before the 404 handler is attached, so explicitly registered controllers mount in the right order.
-
-```ts ./src/tests/setupHooks.ts
-import { beforeAll } from "vitest";
-import { serverInstance } from "@adaptivestone/framework/tests/testHelpers.js";
-import BrokenController from "./fixtures/BrokenController.ts";
-import FakeAuthMiddleware from "./fixtures/FakeAuthMiddleware.ts";
-
-// If you control startServer yourself, register inside callbackBefore404:
-//   await server.startServer(async () => {
-//     server.app.controllerManager?.registerController(BrokenController, "broken");
-//   });
-//
-// If you use the framework's standard test setup, register in beforeAll —
-// late registration still works for tests because the test's HTTP requests
-// only fire AFTER setup completes (so the 404 handler ordering is irrelevant
-// in practice; the controller's routes are reachable on Express).
-beforeAll(() => {
-  serverInstance.app.controllerManager?.registerController(BrokenController, "broken");
+  assert.equal(S3.validateCreds(), true);
+  assert.equal(validateCreds.mock.callCount(), 1);
 });
 ```
 
-`prefix` is the URL prefix segment — `registerController(BrokenController, "broken")` mounts on `/broken/brokencontroller/*`. Pass `''` (or omit) to mount at `/<classname>/`.
+Mocks created through `t.mock` are restored automatically after the test.
+Whole-module ESM mocking is experimental in Node.js 24 and requires
+`--experimental-test-module-mocks`; prefer method mocks or dependency injection
+unless module replacement is necessary.
 
-This pattern keeps fixture controllers out of your production controllers folder and gives each test full control over which controllers exist for it.
+## Optional Vitest setup
 
-## HTTP Endpoint Testing
+The framework continues to support Vitest for existing projects. Configure its
+public adapters instead of importing framework lifecycle internals:
 
-The framework provides a special function `getTestServerURL` to help you construct a full URL for testing.
+```ts
+import { defineConfig } from 'vitest/config';
 
-```js
-import { getTestServerURL } from "@adaptivestone/framework/tests/testHelpers.js";
-const url = getTestServerURL("/auth");
-```
-
-Full example:
-
-```js
-import {
-  getTestServerURL,
-  defaultAuthToken,
-} from "@adaptivestone/framework/tests/testHelpers.js";
-
-describe("module", () => {
-  describe("function", () => {
-    it("test", async () => {
-      expect.assertions(1);
-      const { status } = await fetch(getTestServerURL("/some/endpoint"), {
-        method: "POST",
-        headers: {
-          "Content-type": "application/json",
-          Authorization: defaultAuthToken,
-        },
-        body: JSON.stringify({
-          // request object
-          oneData: 1,
-          secondDate: 2,
-        }),
-      }).catch(() => {});
-      expect(status).toBe(400);
-    });
-  });
+export default defineConfig({
+  test: {
+    globalSetup: [
+      '@adaptivestone/framework/tests/globalSetupVitest.js',
+    ],
+    setupFiles: [
+      './src/tests/setup.ts',
+      '@adaptivestone/framework/tests/setupVitest.js',
+      './src/tests/setupHooks.ts',
+    ],
+  },
 });
 ```
 
-## Test Helpers
-
-The framework provides a set of helpers to simplify testing.
-
-```js
-import {
-  getTestServerURL, // return server URL for testing  getTestServerURL('auth');
-  defaultUser, // instance of user if default user was created
-  defaultAuthToken, // default token for auth if user was created
-  serverInstance, // server instance for low level interaction
-  createDefaultTestUser, // create default user and populate defaultUser and defaultAuthToken.
-  setDefaultUser, // in case you want to have own user implementation setDefaultUser(yourUser)
-  setDefaultAuthToken, // in case you want to have own user implementation setDefaultAuthToken(token)
-} from "@adaptivestone/framework/tests/testHelpers.js";
-```
-
-## Mock
-
-In most cases, your code depends on external services, but you still need to perform testing. Calling an external service for each test can be expensive and is not necessary. For this problem, Vitest provides mock options. This is when, instead of calling the real SDK of a service, you call a fake function that provides the result without API calls.
-
-[https://vitest.dev/api/vi.html#vi-mock](https://vitest.dev/api/vi.html#vi-mock)
-
-### Mocking a Function
-
-[https://vitest.dev/api/vi.html#mocking-functions-and-objects](https://vitest.dev/api/vi.html#mocking-functions-and-objects)
-
-You can redefine an import for your own import.
-
-```js
-vi.doMock("../file.js", () => ({
-  fileFunction: async () => ({
-    isSuccess: true,
-  }),
-}));
-```
-
-Redefine one method in a file:
-
-```javascript
-import S3 from "../S3.js";
-vi.spyOn(S3, "validateCreds").mockImplementation(() => true);
-```
-
-There are many more mocking options. Please refer to the Vitest documentation for others.
-
-{/*
-Manual mocks are defined by writing a module in a **mocks** subdirectory immediately adjacent to the module. For example, to mock a module called user in the models directory, create a file called user.js and put it in the models/**mocks** directory. Note that the **mocks** folder is case-sensitive, so naming the directory **MOCKS** will break on some systems.
-
-:::note
-You should call moch load function before performing any operation on it
-
-```js
-vi.mock("path");
-```
-
-:::
-
-### @google-cloud/translate example (NODE_MODULES)
-
-Assume that we have some translation helper (synthetic example) that just does a translation and registers it in the database to speed it up for the next time.
-
-/src/helpers/translateHelper.js
-
-```js
-import { v2 } from "@google-cloud/translate";
-const translate = new v2.Translate();
-
-// no error handling because it's an example. You should handle errors in production mode
-// no model passing
-const translateHelper = async (text, language) => {
-  const alreadyTranslatedData = await TranslatedModel.find({ text, language });
-  if (alreadyTranslatedData) {
-    return alreadyTranslatedData.translatedText;
-  }
-
-  const translated = await translate.translate(text, language);
-  const data = await TranslatedModel.create({
-    text,
-    language,
-    translatedText: translated[0],
-  });
-  return translated[0];
-};
-
-export default translateHelper;
-```
-
-Right now you want to test that the function works correctly. So as @google-cloud/translate.js is a node_modules module, we are creating a file:
-
-```js
-/__mocks__/@google-cloud/translate.js
-```
-
-The file extends the original Google Translate and overwrites some functions to avoid API calls.
-
-```js /__mocks__/@google-cloud/translate.js
-// A manual mock in __mocks__ just exports the fake module — no auto-mock helper needed.
-class Translate {
-  translate(text, lang) {
-    return [`${text}_${lang}`, "this is test"];
-  }
-}
-
-export default { v2: { Translate } };
-```
-
-Now inside your helper test file:
-
-```js
-vi.mock('@google-cloud/translate');
-
-import translateHelper from '/src/helpers/translateHelper.js';
-
-
-describe('mock testing', () => {
-  it('should return translated text', async () => {
-    expect.assertions(1);
-    const translated = await translateHelper("text","fr");
-    expect(translated).toBe("text_fr");
-  })
-
-  it('should store text in the database', async () => {
-    expect.assertions(1);
-    const translated = await TranslatedModel.find({text:"text", language:"fr"});
-    expect(translated.translatedText).toBe("text_fr");
-  })
-})
-
-
-``` 
-*/}
+Vitest hooks and mocks should use Vitest's APIs. Do not load the Node.js and
+Vitest adapters in the same test run.

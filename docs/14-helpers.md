@@ -39,7 +39,7 @@ App instance is not initialized yet — construct the Server first (its construc
 
 :::note Test hooks
 
-The same module exports `setAppInstance(app)` and `resetAppInstance()` for tests that need to run app-instance-dependent code without a full `Server`. `setAppInstance` throws if an instance is already set (only one `Server` per process is supported), and `resetAppInstance()` clears it. Prefer per-file isolation — as the shipped vitest setup does — and reach for `resetAppInstance()` only when a runner can't isolate per file (it does **not** clean up mongoose-registered models, redis client state, or env vars).
+The same module exports `setAppInstance(app)` and `resetAppInstance()` for tests that need to run app-instance-dependent code without a full `Server`. `setAppInstance` throws if an instance is already set (only one `Server` per process is supported), and `resetAppInstance()` clears it. Prefer the per-file isolation provided by the shipped Node.js or Vitest test adapters, and reach for `resetAppInstance()` only when a runner can't isolate per file (it does **not** clean up mongoose-registered models, Redis client state, or environment variables).
 
 :::
 
