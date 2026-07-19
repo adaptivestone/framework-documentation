@@ -138,12 +138,13 @@ Run one Node process per container and let the orchestrator scale replicas. The
 Dockerfile can look like this:
 
 ```dockerfile
-FROM node:latest
+FROM node:24
 RUN mkdir -p /opt/app && chown -R node:node /opt/app
 WORKDIR /opt/app
 COPY --chown=node:node package.json package-lock.json ./
 USER node
-RUN npm ci
+# npm install tolerates optional dependency records omitted on another CPU architecture.
+RUN npm install
 COPY --chown=node:node src/ ./src/
 EXPOSE 3300
 CMD ["node", "src/server.ts"]

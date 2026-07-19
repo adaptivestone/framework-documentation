@@ -273,6 +273,12 @@ current Ubuntu image supports MongoMemoryServer's automatic distro and MongoDB
 version selection; application setup should not normally set
 `MONGOMS_DISTRO` or `MONGOMS_VERSION`.
 
+This template uses `npm install` in CI and production image builds. npm can
+remove optional dependency records for other CPU architectures when it rewrites
+`package-lock.json`; a later `npm ci` on another architecture may then reject
+the otherwise valid lockfile. `npm install` repairs those optional records in
+the CI workspace and avoids making an ARM-generated lockfile block an x64 job.
+
 ## GitLab CI
 
 The following pipeline installs dependencies once and runs quality checks and
@@ -291,7 +297,8 @@ default:
 install:
   stage: install
   script:
-    - npm ci
+    # Keep cross-platform optional dependencies resolvable after an ARM install.
+    - npm install
   artifacts:
     paths:
       - node_modules/
@@ -361,7 +368,8 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # ARM npm can omit optional x64 peers when it rewrites package-lock.json.
+        run: npm install
 
       - name: Run tests
         run: npm run test:ci
