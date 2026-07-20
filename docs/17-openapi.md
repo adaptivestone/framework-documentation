@@ -51,14 +51,33 @@ Body and query shapes are produced by introspecting the **same validation schema
 | [ArkType](https://arktype.io/) / any schema exposing a `.toJsonSchema()` method | its native output |
 | [`defineSchema`](06-Controllers/02-routes.md#zero-dependency-schemas-defineschema) / a hand-rolled `~standard` function | **not introspectable** — a placeholder schema + a warning |
 
+### Zod request-input semantics
+
+OpenAPI describes what a client sends, not the value after Zod transforms it.
+For example, `z.string().transform(Number)` is documented as a string.
+`z.coerce.date()` is documented as a `{ "type": "string", "format":
+"date-time" }` request value. Other Zod values that cannot be represented in
+JSON Schema, such as custom `instanceof` checks, safely degrade to `{}` rather
+than aborting the whole document.
+
+For file uploads, use a content-type map with an explicit
+`multipart/form-data` entry. A custom runtime `instanceof` check cannot by
+itself tell OpenAPI that a field contains binary data.
+
 :::note Use a declarative schema if you want a documented body
 `defineSchema` and custom `~standard` functions are *imperative* — they validate but expose no shape, so the generator can't describe them and emits a placeholder object instead. If an endpoint's body should appear in the spec, declare it with Zod or Yup. The command prints a warning listing every schema it couldn't introspect, e.g.:
 
 ```
 OpenAPI: 1 schema(s) could not be fully introspected:
-  POST /auth/login body: schema introspection unavailable — placeholder emitted.
+  POST /auth/login body: schema introspection unavailable.
 ```
 :::
+
+Schema conversion is contained per route and middleware schema. Warnings name
+the HTTP method, route, and schema position. An unavailable body schema gets a
+placeholder object, an unavailable query schema is omitted, and other healthy
+routes remain fully documented. Genuine command boot, generator, and file-write
+failures still exit nonzero.
 
 This is why the generator must load your controllers at runtime rather than read the generated types: JSON Schema can only be produced from the live schema object (`z.toJSONSchema(...)`, `schema.describe()`), not from a TypeScript type.
 

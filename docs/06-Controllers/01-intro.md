@@ -12,8 +12,11 @@ The framework provides built-in error handling, automatic controller loading (in
 
 :::note
 
-In production, the framework uses the `cluster` module to start multiple instances (based on the number of CPU cores) and provide load balancing between them.
-Keep in mind that you cannot access one process from another. For complex scenarios (like a WebSocket server), you will need to use inter-process communication techniques to send messages between processes.
+Clustering is opt-in. Use the exported `runCluster()` helper when a standalone
+deployment should use multiple CPU cores; when systemd, PM2, Docker, or an
+orchestrator already manages replicas, run one framework process per replica.
+Workers do not share memory, so cross-worker sessions, WebSocket fan-out, and
+similar state require external coordination. See [Deployment](../13-deploy.md).
 :::
 
 ## Controller Structure
@@ -55,13 +58,35 @@ Controllers should extend the "AbstractController" module.
 The framework loads every file in `src/controllers/` except `*.test.js` and
 `*.test.ts`. The default mount path comes from the controller's folder prefix
 plus its **lowercased class name**. The filename does not determine the URL:
-`src/controllers/admin/ImpactSurveys.ts` exporting `class ImpactSurveys`
-mounts at `/admin/impactsurveys`.
+`src/controllers/admin/UserSettings.ts` exporting `class UserSettings`
+mounts at `/admin/usersettings`.
 
 Filename still matters for framework-internal controller overrides, so name the
 file after the class. Never export the same controller class from two files:
 the loader initializes both files and mounts the controller twice. Override
 `getHttpPath()` when the default class-name path is not the URL you want.
+
+### Organizational route groups
+
+A controller subfolder normally contributes a URL segment. Wrap a folder name
+in parentheses when it should organize source files without changing routes:
+
+```text
+src/controllers/(group)/Reports.ts
+  → /reports
+
+src/controllers/(group)/admin/Settings.ts
+  → /admin/settings
+```
+
+Only fully parenthesized path segments are omitted. Ordinary folders still
+contribute their lowercased names, and multi-word controller class names are
+still lowercased without implicit kebab-casing. Generated `*.routes.gen.ts`
+files remain beside their controllers inside the group folder.
+
+Route groups do not create namespaces. If two grouped controllers resolve to
+the same HTTP method and path, startup fails with the normal duplicate-route
+error; rename or explicitly remount one of them.
 
 ### Explicit registration
 
@@ -104,8 +129,8 @@ If you want to define a custom path, provide your own implementation of
 ```
 
 By default, `getHttpPath()` combines the folder prefix with the lowercased
-class name. It does not kebab-case multi-word names: `ImpactSurveys` becomes
-`/impactsurveys`, so use an override when `/impact-surveys` is required.
+class name. It does not kebab-case multi-word names: `UserSettings` becomes
+`/usersettings`, so use an override when `/user-settings` is required.
 
 ### Project boot hook (`bootHttp`)
 
