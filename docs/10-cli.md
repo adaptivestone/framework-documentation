@@ -12,6 +12,20 @@ CLI commands are part of the [framework inheritance process](03-files-inheritanc
 
 ## Run Command
 
+Your project's CLI entry must forward the command result to the process exit
+code. This makes failed migrations, code generation, and other commands fail CI
+and deployment steps instead of appearing successful:
+
+```ts
+import Cli from "@adaptivestone/framework/Cli.js";
+import folderConfig from "./folderConfig.ts";
+
+const cli = new Cli(folderConfig);
+const result = await cli.run();
+
+process.exit(result ? 0 : 1);
+```
+
 You are able to create a group of commands by putting files in a directory. You can see ‘migration’ as an example of grouping commands.
 
 ```bash
