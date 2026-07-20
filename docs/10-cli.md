@@ -336,6 +336,6 @@ Registered routes:
 Reading the annotations:
 
 - **`(mw: A, B)`** — middleware newly attached at this node. Inherited middleware from parent nodes is shown as `pmw:` so each route line is self-contained about what runs before it.
-- **`[request]` / `[query]`** — this route **validates** a request body / query string. They are presence flags, not the schema itself: a route either declares a validator or it doesn't. To see the actual field shapes, run `openapi` — it resolves each schema to JSON Schema (where the validator supports introspection). Imperative validators such as `defineSchema` have no introspectable shape, so they appear here as `[request]` and degrade to a placeholder in the OpenAPI document.
+- **`[request]` / `[query]`** — this route **validates** a request body / query string. They are presence flags, not the schema itself: a route either declares a validator or it doesn't. To see the actual field shapes, run `openapi` — it resolves each schema to JSON Schema (where the validator supports introspection). Imperative validators such as `defineSchema` can supply an explicit `jsonSchema`; without one they appear here as `[request]` and degrade to a placeholder in the OpenAPI document.
 
 Useful for answering "what's actually mounted in my app?" without starting the server. For the full request/response contract, use [`openapi`](#generate-openapi).

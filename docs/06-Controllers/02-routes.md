@@ -237,18 +237,29 @@ When you want a small schema without pulling in a validator library, use `define
 ```ts
 import { defineSchema } from "@adaptivestone/framework/services/validate/defineSchema.js";
 
-request: defineSchema<{ email: string }>((value) => {
-  const v = (value ?? {}) as Record<string, unknown>;
-  if (typeof v.email !== "string" || !v.email.includes("@")) {
-    return { issues: [{ message: "validation.email", path: ["email"] }] };
-  }
-  // Return only known keys — unknown input is stripped by construction.
-  return { value: { email: v.email } };
-});
+request: defineSchema<{ email: string }>(
+  (value) => {
+    const v = (value ?? {}) as Record<string, unknown>;
+    if (typeof v.email !== "string" || !v.email.includes("@")) {
+      return { issues: [{ message: "validation.email", path: ["email"] }] };
+    }
+    // Return only known keys — unknown input is stripped by construction.
+    return { value: { email: v.email } };
+  },
+  {
+    // Optional: lets OpenAPI document this imperative validator.
+    jsonSchema: {
+      type: "object",
+      properties: { email: { type: "string", format: "email" } },
+      required: ["email"],
+    },
+  },
+);
 ```
 
 - The `Output` generic (`{ email: string }`) is what the codegen reads for the typed handler signature (`req.appInfo.request`) — see below. You declare it; the runtime checks live in the callback.
 - Return `{ value }` on success (only the keys you copy survive — this is your strip-unknown), or `{ issues }` on failure. Each issue's `message` is an i18n key (or literal text); the framework auto-translates it like any other validator.
+- The optional `jsonSchema` value (or function returning one) describes the wire shape to OpenAPI. It does not change runtime validation. Omit it when the shape should remain undocumented.
 - This is the mechanism the built-in `Auth` controller uses, so the framework itself ships validator-free.
 
 `defineSchema` is intentionally minimal — there are no `string()`/`object()` combinators. If you find yourself hand-writing many or deeply nested schemas, reach for a real validator library (Zod, etc.) instead.

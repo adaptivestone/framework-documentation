@@ -224,6 +224,8 @@ import Pagination from "@adaptivestone/framework/services/http/middleware/Pagina
 ```
 
 The pagination middleware provides a helper that grabs URL search parameters (`page`, `limit`) and calculates the necessary `appInfo` properties (`skip`, `limit`, and `page`).
+Routes using it also expose optional numeric `page` and `limit` query
+parameters in generated OpenAPI documents automatically.
 
 #### Parameters
 
@@ -362,6 +364,31 @@ Run `npm run gen` after adding the config. Generated config types preserve the
 policy names, so `policy.personCreate` is autocompleted and a misspelling fails
 TypeScript; `RateLimiter` receives the actual options object and performs no
 string lookup.
+
+For route-level policies, a simple initialized `const` config read before the
+literal route return is also statically analyzable:
+
+```ts
+get routes() {
+  const { policy } = this.app.getConfig('rateLimiter');
+  return {
+    post: {
+      '/': {
+        handler: this.create,
+        middleware: [[RateLimiter, policy.personCreate] as const],
+      },
+    },
+  };
+}
+```
+
+The returned route tree must remain literal. Loops, conditionals, mutable setup,
+computed route keys, and dynamically constructed middleware are still skipped
+by route-type generation with a warning. The `as const` keeps the route-level
+middleware pair typed as a tuple; the AST extractor safely unwraps this
+TypeScript-only annotation. Route-type generation never executes the getter —
+the `const` prelude is checked by statement shape only, so an initializer that
+happens to have side effects is accepted, and those effects run at runtime only.
 
 Declare the policy catalogue in the base config, then override policy values in
 environment-specific config files. Controller modules capture the effective

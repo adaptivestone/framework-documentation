@@ -84,6 +84,11 @@ contribute their lowercased names, and multi-word controller class names are
 still lowercased without implicit kebab-casing. Generated `*.routes.gen.ts`
 files remain beside their controllers inside the group folder.
 
+Route groups are also ignored when matching a project controller against a
+framework-internal controller override. For example, moving an `Auth.ts`
+override into `(group)/Auth.ts` still replaces the framework `Auth`
+controller; the group changes source organization, not override identity.
+
 Route groups do not create namespaces. If two grouped controllers resolve to
 the same HTTP method and path, startup fails with the normal duplicate-route
 error; rename or explicitly remount one of them.

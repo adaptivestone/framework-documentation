@@ -49,7 +49,8 @@ Body and query shapes are produced by introspecting the **same validation schema
 | [Zod](https://zod.dev/) | full JSON Schema via native `z.toJSONSchema` — types, formats, `min`/`max`, patterns, enums, defaults |
 | [Yup](https://github.com/jquense/yup) | JSON Schema from `.describe()` — types, `required`, enums, nullable, arrays, `date` → `date-time` |
 | [ArkType](https://arktype.io/) / any schema exposing a `.toJsonSchema()` method | its native output |
-| [`defineSchema`](06-Controllers/02-routes.md#zero-dependency-schemas-defineschema) / a hand-rolled `~standard` function | **not introspectable** — a placeholder schema + a warning |
+| [`defineSchema`](06-Controllers/02-routes.md#zero-dependency-schemas-defineschema) | optional explicit `jsonSchema`; otherwise a placeholder schema + a warning |
+| A hand-rolled `~standard` function | **not introspectable** unless it exposes `.toJsonSchema()` — a placeholder schema + a warning |
 
 ### Zod request-input semantics
 
@@ -64,8 +65,8 @@ For file uploads, use a content-type map with an explicit
 `multipart/form-data` entry. A custom runtime `instanceof` check cannot by
 itself tell OpenAPI that a field contains binary data.
 
-:::note Use a declarative schema if you want a documented body
-`defineSchema` and custom `~standard` functions are *imperative* — they validate but expose no shape, so the generator can't describe them and emits a placeholder object instead. If an endpoint's body should appear in the spec, declare it with Zod or Yup. The command prints a warning listing every schema it couldn't introspect, e.g.:
+:::note Describe imperative schemas explicitly
+`defineSchema` callbacks are imperative, so their code cannot be inferred as a shape. Pass its optional `jsonSchema` option when the endpoint should be documented, or use a declarative validator such as Zod or Yup. A custom `~standard` schema can likewise expose a `.toJsonSchema()` method. Without either, the generator emits a placeholder object and prints a warning, e.g.:
 
 ```
 OpenAPI: 1 schema(s) could not be fully introspected:
@@ -78,6 +79,10 @@ the HTTP method, route, and schema position. An unavailable body schema gets a
 placeholder object, an unavailable query schema is omitted, and other healthy
 routes remain fully documented. Genuine command boot, generator, and file-write
 failures still exit nonzero.
+
+The built-in `Pagination` middleware already supplies its explicit schema, so
+every route using it documents optional numeric `page` and `limit` query
+parameters without application-specific OpenAPI annotations.
 
 This is why the generator must load your controllers at runtime rather than read the generated types: JSON Schema can only be produced from the live schema object (`z.toJSONSchema(...)`, `schema.describe()`), not from a TypeScript type.
 
