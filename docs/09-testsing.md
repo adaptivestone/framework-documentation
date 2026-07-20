@@ -67,9 +67,15 @@ Project hooks can live in `src/tests/setupHooks.ts`:
 
 ```ts
 import { after, afterEach, before, beforeEach } from 'node:test';
-import { createDefaultTestUser } from './testHelpers.ts';
+import {
+  createDefaultTestUser,
+  ensureTestServerReady,
+} from '@adaptivestone/framework/tests/testHelpers.js';
 
 before(async () => {
+  // Root hooks registered by separate modules are siblings and may start
+  // concurrently. Always await framework readiness before using app state.
+  await ensureTestServerReady();
   await createDefaultTestUser();
 });
 
@@ -88,6 +94,16 @@ afterEach(async () => {
 
 The framework hooks are already registered by `setupNodeTest.js`. Project hooks
 should contain only application-specific preparation and cleanup.
+
+Node.js does not serialize sibling root-level `before()` hooks registered by
+different modules. A project root hook that reads config, models, `appInstance`,
+or the HTTP server must call `await ensureTestServerReady()` first. The helper
+and framework preload share one idempotent startup promise, so concurrent calls
+wait for the same server instead of constructing two servers.
+
+Setup used by only one test file should normally live inside the same
+`describe()` as those tests. Suite-scoped hooks wait for the root framework
+hook and do not accidentally affect unrelated suites.
 
 ### Validation messages and application locales
 
@@ -136,8 +152,10 @@ npm run test:ci
 ```
 
 The example thresholds are 80% for lines, 80% for branches, and 75% for
-functions. Adjust them deliberately as the project grows. The LCOV report is
-written to `coverage/lcov.info`.
+functions. These are enforcement flags: a below-threshold run exits with code
+1 even when the `spec` and `lcov` reporters are both enabled. Adjust them
+deliberately as the project grows. The LCOV report is written to
+`coverage/lcov.info`.
 
 ## Writing a Node.js test
 
@@ -167,6 +185,47 @@ describe('person', () => {
 ```
 
 The preload and global setup belong in the runner command, not in this file.
+
+### Assertion plans
+
+`t.plan(n)` counts assertions made through `t.assert` (and registered
+subtests), not calls to a separately imported `node:assert` object. If a test
+uses a plan, use `t.assert.*` for every assertion in that test:
+
+```ts
+import { it } from 'node:test';
+
+it('returns one result', (t) => {
+  t.plan(2);
+  t.assert.strictEqual(1, 1);
+  t.assert.deepStrictEqual([{ id: 1 }], [{ id: 1 }]);
+});
+```
+
+Top-level `node:assert/strict` remains appropriate in tests that do not use
+`t.plan()`.
+
+### Migration traps from Jest and Vitest
+
+- `assert.partialDeepStrictEqual(actual, expected)` applies subset semantics to
+  arrays as well as objects. Assert the array length separately when extra
+  elements must fail the test. For rejected errors, use the two-argument
+  `assert.rejects(promise, errorPattern)` form. Compare selected Mongoose
+  document fields or deliberately normalize the document before deep matching.
+- Calling `mockImplementationOnce()` twice before the mock is invoked targets
+  the same next call and the later registration replaces the earlier one. Pass
+  explicit zero-based `onCall` indices when queuing several results:
+
+  ```ts
+  const load = t.mock.method(service, 'load');
+  load.mock.mockImplementationOnce(() => firstResult, 0);
+  load.mock.mockImplementationOnce(() => secondResult, 1);
+  ```
+
+- TypeScript represents `mock.calls[n].arguments` using one overload of an
+  overloaded method, which may not be the overload exercised by the test.
+  Prefer assertions at the public API boundary. When argument inspection is
+  necessary, keep any `unknown`-first tuple cast local to that assertion.
 
 ## Framework and server access
 
@@ -241,6 +300,7 @@ import {
   createDefaultTestUser,
   defaultAuthToken,
   defaultUser,
+  ensureTestServerReady,
   getTestServerURL,
   serverInstance,
   setDefaultAuthToken,
@@ -249,6 +309,8 @@ import {
 ```
 
 - `getTestServerURL(path)` returns the active test server URL.
+- `ensureTestServerReady()` waits for the initialized per-file server and is
+  safe to call concurrently from application root hooks.
 - `serverInstance` exposes the current test server.
 - `createDefaultTestUser()` creates the framework's default User and token.
 - `setDefaultUser()` and `setDefaultAuthToken()` support custom User models.
