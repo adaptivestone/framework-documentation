@@ -64,13 +64,22 @@ import { appInstance } from "@adaptivestone/framework/helpers/appInstance.js";
 // These are TypeScript helpers.
 import type {
   GetModelTypeFromClass, // `GetModelTypeFromClass` returns model types from the class.
-  GetModelTypeLiteFromSchema, // Same as above, but only uses the schema to avoid circular linking.
+  GetModelTypeLiteFromSchema, // Schema-derived authoring type that breaks class cycles.
 } from "@adaptivestone/framework/modules/BaseModel.js";
 
-import mongoose, { type Schema } from "mongoose";
+import mongoose, {
+  type Aggregate,
+  type Query,
+  type Schema,
+} from "mongoose";
 
-// Type helper for static and instance methods.
-type SomeModelLite = GetModelTypeLiteFromSchema<typeof SomeModel.modelSchema>;
+// Reduced authoring types for static methods, instance methods, virtuals,
+// and hooks while the class is still being defined.
+type SomeModelLite = GetModelTypeLiteFromSchema<
+  typeof SomeModel.modelSchema,
+  typeof SomeModel.schemaOptions
+>;
+type SomeDocument = InstanceType<SomeModelLite>;
 
 class SomeModel extends BaseModel {
   static initHooks(schema: Schema): void {
@@ -83,14 +92,20 @@ class SomeModel extends BaseModel {
     // https://mongoosejs.com/docs/middleware.html#types-of-middleware
     schema.pre(
       'save',
-      async function (this: InstanceType<SomeModelLite>) {
+      async function (this: SomeDocument) {
         ...
       }
     );
-    schema.pre('findOneAndDelete', async function () {
-      const docToDelete = await this.model.findOne<SomeModelLite>( // Helps to return the correct model.
-        this.getQuery(),
-      );
+    schema.pre('findOneAndDelete', async function (
+      this: Query<unknown, SomeDocument>
+    ) {
+      const docToDelete = await this.model.findOne(this.getFilter());
+      ...
+    });
+    schema.pre('aggregate', function (
+      this: Aggregate<unknown>
+    ) {
+      this.pipeline().unshift({ $match: { archived: { $ne: true } } });
     });
   }
 
@@ -103,10 +118,10 @@ class SomeModel extends BaseModel {
       firstName: String,
       lastName: String,
       email: String,
-      orders: {
-        type: mongoose.Schema.Types.ObjectId, // This is the correct type for an ObjectID reference. Only this type generates valid types.
-        ref: "Order", // You don't need to worry about initialized model schemas; the framework will load and initialize all models for you.
-      },
+      orders: [{
+        type: mongoose.Schema.Types.ObjectId, // Use Schema.Types.ObjectId for a stored reference.
+        ref: "Order", // Models are resolved after the framework has loaded them.
+      }],
     } as const; // This helps generate better types (TypeScript only).
   }
 
@@ -125,8 +140,6 @@ class SomeModel extends BaseModel {
    *
    */
   static get modelStatics() {
-    type OrderModelType = GetModelTypeFromClass<typeof Order>; // To help with the `populate` method.
-
     return {
       findByEmail: async function findByEmail(
         this: SomeModelLite, // A type helper to map to the correct `this` context.
@@ -136,7 +149,7 @@ class SomeModel extends BaseModel {
         return instance;
       },
       getInfoStatic: async function getInfoStatic(
-        model: InstanceType<SomeModelLite> // A TypeScript type helper.
+        model: SomeDocument
       ) {
         await model.populate("orders");
         return {
@@ -145,16 +158,15 @@ class SomeModel extends BaseModel {
         };
       },
       getInfoStaticWithOrders: async function getInfoStatic(
-        // Intercepts model types to ensure that the `orders` type is correct (without interception, it will be just an `ObjectID`).
-        model: InstanceType<SomeModelLite> & {
-          orders: InstanceType<OrderModelType>[];
-        }
+        model: SomeDocument
       ) {
-        await model.populate("orders");
+        const populated = await model.populate<{
+          orders: Array<{ id: string; total: number }>;
+        }>("orders");
         return {
-          _id: model.id,
-          email: model.email,
-          orders: model.orders,
+          _id: populated.id,
+          email: populated.email,
+          orders: populated.orders,
         };
       },
     };
@@ -167,10 +179,8 @@ class SomeModel extends BaseModel {
    * const data = await someModel.getInfo(); // call instance method
    */
   static get modelInstanceMethods() {
-    type ShippingInstanceType = InstanceType<SomeModelLite>;
-
     return {
-      getInfo: async function getInfo(this: SomeModelLite) {
+      getInfo: async function getInfo(this: SomeDocument) {
         return {
           _id: this._id,
           email: this.email,
@@ -194,11 +204,11 @@ class SomeModel extends BaseModel {
         options: {
           type: Object, // schema
         },
-        get(this: InstanceType<SomeModelLite>) {
+        get(this: SomeDocument) {
           // Getter
           return `${this.firstName} ${this.lastName}`;
         },
-        async set(this: InstanceType<SomeModelLite>, v: string) {
+        async set(this: SomeDocument, v: string) {
           // Setter
           const firstName = v.substring(0, v.indexOf(" "));
           const lastName = v.substring(v.indexOf(" ") + 1);
@@ -213,8 +223,104 @@ class SomeModel extends BaseModel {
 export default SomeModel;
 
 // It's good practice to return the type from the model.
-export type TSomeModel = GetModelTypeFromClass<SomeModel>;
+export type TSomeModel = GetModelTypeFromClass<typeof SomeModel>;
 ```
+
+## Authoring types and complete model handles
+
+There is only one runtime schema: `SomeModel.modelSchema`. The two helpers show
+that schema at different points in TypeScript's class evaluation:
+
+| Type | Use it for | What it contains |
+| --- | --- | --- |
+| `GetModelTypeLiteFromSchema<typeof Model.modelSchema, typeof Model.schemaOptions>` | `this:` annotations inside the class while its members are still being inferred | Schema fields and native Mongoose model/document operations |
+| `GetModelTypeFromClass<typeof Model>` | Generated types, exports, controllers, services, commands, and tests after the class is complete | Schema fields plus the class's statics, instance methods, and virtuals |
+
+The reduced type cannot include a custom static, method, or virtual that
+TypeScript is currently in the middle of inferring. Trying to use the complete
+class-derived type inside that same member creates a circular type. This is a
+TypeScript evaluation boundary, not a second schema and not a reduced runtime
+model.
+
+Keep the reduced alias beside the class-authoring context. Export the complete
+class-derived handle:
+
+```ts
+type SomeModelLite = GetModelTypeLiteFromSchema<
+  typeof SomeModel.modelSchema,
+  typeof SomeModel.schemaOptions
+>;
+type SomeDocument = InstanceType<SomeModelLite>;
+
+export type TSomeModel = GetModelTypeFromClass<typeof SomeModel>;
+```
+
+For two complete model classes that refer to each other, put one deliberate
+annotation or deferred boundary at the cycle. Renaming the reduced helper or
+wrapping the same circular inputs in another conditional type cannot make the
+unfinished class available earlier.
+
+## Schema options that affect types
+
+Pass `typeof Model.schemaOptions` as the second argument whenever schema options
+affect a document or query result. Keep the options literal with `as const`.
+
+Timestamp options are reflected exactly: either timestamp can be disabled or
+renamed, and an omitted key in an object-form timestamp configuration keeps its
+default name.
+
+```ts
+class AuditModel extends BaseModel {
+  static get modelSchema() {
+    return { event: { type: String, required: true } } as const;
+  }
+
+  static get schemaOptions() {
+    return {
+      timestamps: { createdAt: "created_on", updatedAt: false },
+    } as const;
+  }
+}
+
+type AuditModelLite = GetModelTypeLiteFromSchema<
+  typeof AuditModel.modelSchema,
+  typeof AuditModel.schemaOptions
+>;
+type AuditDocument = InstanceType<AuditModelLite>;
+
+declare const audit: AuditDocument;
+audit.created_on; // Date
+// audit.createdAt; // Type error: renamed
+// audit.updatedAt; // Type error: disabled
+```
+
+Mongoose can also make queries lean by default at schema level. With
+`lean: true` (or an object-form lean configuration), ordinary reads return plain
+objects. Opt out per query when document methods are required:
+
+```ts
+class LeanRecord extends BaseModel {
+  static get modelSchema() {
+    return { title: { type: String, required: true } } as const;
+  }
+
+  static get schemaOptions() {
+    return { lean: true } as const;
+  }
+}
+
+type LeanRecordModel = GetModelTypeFromClass<typeof LeanRecord>;
+declare const LeanRecordHandle: LeanRecordModel;
+
+const plain = await LeanRecordHandle.findOne();
+// plain?.save(); // Type error: the result is a plain object
+
+const document = await LeanRecordHandle.findOne({}, null, { lean: false });
+await document?.save(); // Hydrated document
+```
+
+If `schemaOptions` is not passed to the schema-derived helper, TypeScript cannot
+recover those options from `modelSchema` alone.
 
 :::warning
 
@@ -240,7 +346,7 @@ non-null [plugin-reshaped field](#typing-plugin-reshaped-fields), sibling
 methods):
 
 ```ts
-getInfo: async function (this: SomeModelLite) {
+getInfo: async function (this: SomeDocument) {
   return { _id: this._id, email: this.email };
 },
 ```
@@ -250,6 +356,35 @@ the document — `doc.getInfo()` — on any model handle; the framework drops th
 authored `this` from the caller-facing type, since a method accessed on its own
 document always has the right `this` at runtime. No `(schema.methods.x as …)
 .call(doc, …)` cast is needed.
+
+:::
+
+:::tip Annotating `this` in middleware
+
+Use the context for the middleware category, not one model type everywhere:
+
+```ts
+// Document middleware
+schema.pre("save", function (this: SomeDocument) {
+  this.email;
+});
+
+// Query middleware
+schema.pre("findOneAndUpdate", function (
+  this: Query<unknown, SomeDocument>
+) {
+  this.getFilter();
+  this.getUpdate();
+});
+
+// Aggregate middleware
+schema.pre("aggregate", function (this: Aggregate<unknown>) {
+  this.pipeline();
+});
+```
+
+The same annotations work when hooks are registered in a loop. A query's
+`this` is a Mongoose `Query`; it is not the model and not a hydrated document.
 
 :::
 
@@ -370,6 +505,75 @@ union forces a narrowing check, which is the honest cost of a field that is
 sometimes an id and sometimes a document.
 
 :::
+
+## Recovering a model from a document
+
+Use Mongoose's typed `$model<T>()` method when document code needs its owning
+model. Avoid casting `document.constructor`: Mongoose exposes that property as a
+general constructor, so it does not preserve the framework model's statics.
+
+```ts
+declare const document: SomeDocument;
+
+const SomeModelHandle = document.$model<TSomeModel>();
+await SomeModelHandle.findByEmail(document.email ?? "");
+```
+
+On an existing document, prefer the no-argument `$model<T>()` overload. The
+named overload (`$model<T>("SomeModel")`) passes through a broader Mongoose
+constraint that can reject schema-specific model types. For a model selected by
+a runtime string, use the application's generated model registry or define a
+small local capability type for the operations that branch needs.
+
+## Write inputs and query-local result types
+
+A hydrated document type describes a document returned by Mongoose. It is not a
+general create/insert DTO: hydrated subdocuments may contain generated `_id`
+fields and document methods that are not present in a plain write payload.
+
+Prefer inference for one-off writes:
+
+```ts
+declare const SomeModelHandle: TSomeModel;
+
+await SomeModelHandle.create({
+  someString: "required value",
+  email: "reader@example.com",
+  orders: [],
+});
+```
+
+When an input crosses a service or command boundary, declare a local input type
+containing the writable fields instead of reusing `SomeDocument`:
+
+```ts
+type CreateSomeModelInput = {
+  someString: string;
+  email?: string;
+  orders?: mongoose.Types.ObjectId[];
+};
+
+const rows: CreateSomeModelInput[] = getRows();
+await SomeModelHandle.insertMany(rows);
+```
+
+Population and aggregation are also query-local runtime choices. Use
+`.populate<T>()` for the populated result and supply an explicit aggregation
+result type:
+
+```ts
+const totals = await SomeModelHandle.aggregate<{
+  _id: string;
+  count: number;
+}>([
+  { $match: { email: { $ne: null } } },
+  { $group: { _id: "$email", count: { $sum: 1 } } },
+]);
+```
+
+Keep these contracts beside the operation that creates the shape. The framework
+cannot infer an aggregation projection or a runtime-selected population state
+from the static schema alone.
 
 ## API
 
