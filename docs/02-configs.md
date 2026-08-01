@@ -150,3 +150,54 @@ boundary. Regenerate after changing a config's shape; `generatetypes --check`
 fails CI if the committed types are stale.
 
 :::
+
+### Generated array and object shapes
+
+Codegen widens a homogeneous array to a reusable array type. Its type therefore
+describes the kind of entries the config contains without freezing the number
+of entries that happened to be loaded during generation:
+
+```ts title="/src/config/assets.ts"
+export default {
+  origins: ["https://one.example", "https://two.example"],
+  dimensions: [
+    [300, 300],
+    [1080, 1080],
+  ],
+  endpoints: [
+    { hostname: "one.example", secure: true },
+    { hostname: "two.example", secure: false },
+  ],
+};
+```
+
+The generated shapes are `string[]`, `number[][]`, and
+`{ hostname: string; secure: boolean }[]`, respectively. A production override
+can therefore contain a different number of entries without creating a false
+fixed-length tuple error.
+
+Arrays whose entries have different generated types remain tuples. For example,
+`["retries", 3]` becomes `[string, number]`, preserving the useful positional
+types. An empty array becomes `unknown[]`: a runtime empty value provides no
+evidence from which codegen could infer its element type.
+
+Generated object properties remain exact. The framework intentionally does not
+add a `[key: string]` index signature, because that would allow misspelled keys
+and falsely claim that every possible string exists. When iterating a finite
+generated object, narrow `Object.keys()` back to its real keys:
+
+```ts
+const { endpointsByRegion } = this.app.getConfig("assets");
+const keys = Object.keys(endpointsByRegion) as Array<
+  keyof typeof endpointsByRegion
+>;
+
+for (const key of keys) {
+  const endpoint = endpointsByRegion[key];
+}
+```
+
+If a config value is genuinely an open string dictionary rather than a finite
+object, declare a local `Record<string, Value>` contract at that dynamic access
+boundary. Codegen sees only the keys present in the loaded runtime value and
+cannot safely infer that arbitrary future keys are supported.
