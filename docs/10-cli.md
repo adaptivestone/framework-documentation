@@ -254,7 +254,7 @@ npm run cli generateRandomBytes
 
 Generates two kinds of TS source from the framework's introspection:
 
-1. **`genTypes.d.ts`** at the project root — augments `IApp` so `getConfig('foo')` and `getModel('Bar')` are typed.
+1. **`genTypes.d.ts`** at the project root — augments `IApp` and its `AppModelTypes` map so `getConfig('foo')`, `getModel('Bar')`, and known-name `getModelOrThrow('Bar')` calls are typed.
 2. **`<File>.routes.gen.ts`** next to every controller — typed `<MethodName>Request` aliases for handler signatures (per-route schema output, middleware-provided `appInfo` fields, etc.). The middleware chain comes from `RouteRegistry.flatten()` — same matcher the runtime uses, so types match runtime behavior. See [Routes → Typed handler signatures (codegen)](06-Controllers/02-routes.md#typed-handler-signatures-codegen) for usage.
 
 #### Run Generate TypeScript Types

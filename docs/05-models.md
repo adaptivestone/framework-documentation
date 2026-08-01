@@ -645,18 +645,50 @@ Keep these contracts beside the operation that creates the shape. The framework
 cannot infer an aggregation projection or a runtime-selected population state
 from the static schema alone.
 
-## API
+## Looking up models
+
+Run type generation before type-checking. The generated `AppModelTypes` map
+contains every resolved application model, including application overrides of
+framework models. `getModel()` therefore accepts application models as well as
+the built-in models—it is not limited to the framework's model names.
 
 ```ts
-getModel(modelName: string): MongooseModel<any>;
+const User = this.app.getModel("User");
+const user = await User.findOne({ email: "user@email.com" });
+
+// A union of valid generated names produces the corresponding model union.
+const modelName: "Article" | "Comment" = chooseModelName();
+const Content = this.app.getModel(modelName);
+
+// @ts-expect-error — no model with this generated name
+this.app.getModel("Artcle");
 ```
 
-Example:
+Use the two lookup methods according to where the name comes from:
 
-```js
-const UserModel = this.app.getModel("User");
-const userInstance = await UserModel.findOne({ email: "user@email.com" });
+| Name source | Method | Return type | Missing model |
+|---|---|---|---|
+| Generated literal or union | `getModel(name)` | Exact model or model union | Rejected by TypeScript |
+| Runtime `string` | `getModelOrThrow(name)` | Broad Mongoose model, never `false` | Throws an `Error` |
+
+For example, a command may receive a model name only at runtime:
+
+```ts
+const modelName = process.env.MODEL_NAME;
+if (!modelName) throw new Error("MODEL_NAME is required");
+
+const Model = this.app.getModelOrThrow(modelName);
+await Model.collection.dropIndexes();
 ```
+
+`getModelOrThrow()` also has access to the generated map. Passing a known
+literal or a valid-name union therefore keeps the same precise return type as
+`getModel()`; only an unrestricted `string` widens to the common model type.
+
+An unknown name, or a lookup before `Server.init()` completes, is logged and
+then throws. If a model name comes directly from an HTTP request, validate it
+against an allowed-name set first so the application can return an appropriate
+client error rather than exposing an internal lookup failure.
 
 ## Configuration
 
