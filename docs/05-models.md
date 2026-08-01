@@ -543,6 +543,76 @@ await SomeModelHandle.create({
 });
 ```
 
+### Hydrated subdocuments and array writes
+
+Raw write values and hydrated document properties intentionally have different
+types. A plain value passed to `create()` has no generated fields yet. After
+Mongoose hydrates it, a subdocument has its generated `_id` and an array of
+subdocuments is a real `DocumentArray` with Mongoose's change tracking and
+methods.
+
+```ts
+const Workflow = this.app.getModel("Workflow");
+
+const workflow = await Workflow.create({
+  entries: [{ label: "Initial" }], // no `_id` or defaulted fields required
+});
+
+workflow.entries[0]._id; // ObjectId: generated ids are required when read
+
+workflow.entries.push({ label: "Review" }); // Mongoose casts the plain value
+
+const approved = workflow.entries.create({ label: "Approved" });
+workflow.entries.push(approved);
+workflow.entries.id(approved._id); // hydrated DocumentArray method
+```
+
+The same distinction applies to defaulted subdocument fields: callers may omit
+them from `Model.create()`, `DocumentArray.push()`, `DocumentArray.create()`, and
+`DocumentArray.splice()` input, while the hydrated result exposes the value
+Mongoose supplies. An inline `_id: false` removes the generated id instead; it
+is not exposed as a usable field on the hydrated subdocument and is absent from
+raw/lean results.
+
+Replacing a hydrated array with a native JavaScript array by direct property
+assignment is intentionally rejected. A native array does not have
+`DocumentArray.create()`, `id()`, casting, or change tracking, so accepting it as
+the property's read type would make those APIs unsafe. Mutate the existing array
+or use Mongoose's setter:
+
+```ts
+const replacement = [{ label: "Rebuilt" }];
+
+workflow.entries.splice(
+  0,
+  workflow.entries.length,
+  ...replacement,
+);
+
+// Alternatively, replace the whole path through Mongoose's casting setter.
+workflow.set("entries", replacement);
+
+// Type error: a native array is not a hydrated DocumentArray.
+// workflow.entries = replacement;
+```
+
+For filtered hydrated values, keep the `DocumentArray` instance and replace its
+contents:
+
+```ts
+const remaining = workflow.entries.filter((entry) => entry.label !== "Review");
+workflow.entries.splice(0, workflow.entries.length, ...remaining);
+```
+
+A lean query returns raw values, so its array fields are ordinary JavaScript
+arrays rather than `DocumentArray`s. This raw/hydrated split follows
+[Mongoose's TypeScript subdocument model](https://mongoosejs.com/docs/typescript/subdocuments.html)
+and does not require a second runtime schema or a separately maintained document
+interface.
+
+Primitive schema arrays similarly hydrate as Mongoose arrays rather than native
+arrays. Mutate them in place or use `set()` for a whole-path replacement.
+
 When an input crosses a service or command boundary, declare a local input type
 containing the writable fields instead of reusing `SomeDocument`:
 
