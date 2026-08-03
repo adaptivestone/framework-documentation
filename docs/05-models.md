@@ -390,32 +390,50 @@ The same annotations work when hooks are registered in a loop. A query's
 
 ## Typing plugin-reshaped fields
 
-Some Mongoose plugins reshape a field's value at runtime: `mongoose-intl` turns a
-`String` field into a `{ native, machine }` sub-document, an encryption plugin
-swaps a string for a cipher object, a custom getter returns a different type. The
-framework infers a field's type from `type:` (here, `string`), so the static type
-no longer matches what is actually stored — and you end up casting at every read.
+Some Mongoose plugins reshape a field after the schema literal is declared. An
+intl plugin may store a locale map behind a `String` path, an encryption plugin
+may store a cipher object, and a custom getter may expose a different hydrated
+value. The framework can only infer the declared `type:` unless you describe the
+plugin's transformation.
 
-Mark such a field with `TsTypeOverride<T>` to declare its real compile-time type.
-The marker is a phantom (`__tsType`, never set at runtime), so the plugin keeps
-doing the reshaping; only the static type changes.
+Mark the field with `TsTypeOverride<TRaw, THydrated = TRaw>`:
+
+- `TRaw` is the stored shape used by casting/create inputs and lean results;
+- `THydrated` is the value exposed by loaded Mongoose documents and hydrated
+  subdocuments;
+- omitting `THydrated` preserves the original one-type behavior.
+
+Both marker properties are phantom TypeScript fields and are never set at
+runtime. The plugin remains responsible for the transformation.
+
+:::info Version requirement
+
+Distinct raw and hydrated overrides require framework **5.2.3 or newer**. The
+one-argument `TsTypeOverride<T>` form works in earlier v5 releases and remains
+source-compatible.
+
+:::
+
+### One value type on both surfaces
+
+Use one type argument when the plugin exposes the same reshaped value on raw and
+hydrated documents:
 
 ```ts title="/src/models/Event.ts"
 import { BaseModel } from "@adaptivestone/framework/modules/BaseModel.js";
 import type { TsTypeOverride } from "@adaptivestone/framework/modules/BaseModel.js";
-import type { IntlSubDocValue } from "mongoose-intl"; // your plugin's value type
 
-// A small factory keeps schemas readable: a `String` field the intl plugin
-// reshapes into an `IntlSubDocValue` at runtime.
-function intlString<C extends object>(field: C) {
-  return field as C & TsTypeOverride<IntlSubDocValue<string>>;
+type EncryptedValue = { ciphertext: string; keyId: string };
+
+function encryptedString<C extends object>(field: C) {
+  return field as C & TsTypeOverride<EncryptedValue>;
 }
 
 export default class Event extends BaseModel {
   static get modelSchema() {
     return {
-      title: intlString({ type: String, intl: true }),
-      schedule: [{ title: intlString({ type: String, intl: true }) }],
+      secret: encryptedString({ type: String, encrypted: true }),
+      schedule: [{ secret: encryptedString({ type: String, encrypted: true }) }],
       plainField: { type: String }, // unmarked → still `string`
     } as const;
   }
@@ -427,10 +445,74 @@ The static type now follows the runtime value everywhere — no casts:
 ```ts
 const Event = this.app.getModel("Event");
 const event = await Event.findOne();
-event?.title?.native; // `title` is IntlSubDocValue<string>
-event?.schedule?.[0]?.title?.machine; // any depth (nested + subdoc arrays)
+event?.secret?.ciphertext; // `secret` is EncryptedValue
+event?.schedule?.[0]?.secret?.keyId; // any depth (nested + subdoc arrays)
 event?.plainField; // unmarked field is still `string`
 ```
+
+### Different raw and hydrated values
+
+A virtual getter can expose a different value from the one stored in MongoDB.
+Describe both surfaces once in an application-side schema factory. Include every
+state the getter can return—for example, an intl getter may normally return the
+selected string but expose the complete locale map after a document method
+changes its mode:
+
+```ts title="/src/models/Event.ts"
+import { BaseModel } from "@adaptivestone/framework/modules/BaseModel.js";
+import type { TsTypeOverride } from "@adaptivestone/framework/modules/BaseModel.js";
+
+type Language = "en" | "fr";
+type IntlText = Partial<Record<Language, string>>;
+type IntlHydratedValue = string | IntlText;
+
+function intlString<C extends object>(field: C) {
+  return field as C & TsTypeOverride<IntlText, IntlHydratedValue>;
+}
+
+export default class Event extends BaseModel {
+  static get modelSchema() {
+    return {
+      title: intlString({ type: String, required: true, intl: true }),
+      schedule: [
+        { title: intlString({ type: String, required: true, intl: true }) },
+      ],
+    } as const;
+  }
+}
+```
+
+The raw shape is accepted when creating the document. The returned document is
+hydrated, while `.lean()` returns the raw locale map:
+
+```ts
+const Event = this.app.getModel("Event");
+
+const event = await Event.create({
+  title: { en: "Title", fr: "Titre" },
+  schedule: [{ title: { en: "Session", fr: "Séance" } }],
+});
+
+if (typeof event.title === "string") {
+  event.title.toUpperCase(); // selected-language getter state
+} else {
+  event.title.en; // full-languages getter state
+}
+
+const raw = await Event.findById(event._id).lean();
+raw?.title.en; // IntlText
+
+const item = event.schedule.create({
+  title: { en: "Next", fr: "Suivante" },
+});
+event.schedule.push(item);
+// `item.title` is IntlHydratedValue; its create input was IntlText.
+```
+
+Prefer the plugin's nested raw value (`title: { en, fr }`) when its setter
+supports it. `TsTypeOverride` describes a field's values; it deliberately does
+not synthesize plugin-specific dotted root keys such as `"title.en"` for every
+model operation.
 
 :::note
 
@@ -438,7 +520,9 @@ The override is **opt-in** and a strict **no-op** for any field without the
 marker — existing models are unaffected. It recurses into nested objects and
 subdocument arrays, so a reshaped field can appear at any depth. The same marker
 works for any runtime-reshaping plugin (encrypted fields, custom getters, …), not
-just `mongoose-intl`.
+just intl plugins. The framework does not interpret plugin-specific options such
+as `intl: true`; the small application-side factory is the explicit type/runtime
+boundary.
 
 :::
 
