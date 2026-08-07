@@ -1,9 +1,15 @@
 # Testing
 
-The framework supports Node.js's built-in test runner and Vitest. New Node.js
-24 projects should use the built-in runner: it executes TypeScript test files
+The framework supports Node.js's built-in test runner and Vitest. The built-in
+runner is the default for new projects: it executes TypeScript test files
 natively, has no additional test-runner dependency, and integrates with the
-framework's shared MongoDB and per-test isolation helpers.
+framework's shared MongoDB and per-test isolation helpers. Node.js 24 remains
+the minimum supported runtime; the framework's own test infrastructure and CI
+run on Node.js 26.
+
+Vitest remains a fully supported alternative. Choose the runner that best fits
+the project's existing tooling and plugins; the native runner is not presented
+as an execution-speed upgrade.
 
 Name tests `*.test.ts` or `*.test.js` and keep them next to the file they cover.
 For example, test `src/controllers/Auth.ts` in
@@ -128,7 +134,7 @@ in the CI command so ordinary development runs stay fast:
   "scripts": {
     "test": "node --import=./src/tests/setupNodeTest.ts --test --test-global-setup=./src/tests/globalSetupNodeTest.ts \"src/**/*.test.ts\"",
     "t": "node --import=./src/tests/setupNodeTest.ts --test --watch --test-global-setup=./src/tests/globalSetupNodeTest.ts \"src/**/*.test.ts\"",
-    "test:ci": "node --import=./src/tests/setupNodeTest.ts --test --experimental-test-coverage --test-coverage-exclude=\"src/**/*.test.ts\" --test-coverage-exclude=\"src/tests/**\" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=75 --test-global-setup=./src/tests/globalSetupNodeTest.ts --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \"src/**/*.test.ts\""
+    "test:ci": "mkdir -p coverage && node --import=./src/tests/setupNodeTest.ts --test --experimental-test-coverage --test-coverage-exclude=\"src/**/*.test.ts\" --test-coverage-exclude=\"src/tests/**\" --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=75 --test-global-setup=./src/tests/globalSetupNodeTest.ts --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=coverage/junit.xml --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \"src/**/*.test.ts\""
   }
 }
 ```
@@ -153,9 +159,13 @@ npm run test:ci
 
 The example thresholds are 80% for lines, 80% for branches, and 75% for
 functions. These are enforcement flags: a below-threshold run exits with code
-1 even when the `spec` and `lcov` reporters are both enabled. Adjust them
-deliberately as the project grows. The LCOV report is written to
-`coverage/lcov.info`.
+1 even when multiple reporters are enabled. Adjust them deliberately as the
+project grows. LCOV is written to `coverage/lcov.info`, and JUnit test results
+are written to `coverage/junit.xml`.
+
+Native global setup, whole-module mocks, and test coverage remain experimental
+Node.js test-runner surfaces. Pin the test runtime in CI rather than following
+an unbounded `latest` release.
 
 ## Writing a Node.js test
 
@@ -393,7 +403,9 @@ tests:
 
 ## GitHub Actions
 
-GitHub-hosted Ubuntu runners can use Node.js 24 directly:
+GitHub-hosted Ubuntu runners can use Node.js 26 for the current test
+infrastructure. Applications that deliberately verify the minimum supported
+runtime may add a separate Node.js 24 job:
 
 ```yaml
 name: Test
@@ -404,7 +416,7 @@ on:
 
 jobs:
   test:
-    name: Node 24
+    name: Node 26
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -426,7 +438,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: '26'
           cache: npm
 
       - name: Install dependencies
@@ -439,6 +451,14 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v6
+        with:
+          report_type: test_results
+          files: coverage/junit.xml
           token: ${{ secrets.CODECOV_TOKEN }}
 ```
 
@@ -460,14 +480,21 @@ it('validates credentials', (t) => {
 ```
 
 Mocks created through `t.mock` are restored automatically after the test.
-Whole-module ESM mocking is experimental in Node.js 24 and requires
+Whole-module ESM mocking is experimental in Node.js 26 and requires
 `--experimental-test-module-mocks`; prefer method mocks or dependency injection
 unless module replacement is necessary.
 
-## Optional Vitest setup
+## Vitest setup
 
-The framework continues to support Vitest for existing projects. Configure its
-public adapters instead of importing framework lifecycle internals:
+Vitest is a fully supported alternative runner and remains an optional peer
+dependency. Install it in projects that choose it:
+
+```bash
+npm install --save-dev vitest
+```
+
+Configure the framework's public adapters instead of importing lifecycle
+internals:
 
 ```ts
 import { defineConfig } from 'vitest/config';
@@ -487,4 +514,6 @@ export default defineConfig({
 ```
 
 Vitest hooks and mocks should use Vitest's APIs. Do not load the Node.js and
-Vitest adapters in the same test run.
+Vitest adapters in the same test run. The framework does not require a Vitest
+coverage provider; projects that enable Vitest coverage should install and
+configure their preferred provider separately.
