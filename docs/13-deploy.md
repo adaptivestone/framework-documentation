@@ -9,6 +9,12 @@ workers on the same host.
 Do not nest supervisors. For example, do not run `runCluster()` inside PM2
 cluster mode or start several clustered processes in one Kubernetes pod.
 
+:::note HTTP/1.1 only — terminate TLS and HTTP/2 at your proxy
+The framework serves **plain HTTP/1.1** (`http.createServer`); it does not implement TLS or HTTP/2.
+That is the normal shape for a Node service: your load balancer, ingress, or CDN speaks HTTPS and
+HTTP/2 to clients and forwards HTTP/1.1 to the app. Configure certificates there, not here.
+:::
+
 ## Single process under an external supervisor (recommended)
 
 Keep server construction in a dedicated module:
