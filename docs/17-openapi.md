@@ -32,7 +32,7 @@ Everything comes from the route definitions you already have — there is nothin
 | `operationId` | handler method name |
 | `tags` | controller class name |
 | `summary` | route [`description`](06-Controllers/02-routes.md#route-third-level-route-object-level) |
-| path `parameters` | `:name` path segments |
+| path `parameters` | `:name` path segments; typed by the route [`params:`](06-Controllers/02-routes.md#params) schema when declared, otherwise `string` |
 | query `parameters` | route [`query:`](06-Controllers/02-routes.md#query) schema (+ middleware query schemas) |
 | `requestBody` | route [`request:`](06-Controllers/02-routes.md#request) schema or [content-type map](06-Controllers/02-routes.md#different-schemas-per-content-type) (+ middleware request schemas) |
 | `security` | middleware [`static get usedAuthParameters()`](#documenting-auth-security-schemes) |
@@ -42,7 +42,7 @@ Output is **OpenAPI 3.1** (JSON Schema 2020-12) only.
 
 ## Request bodies come from your schemas
 
-Body and query shapes are produced by introspecting the **same validation schemas** you already use at runtime — through the validator driver's `toJsonSchema`. How much detail you get depends on the validator:
+Body, query and path-param shapes are produced by introspecting the **same validation schemas** you already use at runtime — through the validator driver's `toJsonSchema`. How much detail you get depends on the validator:
 
 | Validator | OpenAPI body |
 |---|---|

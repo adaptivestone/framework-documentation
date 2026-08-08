@@ -92,6 +92,9 @@ On the third level, we have a "route object," a special object that will describ
   query: yup.object().shape({ // optional
     page: yup.number().required(),
   }),
+  params: yup.object().shape({ // optional
+    id: yup.string().required(),
+  }),
   middleware: [RateLimiter], // optional
   description: "Create a sample" // optional — a plain string; becomes the OpenAPI operation summary
 }
@@ -104,11 +107,12 @@ Here:
 Handler; // Some async function (most likely in this controller file) that will do all the work.
 Request; // A special interface that will do validation of body parameters for you.
 Query; // A special interface that will do validation of query parameters for you.
+Params; // A special interface that will do validation of path parameters (:id) for you.
 Middleware; // An array of middlewares specially for the current route.
 Description; // A description of this route — becomes the OpenAPI operation summary.
 ```
 
-The route `description` together with the `request:` / `query:` schemas and the middleware chain are what the framework reads to generate an [OpenAPI 3.1 document](../17-openapi.md).
+The route `description` together with the `request:` / `query:` / `params:` schemas and the middleware chain are what the framework reads to generate an [OpenAPI 3.1 document](../17-openapi.md).
 
 ## Request
 
@@ -154,6 +158,50 @@ Do not use `req.query` directly. Always use parameters via `req.appInfo.query`.
 
 :::
 
+## Params
+
+Path params (`:id`, `{*rest}`) arrive as raw strings from the matcher. Declare a `params:` schema to validate and coerce them the same way `request:` handles the body:
+
+```js
+get: {
+  "/person/:id": {
+    handler: this.getPerson,
+    params: yup.object().shape({
+      id: yup.string().matches(/^[0-9a-fA-F]{24}$/, "must be a valid id"),
+    }),
+  },
+}
+```
+
+A failure is a **400** with the framework's usual error shape, returned before your handler runs:
+
+```json
+{ "errors": { "id": ["must be a valid id"] } }
+```
+
+The validated, coerced values are available as `req.appInfo.params`. Because coercion comes from the validator, a numeric or date param arrives already converted:
+
+```js
+"/invoice/:year": {
+  handler: this.getInvoice,
+  params: yup.object().shape({ year: yup.number().min(2000) }),
+}
+
+// in the handler:
+req.appInfo.params.year; // 2026    (number)
+req.params.year;         // "2026"  (string — raw, untouched)
+```
+
+:::warning
+Use `req.appInfo.params` for validated values. Raw `req.params` is deliberately left alone so the Express contract (always strings) still holds — which also means it is **not** validated. Passing a raw param straight to Mongoose is the classic way to turn a client typo into a server error.
+:::
+
+:::note
+`params:` is route-level only — unlike `request:` and `query:`, middleware do not contribute param schemas. It does feed the [OpenAPI document](../17-openapi.md): a declared `params:` schema types the path parameters that would otherwise be documented as plain `string`s. Path params are always emitted as `required: true` — they are part of the URL by construction, whatever the schema says about optionality.
+
+If a route declares no `params:` schema and an unvalidated param reaches Mongoose anyway, the framework still catches the resulting `CastError` and answers **400** rather than 500 — see [Error handling → the Mongoose cast safety net](04-error-handling.md#built-in-the-mongoose-cast-safety-net). That is a floor, not a substitute: a `params:` schema rejects bad input earlier, with wording and coercion you control.
+:::
+
 ## Validation
 
 The framework dispatches validation through [Standard Schema](https://standardschema.dev/) — a vendor-neutral interface. Any conforming validator works as a route's `request:` or `query:` schema with no glue code:
@@ -168,7 +216,7 @@ The framework dispatches validation through [Standard Schema](https://standardsc
 Yup is shown in the examples below since the framework historically taught it, but the same shapes are accepted from any Standard Schema-conforming library.
 
 :::note
-`request:` validates the request **body** and `query:` validates the **query string** — **path params (`:id`) are not validated**. A raw param passed to Mongoose (`findById(req.params.id)`) throws a `CastError` → 500 on a malformed id. Guard params yourself — see [Recipes → Validate an ObjectId](../15-recipes.md#validate-an-objectid).
+`request:` validates the request **body**, `query:` the **query string**, and `params:` the **path params** (`:id`) — see [Params](#params) below. All three accept any Standard Schema validator and all three report failures the same way.
 :::
 
 :::note
@@ -307,6 +355,7 @@ The gen file uses `InstanceType<typeof Controller>['routes'][...]['request']` ty
 | Route path `{*name}` splats (e.g., `/files/{*path}`) | `req.params: { path: string }` — splats join captured segments with `/` (one string, not an array) |
 | Route `request:` schema | `req.appInfo.request: StandardSchemaV1.InferOutput<...>` |
 | Route `query:` schema | `req.appInfo.query: StandardSchemaV1.InferOutput<...>` |
+| Route `params:` schema | `req.appInfo.params: StandardSchemaV1.InferOutput<...>` — the raw `req.params` row above stays `string`-valued |
 | Middleware-chain `static get provides()` returns | Merged into `req.appInfo` |
 
 The middleware chain in the gen file is read from the same `RouteRegistry.flatten()` the runtime uses — so the types you see at compile time match the middlewares that actually run at request time. No parallel matcher to drift.

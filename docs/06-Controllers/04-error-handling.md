@@ -3,7 +3,7 @@
 What happens when a route handler throws? The framework resolves the error through an ordered **error-handler registry**:
 
 1. **Your registered handlers** — checked first, in registration order.
-2. **Built-ins** — the `HttpError` mapper, then the Mongoose validation safety net.
+2. **Built-ins** — the `HttpError` mapper, the Mongoose validation safety net, then the Mongoose cast safety net.
 3. **Fallback** — nothing matched: the error is logged at `error` level and the client gets `500 {"message": "Platform error. Please check later or contact support"}`.
 
 The first entry whose error class matches (`instanceof`) and whose handler returns a response wins. That gives you two tools: **throw** typed HTTP errors from your own code, and **register** handlers for error types you don't own.
@@ -152,7 +152,8 @@ What's available on `req`:
 
 | Source | What it is | Caveat |
 | --- | --- | --- |
-| `req.params` | Path params (`:projectId`) | Raw **strings**, not validated — same rule as in handlers (see the note in [Routes → Validation](02-routes.md#validation)) |
+| `req.params` | Path params (`:projectId`) | Raw **strings**, never validated — declare a route [`params:` schema](02-routes.md#params) and read `req.appInfo.params` instead |
+| `req.appInfo.params` | Validated, coerced path params | Only set when the route declares a `params:` schema |
 | `req.appInfo.request` | Validated, cast request body | Only set when the route declares a `request:` schema — guard with `?.` in handlers registered for many routes |
 | `req.appInfo.query` | Validated, cast query string | Same — needs a `query:` schema |
 | `req.appInfo.i18n` | `t()` + detected `language` | Present on framework routes; typed optional |
@@ -181,10 +182,33 @@ But when a constraint slips through, `doc.save()` throws a Mongoose `ValidationE
 
 Each message is **rebuilt from the validation kind and the schema constraint** — `maxlength` → `"Must be at most 255 characters"`, a `Number` cast failure → `"Must be a number"`, `enum` → `"Must be one of: …"` — and **never includes the value the client submitted**. Mongoose's own default messages interpolate that value (a phone number, a password pasted into the wrong field), which would otherwise leak it into the response and the log. For the same reason a *custom* message set on the model (`maxLength: [50, 'Name too long']`) is **not** passed through — it's rebuilt generically, since a custom string can't be told apart from a templated default that embedded the value. The `warn` log line for a handled error is sanitized the same way; a failure that stays a 500 logs the original error in full. These fallback messages are plain English and not translated; put user-facing, i18n wording on the route schema.
 
-Note this covers Mongoose *validation* errors only. A duplicate-key violation (`E11000`) is a `MongoServerError` from the driver, not a `ValidationError` — map it yourself as shown above if you want a 409.
+Note this covers Mongoose *validation* errors only. A duplicate-key violation (`E11000`) is a `MongoServerError` from the driver, not a `ValidationError` — map it yourself as shown above if you want a 409. A standalone **cast** failure is a `CastError`, a sibling of `ValidationError` rather than a subclass, so it has its own built-in — described next.
 
 :::tip
 The safety net is a fallback, not the contract. Route schemas are the API's source of truth: they produce field-accurate, i18n-translated errors under the names the client knows. The safety net exists so a missed constraint degrades to a useful 400 instead of a mystery 500.
+:::
+
+## Built-in: the Mongoose cast safety net
+
+The classic version of this is a path param handed straight to a model:
+
+```js
+async getPerson(req, res) {
+  // `req.params.id` is a raw, unvalidated string
+  const person = await this.app.getModel("Person").findById(req.params.id);
+  return res.json({ data: person });
+}
+```
+
+`GET /person/abc` cannot be cast to an ObjectId, so Mongoose throws a `CastError`. A `CastError` is **not** a `ValidationError` — they are siblings — so the validation safety net above structurally cannot see it. A built-in entry handles it separately:
+
+- If the rejected value is one the **client actually supplied** — matched by value against the path params and the validated `request:`/`query:` input — the client gets `400 {"errors": {"id": "Must be a valid id"}}`, keyed by the public input name, logged at `warn`.
+- If the value was **computed server-side**, nothing matches and it stays an honest **500** at `error` level. A bug in your own code is never blamed on the caller.
+
+The message is rebuilt from the cast *kind* (`Must be a valid id`, `Must be a number`, `Must be a valid date`), so neither the rejected value nor the internal model path (`_id`) reaches the response — and the `warn` log line is sanitized the same way.
+
+:::tip
+This is a floor, not a design. Declaring a [`params:` schema](02-routes.md#params) rejects the same request earlier, with your own wording, i18n, and coercion — and it documents the constraint in your [OpenAPI output](../17-openapi.md). Reach for the floor only where you haven't got round to a schema yet.
 :::
 
 ## What still becomes a 500
@@ -192,5 +216,6 @@ The safety net is a fallback, not the contract. Route schemas are the API's sour
 - Any error no registry entry claims (including `null` returns all the way down).
 - A registry handler that throws while handling.
 - Mongoose validation failures on internal/renamed fields (see above).
+- Mongoose cast failures on server-computed values (see above).
 
 All of these are logged at `error` level with the original error, so the details are in your logs — the client only ever sees the generic message.

@@ -57,7 +57,7 @@ export default Article;
 These handlers read only `req.params` and the model, so the base `FrameworkRequest` is enough. To customize the prefix, override `getHttpPath()`. See [Controllers](06-Controllers/01-intro.md).
 
 :::warning
-`req.params.id` is **not** validated by the framework. Passing a malformed id to `findById` throws a Mongoose `CastError` (a 500). Guard it — see [Validate an ObjectId](#validate-an-objectid).
+Raw `req.params.id` is never validated. Declare a route [`params:` schema](06-Controllers/02-routes.md#params) and read `req.appInfo.params` instead — see [Validate an ObjectId](#validate-an-objectid).
 :::
 
 ## Add a route with a body schema
@@ -99,7 +99,7 @@ The handler type `PostCreateRequest` is generated from the method name (`postCre
 
 ## Validate an ObjectId
 
-The framework validates `request:` (body) and `query:` schemas before your handler runs — but **not** path params. A handler that passes a raw `:id` straight to Mongoose (`Model.findById(req.params.id)`) throws a Mongoose **`CastError`** on a malformed id, and a `CastError` is not a `ValidationError`, so it surfaces as a **500**, not a clean 400. Validate ids explicitly.
+The framework validates `request:` (body), `query:` (query string) and `params:` (path params) before your handler runs. Ids are worth an explicit pattern in whichever of the three carries them — a raw 24-hex string is the one input shape Mongoose will reject at the driver level rather than at yours.
 
 **Body / query fields** — add the check to the schema you already declare. A strict 24-hex pattern is enough:
 
@@ -115,31 +115,37 @@ query: object().shape({
 
 A bad value is rejected with the framework's standard `{ errors: { authorId: [...] } }` 400 — it never reaches your handler.
 
-**Path params (`:id`)** — params aren't schema-validated, so guard them in the handler before touching the model:
+**Path params (`:id`)** — declare a `params:` schema on the route. The check runs before your handler, so the model only ever sees a well-formed id:
 
 ```ts
-import mongoose from "mongoose";
-import type { FrameworkRequest } from "@adaptivestone/framework/services/http/HttpServer.js";
+import { object, string } from "yup";
+import type { GetOneRequest } from "./Article.routes.gen.ts";
 import type { Response } from "express";
 
-async getOne(req: FrameworkRequest, res: Response) {
-  if (!mongoose.isValidObjectId(req.params.id)) {
-    // Match the framework's validation-error shape: { errors: { field: [msg] } }
-    return res.status(400).json({ errors: { id: ["must be a valid id"] } });
-  }
+// in the routes getter:
+"/:id": {
+  handler: this.getOne,
+  params: object().shape({
+    id: string().matches(/^[0-9a-fA-F]{24}$/, "must be a valid id"),
+  }),
+},
+
+// the handler no longer guards anything:
+async getOne(req: GetOneRequest, res: Response) {
   const Article = this.app.getModel("Article");
-  return res.status(200).json({ data: await Article.findById(req.params.id) });
+  const { id } = req.appInfo.params; // validated, and typed by codegen
+  return res.status(200).json({ data: await Article.findById(id) });
 }
 ```
 
+A malformed id is rejected with the same `{ errors: { id: [...] } }` 400 as any body or query failure.
+
 :::note Strict vs loose
-`mongoose.isValidObjectId` is lenient — it also accepts any 12-character string (and some numbers). For a tighter check, use the 24-hex regex (`/^[0-9a-fA-F]{24}$/`).
+`mongoose.isValidObjectId` — the guard this recipe used to recommend — is lenient: it also accepts any 12-character string (and some numbers). The 24-hex regex above is the tighter check, and works without importing mongoose into your controller.
 :::
 
-For many `:id` routes, factor the guard into a small reusable middleware (see [Write a middleware that contributes to `req.appInfo`](#write-a-middleware-that-contributes-to-reqappinfo)) and just list it in each route's `middleware`.
-
-:::note Planned
-A declarative `params:` route schema — validating and coercing path params the same way `request:` / `query:` do, with the typed result on `req.appInfo.params` — is planned for a future release. Until then, validate params in the handler (or a middleware) as shown above.
+:::tip
+Forgot the schema on some route? The framework still answers **400** rather than 500 when an unvalidated client value fails to cast — see [Error handling → the Mongoose cast safety net](06-Controllers/04-error-handling.md#built-in-the-mongoose-cast-safety-net). Treat that as a floor, not a replacement: only a `params:` schema gives you your own message, i18n wording, coercion, and a typed path parameter in your OpenAPI document.
 :::
 
 ## Wire pagination
