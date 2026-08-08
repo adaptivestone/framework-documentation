@@ -53,6 +53,33 @@ import './setupHooks.ts';
 The runner preloads this file for every test file. Do not import it from each
 individual test.
 
+### Production HTTP wiring (`bootHttp`)
+
+The framework builds the test server itself, so the `Server` options your
+`src/index.ts` passes are not picked up automatically — including the
+[`bootHttp` hook](06-Controllers/01-intro.md#project-boot-hook-boothttp).
+Declare them with `configureTestServer` from `src/tests/setup.ts`, which loads
+before the framework preload:
+
+```ts title="src/tests/setup.ts"
+import { configureTestServer } from '@adaptivestone/framework/tests/testHelpers.js';
+import bootHttp from '../bootHttp.ts';
+
+configureTestServer({ bootHttp });
+```
+
+Point it at the **same** function production uses, rather than re-registering
+the wiring from a test hook: two copies drift, and the copy that drifts is the
+one the tests trust. Without this, tests run against a server that never ran
+that wiring at all — an error handler registered in `bootHttp` does not exist,
+so a request that returns 409 in production returns 500 under test, with nothing
+reporting the difference.
+
+`folders` is not accepted here; the bootstrap owns those (see the
+`TEST_FOLDER_*` variables below). Call `configureTestServer` at module scope,
+before any hook boots the server — calling it afterwards throws, because a late
+call cannot retroactively wire the server that is already running.
+
 ### Global MongoDB setup
 
 Create `src/tests/globalSetupNodeTest.ts`:
@@ -512,6 +539,10 @@ export default defineConfig({
   },
 });
 ```
+
+`./src/tests/setup.ts` loads before the framework adapter here too, so
+[`configureTestServer`](#production-http-wiring-boothttp) belongs in the same
+place for both runners.
 
 Vitest hooks and mocks should use Vitest's APIs. Do not load the Node.js and
 Vitest adapters in the same test run. The framework does not require a Vitest

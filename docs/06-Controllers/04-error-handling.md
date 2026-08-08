@@ -81,7 +81,10 @@ import { MongoServerError } from "mongodb";
 const server = new Server({
   ...folderConfig,
   bootHttp: async (app) => {
-    app.httpServer?.registerErrorHandler(MongoServerError, (err) =>
+    if (!app.httpServer) {
+      throw new Error("bootHttp ran without a live httpServer");
+    }
+    app.httpServer.registerErrorHandler(MongoServerError, (err) =>
       err.code === 11000
         ? { status: 409, body: { message: "Already exists" } }
         : null, // null = "not mine after all" → try the next entry
@@ -89,6 +92,14 @@ const server = new Server({
   },
 });
 ```
+
+:::tip Register them in tests too
+The framework builds its own server for tests and does not read your `Server`
+options, so handlers registered here are absent under test — the 409 above comes
+back as a 500. Pass the same `bootHttp` to
+[`configureTestServer`](../09-testsing.md#production-http-wiring-boothttp) in
+your test setup.
+:::
 
 The handler contract:
 
@@ -101,7 +112,7 @@ The handler contract:
 - Third argument `{ logLevel }` controls how the handled error is logged (default `warn`):
 
 ```js
-app.httpServer?.registerErrorHandler(
+app.httpServer.registerErrorHandler(
   StripeCardError,
   (err) => ({ status: 402, body: { message: err.declineReason } }),
   { logLevel: "verbose" },

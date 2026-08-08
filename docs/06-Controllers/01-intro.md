@@ -151,14 +151,21 @@ const server = new Server({
     /* … */
   },
   bootHttp: async (app) => {
-    // `httpServer` is set by the time bootHttp runs (typed nullable, so use `?.`).
+    // `httpServer` is always set by the time bootHttp runs, but it's typed
+    // nullable (CLI and worker processes never have one). Narrow it by
+    // throwing, not with `?.`: an optional chain on a null would skip your
+    // wiring silently and the app would serve without it.
+    if (!app.httpServer) {
+      throw new Error("bootHttp ran without a live httpServer");
+    }
+
     // An ad-hoc route that doesn't fit the controller convention:
-    app.httpServer?.routeRegistry.registerRoute("POST", "/webhooks/stripe", {
+    app.httpServer.routeRegistry.registerRoute("POST", "/webhooks/stripe", {
       handler: stripeWebhookHandler,
     });
 
     // Or app-wide Express middleware (runs before the router):
-    // app.httpServer?.express.use(myGlobalMiddleware);
+    // app.httpServer.express.use(myGlobalMiddleware);
   },
 });
 await server.startServer();
@@ -177,6 +184,8 @@ export default bootHttp;
 ```
 
 It's wired **explicitly**, not auto-discovered from a folder: the framework finds everything else through configured folders, and those are all spoken for — `config/` merges its files as config, `controllers/` auto-loads its files as controllers — so there's no conflict-free folder to scan. `bootHttp` is **HTTP-specific** by design: it needs `app.httpServer`, which only exists once the HTTP server boots (CLI and worker processes never run it). Unlike the `callbackBefore404` hook (which you pass to `startServer` and which runs _after_ the adapter mounts), `bootHttp` runs _before_ the mount.
+
+The framework builds its own `Server` for tests, so pass the same hook to [`configureTestServer`](../09-testsing.md#production-http-wiring-boothttp) in your test setup — otherwise your suites run against a server that never got this wiring.
 
 ## Request Flow
 

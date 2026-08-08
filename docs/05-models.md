@@ -658,6 +658,33 @@ Mongoose supplies. An inline `_id: false` removes the generated id instead; it
 is not exposed as a usable field on the hydrated subdocument and is absent from
 raw/lean results.
 
+### Nested paths are not subdocuments
+
+Only the `{ type: { … } }` spelling builds a subdocument, and only a subdocument
+gets a generated `_id`. A plain nested object is a *path grouping*: Mongoose
+stores `name.first` and `name.last`, and there is no `name._id` at any point.
+The types follow that distinction on every surface, so the runtime shape
+assigns without a cast or an `Omit<…>` bridge:
+
+```ts
+name: {
+  first: { type: String }, // plain nested path — never an `_id`
+  last: { type: String },
+},
+badge: {
+  type: { label: { type: String } }, // subdocument — generated `_id`
+},
+```
+
+```ts
+user.name = { first: "Ada" }; // nothing to supply beyond the real fields
+user.badge?._id; // ObjectId — a real subdocument
+```
+
+Use the `{ type: … }` form when you want a subdocument's own identity and
+document methods; keep the plain form when you only want to group related fields
+under one prefix.
+
 Replacing a hydrated array with a native JavaScript array by direct property
 assignment is intentionally rejected. A native array does not have
 `DocumentArray.create()`, `id()`, casting, or change tracking, so accepting it as
