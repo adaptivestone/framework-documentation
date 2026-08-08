@@ -259,6 +259,10 @@ Generates two kinds of TS source from the framework's introspection:
 
 #### Run Generate TypeScript Types
 
+:::note Requires `oxc-parser`
+Code generation parses your controller sources with [`oxc-parser`](https://www.npmjs.com/package/oxc-parser), an **optional peer dependency**. Install it as a devDependency — `npm i -D oxc-parser`. It is never loaded at runtime, so it stays out of production installs; the command fails with that instruction if it is missing.
+:::
+
 ```bash
 node src/cli.ts generatetypes
 # or

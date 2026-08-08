@@ -395,6 +395,12 @@ If a `routes` getter isn't a static literal, codegen can't analyze it and **`npm
 
 #### Setup
 
+Install the parser code generation uses. `oxc-parser` is an **optional peer dependency** — it reads your controller sources and is never loaded at runtime, so it stays out of production installs:
+
+```sh
+npm i -D oxc-parser
+```
+
 Add to `package.json`:
 
 ```json
