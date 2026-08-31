@@ -81,11 +81,11 @@ They are English out of the box and translatable key by key: every string is emi
 | --- | --- | --- |
 | `recovery` | `email.passwordRecovery` | `Recovery password` |
 | `recovery` | `email.passwordChanged` | `Password changed` |
-| `recovery` | `email.greeating` | `Dear user` |
+| `recovery` | `email.greeting` | `Dear user` |
 | `verification` | `email.emailConfirm` | `Email confirmation` |
 | `verification` | `email.verify` | `Verify email` |
 | `verification` | `email.verifyInstructions` | `To verify your email address, follow the link:` |
-| `verification` | `email.greeating` | `Dear user` |
+| `verification` | `email.greeting` | `Dear user` |
 
 The same keys are listed with the rest of the framework's messages in [i18n › Auth controller, validation and email keys](./08-i18n.md#auth-controller-validation-and-email-keys).
 
