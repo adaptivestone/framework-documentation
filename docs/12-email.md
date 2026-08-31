@@ -28,7 +28,14 @@ If the text version of the email is not provided, it will be generated from the 
 
 The template directory is located at `src/services/messaging/email/templates/{templateName}` in your project. You can change it in the config.
 
-By default the module ships only plain-text engines — `html`, `text` and `css` (files are read as-is):
+The module has no template-engine dependency of its own. Out of the box it renders two kinds of file:
+
+| Extensions | Engine |
+| --- | --- |
+| `html`, `text`, `css` | plain files, read as-is |
+| `js`, `ts`, `mjs`, `cjs` | [module templates](#module-templates) — the file is imported and its default export is called with the render data |
+
+A plain template folder looks like this:
 
 ```js
 html.html; // HTML markup of the email
@@ -37,17 +44,62 @@ text.text; // Text version of the email (optional)
 style.css; // Styles to inline inside the HTML
 ```
 
-To use a real template language such as Pug, register its engine first (see [Template engines](#template-engines)); then your files can be `html.pug`, `subject.pug`, and so on.
+and the same template written as modules like this:
+
+```js
+html.ts; // export default (data) => "<h1>...</h1>"
+subject.ts;
+text.ts; // optional
+style.css; // Styles to inline inside the HTML
+```
+
+Each file is resolved on its own, so mixing extensions inside one folder is fine.
+
+To use a real template language such as Pug, register its engine first (see [Bring your own engine](#bring-your-own-engine)); then your files can be `html.pug`, `subject.pug`, and so on. The templates the framework itself ships (`recovery`, `verification`) are Pug, so an app that sends those emails still needs the Pug engine registered.
 
 ## Template engines
 
 :::warning Breaking change in v2
 
-Before v2, Pug was bundled and `.pug` templates worked out of the box. As of **v2 the module ships no template-engine dependency** — only the plain-text `html`, `text` and `css` engines. To keep using `.pug` (or any other language) you must install that engine and register it yourself.
+Before v2, Pug was bundled and `.pug` templates worked out of the box. As of **v2 the module ships no template-engine dependency** — only the built-in engines listed above. To keep using `.pug` (or any other language) you must install that engine and register it yourself.
 
 :::
 
-Register an engine by mapping a file extension to a render function. The function receives the absolute path to the template file and the render data, and returns the rendered string (sync or async):
+### Module templates
+
+:::info New in framework-module-email 2.1
+
+`js`, `ts`, `mjs` and `cjs` templates are rendered by a built-in engine — nothing to install and nothing to register.
+
+:::
+
+A module template is an ordinary module whose default export turns the render data into the rendered string:
+
+```ts
+// src/services/messaging/email/templates/welcome/html.ts
+
+type TWelcomeData = {
+  t: (key: string, options?: { defaultValue?: string }) => string;
+  locale: string;
+  userName: string;
+};
+
+export default ({ t, userName }: TWelcomeData) => `
+  <h1>${t("email.welcome.title", { defaultValue: "Welcome!" })}</h1>
+  <p>${t("email.welcome.greeting", { defaultValue: "Hi" })} ${userName}!</p>
+`;
+```
+
+- The default export may be sync or async: `(data) => string | Promise<string>`. A missing or non-function default export fails with an error naming that file.
+- It receives the same data every engine gets — `locale`, `t`, `globalVariablesToTemplates` and your own template variables (see [Template Variables](#template-variables)).
+- `html`, `subject` and `text` can each be a module. `style` is rendered without the template data, so keep it a plain `.css` file.
+- `js`, `ts`, `mjs` and `cjs` share one engine — ship whichever extension your app runs (`.ts` when you run TypeScript natively, `.js` after a build step).
+- Template modules are imported once per process and cached by `import()`, so a template edited on disk needs a restart to be picked up.
+- The module exports a `TTemplateModule` type (`import type { TTemplateModule } from "@adaptivestone/framework-module-email/dist/types.d.ts"`) describing the contract if you prefer to annotate the export.
+
+### Bring your own engine
+
+For a real templating language, install it in your app and register an engine by mapping a file extension to a render function. The function receives the absolute path to the template file and the render data, and returns the rendered string (sync or async):
 
 ```js
 import pug from "pug";
@@ -97,7 +149,7 @@ The registry is per **process**. If your app uses the cluster manager (`src/inde
 `registerTemplateEngine` can be called as many times as you like:
 
 - **Different extensions accumulate** — call it once per engine you want (`pug`, `ejs`, `mjml`, …).
-- **The same extension overrides** — the last registration for a given extension wins, so you can replace a built-in or re-register safely. There is no error on re-registration.
+- **The same extension overrides** — the last registration for a given extension wins. The built-ins are ordinary entries with no special casing, so `Mailer.registerTemplateEngine("js", ...)` replaces the module engine with your own contract and `Mailer.unregisterTemplateEngine("js")` removes it, exactly as for a custom engine. There is no error on re-registration.
 - Extensions are normalized, so `"pug"`, `".pug"` and `".PUG"` all target the same engine.
 
 ### Helpers
@@ -126,9 +178,15 @@ The best practice is to put your images on a CDN.
 Each template has these variables:
 
 - `locale` - the current locale of the request.
-- `t` - the translate function from i18n. Can be a dummy function if i18n is not provided.
+- `t` - the translate function from i18n. Call it the i18next way, with an English default: `t("email.welcome.title", { defaultValue: "Welcome!" })`.
 - `globalVariablesToTemplates` - from the config.
 - User-provided variables (see the API section).
+
+:::info Changed in framework-module-email 2.1
+
+When no i18n object is passed to `new Mailer(...)`, `t` is a fallback translator. It now honours the i18next defaults instead of returning the raw key, so `t("email.welcome.title", { defaultValue: "Welcome!" })` renders `Welcome!` and a template reads correctly with no i18n setup at all. A key that **is** present in the request's i18n still wins. The positional form `t("email.welcome.title", "Welcome!")` is honoured at runtime too, though only the options object is declared in the types. A key with no default still renders as the key.
+
+:::
 
 ## API
 
@@ -153,6 +211,13 @@ Inside the template, `oneTemplateVariable` and `anotherTemplateVariable` will be
 
 ```pug
 p #{oneTemplateVariable} #{anotherTemplateVariable}
+```
+
+or, in a module template:
+
+```ts
+// html.ts
+export default (data) => `<p>${data.oneTemplateVariable} ${data.anotherTemplateVariable}</p>`;
 ```
 
 ### Send Email
