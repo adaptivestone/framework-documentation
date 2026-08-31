@@ -694,7 +694,7 @@ try {
 
 In any fields that can generate an error (required, etc.), you can use i18n keys to translate. The framework will handle the translation for you.
 
-Please refer to the [i18n documentation](08-i18n.md).
+Please refer to the [i18n documentation](../08-i18n.md).
 
 ## Handler
 

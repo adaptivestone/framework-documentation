@@ -99,6 +99,14 @@ To pass parameters, wrap the middleware in an array. The first element will be t
 
 The framework has a few middlewares that you can use.
 
+:::info Translatable since 5.4
+
+Every user-facing message the built-in middleware return (the auth 401, both role rejections, the rate-limit 429 and the two request-parser failures) is emitted as an i18n key with its English text as the in-code default. They read as English out of the box; define the key in your own locale files to reword or translate one. The key table lives in [i18n › Middleware keys](../08-i18n.md#middleware-keys).
+
+Status codes and machine-readable fields are not affected — the auth 401 still carries `error: "AUTH001"` whatever `message` says.
+
+:::
+
 ### Auth
 
 ```js
@@ -159,7 +167,9 @@ The middleware provides a few detectors:
 - Query
 - User
 
-Please check the [i18n documentation](08-i18n.md) for more details.
+`i18next` and `i18next-fs-backend` are **optional peer dependencies** — install them (`npm i i18next i18next-fs-backend`) only if you translate. Without them the middleware still runs, `req.appInfo.i18n.t()` still answers, and every message is served in English.
+
+Please check the [i18n documentation](../08-i18n.md) for more details.
 
 #### Parameters
 
@@ -560,6 +570,38 @@ export default CustomMiddleware;
 :::warning Deprecated: instance schema getters
 The non-static form — `get relatedQueryParameters()` / `get relatedRequestParameters()` (and `get relatedReqParameters()`) — is **deprecated and will be removed in v6**. It forces the framework to instantiate the middleware (running its constructor) just to read the schema, so use `static get` instead. The instance form still works through v5: when it's detected, the framework instantiates the middleware as a fallback and emits a one-per-class `DeprecationWarning` (`ASF_DEP_MW_INSTANCE_SCHEMA`).
 :::
+
+### Translatable messages
+
+When your middleware answers the request itself, do not hardcode the sentence. `AbstractMiddleware` gives every subclass a protected `translate(req, key, defaultValue)` — the same helper the built-in middleware use:
+
+```js
+import AbstractMiddleware from "@adaptivestone/framework/services/http/middleware/AbstractMiddleware.js";
+
+class RequireSubscription extends AbstractMiddleware {
+  static get description() {
+    return "Allows only users with an active subscription";
+  }
+
+  async middleware(req, res, next) {
+    if (!req.appInfo.user?.subscriptionActive) {
+      return res.status(402).json({
+        error: "SUB001", // machine-readable, never translated
+        message: this.translate(
+          req,
+          "middleware.subscription.required",
+          "An active subscription is required",
+        ),
+      });
+    }
+    return next();
+  }
+}
+```
+
+The default is the source of truth: it is what the client gets when the request carries no i18n at all, when i18n is disabled, and when the key is absent from the app's locale files. Define `middleware.subscription.required` in your locale file for a language and that wording wins whenever it is detected.
+
+Keep the machine-readable part (`error`, the status code) out of the translated string — clients branch on those, not on the prose. See [i18n › Translating framework messages](../08-i18n.md#translating-framework-messages).
 
 ### Typed contributions to `req.appInfo`
 

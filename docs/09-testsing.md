@@ -145,11 +145,18 @@ not automatically load the application's locale folder: set
 `TEST_FOLDER_LOCALES` in `src/tests/setup.ts` when a suite specifically needs
 rendered application copy.
 
-Without that opt-in, application-specific validation message keys remain raw
-in HTTP 400 responses. This is intentional for ordinary API tests—assert the
-stable key and status code rather than translated prose that can change between
-locales. A copy-specific test may point `TEST_FOLDER_LOCALES` at
-`src/locales`, but should do so before `setupNodeTest.js` loads.
+Without that opt-in, **your own** message keys remain raw in HTTP 400 responses.
+This is intentional for ordinary API tests—assert the stable key and status code
+rather than translated prose that can change between locales. A copy-specific
+test may point `TEST_FOLDER_LOCALES` at `src/locales`, but should do so before
+`setupNodeTest.js` loads.
+
+Messages the framework itself emits behave differently: since 5.4 they carry an
+English default in code, so a built-in middleware rejection or a built-in auth
+controller error reads as a proper English sentence under test whatever
+`TEST_FOLDER_LOCALES` points at — it can never come back as a bare key. Assert
+the status code and the machine-readable `error` field on those; asserting the
+English prose ties the test to wording you do not own.
 
 ### Package scripts
 

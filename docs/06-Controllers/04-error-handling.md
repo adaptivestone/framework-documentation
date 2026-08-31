@@ -148,8 +148,12 @@ app.httpServer?.registerErrorHandler(MongoServerError, (err, req) => {
   return {
     status: 409,
     body: {
-      // Translated for the request's locale, like any handler would do.
-      message: req.appInfo.i18n?.t("errors.taskExists") ?? "Task already exists",
+      // Translated for the request's locale; `defaultValue` is what the
+      // client gets when your locale files do not define the key.
+      message:
+        req.appInfo.i18n?.t("errors.taskExists", {
+          defaultValue: "Task already exists",
+        }) ?? "Task already exists",
       field,                                    // "title"
       projectId: req.params.projectId,          // raw path param (string)
       attempted: req.appInfo.request?.title,    // validated body value
