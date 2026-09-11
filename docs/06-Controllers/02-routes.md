@@ -601,6 +601,63 @@ async setAvatar(req: SetAvatarRequest, res: Response) {
 Matching is on the media type only and is **case-insensitive** — parameters like `; charset=...` and `; boundary=...` are ignored. The injected `contentType` is the lower-cased media type, and it overwrites any body field of the same name, so don't declare a schema field named `contentType`. A `Content-Type` the body parser itself can't handle (e.g. malformed `multipart/form-data`) is rejected with a `400` by the parser *before* the `415` check. Middleware-declared request schemas (`relatedRequestParameters`) still apply on top, regardless of Content-Type.
 :::
 
+### Combining route and middleware validation outputs
+
+:::info Corrected in framework 5.4.1
+
+The middleware-output typing and non-object handling described here require
+framework 5.4.1 or newer. Upgrade from 5.4.0 or earlier before relying on these
+corrections.
+
+:::
+
+For `req.appInfo.request`, the framework combines the route's `request` output
+with outputs from middleware `relatedRequestParameters` schemas. For
+`req.appInfo.query`, it combines the route's `query` output with middleware
+`relatedQueryParameters` outputs.
+
+Each validator receives the original body or query input. Validators do not
+receive the preceding validator's transformed result. The framework merges
+completed outputs in a fixed order: route first, then middleware in route-chain
+order. Async completion order does not change which output wins.
+
+When several schemas contribute to the same slot, their outputs must be plain
+objects. The merge is shallow: a later own property replaces the earlier value,
+including an entire nested object. For example, these two outputs:
+
+```ts
+// Route output
+const routeOutput = { limit: "10", filters: { category: "books", active: true } };
+
+// Later middleware output
+const middlewareOutput = { limit: 10, filters: { active: false } };
+
+// Result exposed to the handler
+const mergedOutput = { limit: 10, filters: { active: false } };
+```
+
+Generated request types follow this order. A later required property replaces
+the earlier property's type. If the later property is optional, the earlier
+value remains possible when that property is absent, so the generated type
+retains both possibilities. An explicitly present `undefined` still overwrites
+the earlier value at runtime.
+
+With exactly one schema contributing to a slot, its output is preserved,
+including arrays, scalar values and `null`. For example, a single
+`z.array(z.string())` request schema produces a `string[]` handler value. Adding
+a middleware request schema means there are now multiple outputs; every output
+must then be a plain object. Put array data inside an object property when
+several schemas need to contribute fields.
+
+A content-type map also requires a plain-object result so the framework can add
+its `contentType` discriminator. The discriminator is added to a new object
+after merging, without mutating the validator's returned object. Non-object
+outputs in a multi-schema combination or a content-type map are configuration
+errors handled by the normal 500 error path, not field-validation 400 errors.
+
+Run codegen after changing middleware `relatedRequestParameters` or
+`relatedQueryParameters`, as well as after changing route schemas.
+
 ### Custom validators
 
 To plug in a validator that doesn't already implement Standard Schema (e.g., raw [Joi](https://joi.dev/), or a hand-rolled function), implement the `~standard` slot directly. About 10 lines of glue:

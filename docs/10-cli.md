@@ -260,6 +260,8 @@ Generates two kinds of TS source from the framework's introspection:
 #### Run Generate TypeScript Types
 
 :::note Requires `oxc-parser`
+Framework 5.4.1 requires the optional peer range `^0.149.0`. Existing projects can update it with `npm i -D oxc-parser@^0.149.0`.
+
 Code generation parses your controller sources with [`oxc-parser`](https://www.npmjs.com/package/oxc-parser), an **optional peer dependency**. Install it as a devDependency — `npm i -D oxc-parser`. It is never loaded at runtime, so it stays out of production installs; the command fails with that instruction if it is missing.
 :::
 
@@ -287,6 +289,41 @@ genTypes.d.ts
 
 Gen files regenerate on every type-check — no postinstall hook needed.
 
+#### TypeScript 7 memory and checking time
+
+For local checks with the Go-based TypeScript 7 compiler, try one checker and
+incremental caching when memory is limited. With the script above:
+
+```bash
+npm run check:types -- --checkers 1 --incremental --tsBuildInfoFile node_modules/.cache/tsc/app.tsbuildinfo
+```
+
+This still runs codegen and checks types. Keep the cache between local checks;
+unchanged inputs can reuse earlier results, while edits may require substantial
+rechecking. Use a different cache file for each TypeScript configuration, such
+as `tests.tsbuildinfo` for a separate test-suite check. The cache is disposable
+and should stay out of version control; the path above is inside `node_modules`.
+
+`--checkers 1` selects one checker per project, not one Go thread. It does not
+require `GOMAXPROCS=1`. Lower checker concurrency can reduce repeated generic
+instantiations and memory use, but the fastest setting depends on the project
+and available memory. Measure CI separately, and run independent local compiler
+commands sequentially when memory is scarce. This flag requires TypeScript 7;
+check the installed compiler's help before using it with another version.
+
+To measure a cold check with the script above, disable incremental reuse and
+request diagnostics:
+
+```bash
+npm run check:types -- --checkers 1 --incremental false --extendedDiagnostics
+```
+
+Compare `Types`, `Instantiations`, `Memory used`, and `Check time` on the same
+source and compiler version. Instantiations count evaluations of generic types,
+not the number of models or interfaces you wrote. Compiler-reported memory is
+not peak process memory. These flags tune checking; keep the project's normal
+test, lint and packaging checks as well.
+
 #### When to run codegen
 
 Codegen only affects **types**, never runtime — so you run it whenever something that changes a handler's or `IApp`'s type shape changes, then type-check. In practice you wire it into `check:types` and forget it's there. The decision matrix:
@@ -297,6 +334,7 @@ Codegen only affects **types**, never runtime — so you run it whenever somethi
 | A route path (added `:param` / `{*splat}`, renamed) | **Yes** | `req.params` and the `<Method>Request` alias change |
 | A controller's `static get middleware()` chain | **Yes** | which `provides` fields land on `req.appInfo` changes |
 | A middleware's `static get provides()` | **Yes** | downstream `req.appInfo` types change |
+| A middleware's `relatedRequestParameters` / `relatedQueryParameters` schema | **Yes** | generated validated request/query output types change |
 | Added / renamed a model or config | **Yes** | `getModel('X')` / `getConfig('Y')` typings change |
 | Only handler body logic (no signature/schema change) | No | the generated types are unchanged |
 | Prose, comments, formatting | No | nothing type-bearing changed |

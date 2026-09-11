@@ -63,6 +63,12 @@ Please note that it works that way **per process**, as checking promises happens
 
 :::
 
+## Upgrading to 5.4.1
+
+The cache serializer now preserves signed BigInts and strings that resemble its serialization markers. Cache-hit logs omit cached values and keys.
+
+This correction uses a fresh `cache-v2` key space. Existing entries expire naturally, while upgraded workers repopulate their caches on first use. Mixed framework versions use separate cache entries and invalidation, so complete the rollout across workers promptly. This applies to the memory, Redis and custom drivers through the shared cache service.
+
 ## Drivers
 
 The cache is built on a small `CacheDriver` interface (`get` / `set` / `del`), with two first-party drivers:

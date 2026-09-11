@@ -260,6 +260,48 @@ annotation or deferred boundary at the cycle. Renaming the reduced helper or
 wrapping the same circular inputs in another conditional type cannot make the
 unfinished class available earlier.
 
+## Type corrections in 5.4.1
+
+:::info Requires framework 5.4.1 or newer
+
+The corrections in this section are included in framework 5.4.1. Upgrade from
+5.4.0 or earlier to use them.
+
+:::
+
+The schema remains the source of truth. The fixes cover these cases:
+
+- **Nested IDs:** plain nested paths keep no generated `_id`, including inside
+  arrays and other subdocuments. Explicit `_id` paths retain their declared
+  type. Both inner and wrapper `_id: false` spellings are respected for nested
+  documents and arrays. A disabled hydrated subdocument ID reads as `undefined`;
+  its raw/lean counterpart has no generated ID field.
+- **Schema options:** custom `typeKey` and top-level `_id: false` are carried
+  through inference, including nested corrections and lean reads. Pass literal
+  `schemaOptions` to `GetModelTypeLiteFromSchema` when they affect the result.
+  Timestamp names and disabled timestamp fields follow those options too.
+- **Wrapped field overrides:** `TsTypeOverride<TRaw, THydrated>` works inside
+  both bare arrays and `{ type: [...] }` arrays. Loaded subdocuments use the
+  hydrated override; their `toObject()` results retain the raw override.
+- **Virtuals:** a getter's return type determines the exposed value. A
+  setter-only virtual accepting `V` is writable and has type `V | undefined`
+  when read; assigning it does not imply a readable value is stored. Setters
+  remain writable when declared `as const`. A populate virtual without a
+  getter or setter is `unknown` and needs narrowing.
+- **The `id` virtual:** `schemaOptions: { id: false }` no longer promises an
+  `id: string`, and an actual schema path named `id` retains its own type.
+
+### Remaining Mongoose typing limits
+
+A custom virtual named `id` can still intersect with Mongoose's default
+`id: string`. A non-string result can therefore collapse to `never`; use a
+schema path for a stored value or choose a different virtual name.
+
+Mongoose can accept `null` array elements even where its inferred element type
+omits `null`. Lean results also do not acquire hydration defaults. Treat these
+as limits of the inferred types when handling such data; successful type
+checking is not a replacement for runtime validation or null checks.
+
 ## Schema options that affect types
 
 Pass `typeof Model.schemaOptions` as the second argument whenever schema options

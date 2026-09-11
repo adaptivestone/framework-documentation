@@ -297,6 +297,14 @@ Some samples - login protection. We can generate rate limiters based on the user
 
 By default, the rate key is generated based on the Route, IP, and userID. But you can adjust it via the config (globally) or via middleware parameters.
 
+:::info Upgrading to 5.4.1
+
+When `consumeKeyComponents.route` is enabled, the route component uses the registered route template and HTTP method. Different parameter values, case variants, encoded spellings and trailing slashes share a budget; implicit HEAD shares GET's budget. A limiter mounted before routing uses one route bucket per method.
+
+Upgrading resets existing rate-limit counters. Complete the rollout across workers promptly so older workers cannot maintain separate buckets for equivalent URLs.
+
+:::
+
 ```javascript
   static get middleware() {
     return new Map([
