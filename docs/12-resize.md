@@ -389,7 +389,7 @@ Mongo mode uses the host media model, scaffolded `ResizeTask` model, and framewo
 
 ### 2. Allow the worker to run
 
-The module checks **`config.worker.enabled`**, which defaults to `false`. Here we choose the environment-variable name `RESIZE_WORKER` and map it to that setting in the host config; the scaffold includes the same example. The module does not read this environment variable itself.
+Set **`worker.enabled: true`** in the host config to permit the worker command to run. The module default is `false`.
 
 ```ts
 // src/config/resize.ts
@@ -400,12 +400,12 @@ export default {
   mediaModelName: 'File',
   worker: {
     ...defaultResizeConfig.worker,
-    enabled: process.env.RESIZE_WORKER === 'true',
+    enabled: true,
   },
 };
 ```
 
-Setting `RESIZE_WORKER=true` now makes `worker.enabled` true for that process. You can choose another variable name, or set the boolean directly. The flag permits worker execution; it does not start a worker in the API. API reads can enqueue even when their own process has `worker.enabled: false`.
+This boolean permits worker execution; it does not start a worker in the API. You still launch the separate command below. The API and worker can share this config, and API reads can enqueue regardless of `worker.enabled`.
 
 ### 3. Initialize the CLI and start the worker
 
@@ -427,7 +427,7 @@ process.exit(result ? 0 : 1);
 The scaffolded `ResizeWorker` command requests model initialization and uses the active `Resizer`. Run it alongside the API:
 
 ```bash
-RESIZE_WORKER=true npm run cli ResizeWorker
+npm run cli ResizeWorker
 ```
 
 This is a long-running process; keep it supervised by your process manager/container deployment. Starting the API alone does not run it.
@@ -718,7 +718,7 @@ The Mongo worker consumes one task at a time per process; `worker.concurrency` c
 
 | Symptom | Check |
 |---|---|
-| Worker exits with “disabled” | Host `worker.enabled` config and the environment variable it reads |
+| Worker exits with “disabled” | Set `worker.enabled: true` in the host `src/config/resize.ts` |
 | Worker reports no Resizer/transport | Construct the Resizer in the CLI process and configure its transport |
 | Missing variants but no task rows | `enqueueMissing`, original key, task/lock models, hooks, held dispatch locks, and enqueue logs |
 | Tasks remain pending | Worker process/enablement and matching API/worker database/queue |
