@@ -8,6 +8,26 @@ A **preview** is a generated image file. A **variant** is one requested combinat
 
 The module supplies the image processing and optional queue integration. Your app supplies the upload endpoint, media model, storage access, response shape, and UI.
 
+The usual path for our `2400×1600` photo and one `320×320` WebP thumbnail is:
+
+<div className="resize-diagram" role="region" aria-label="From an uploaded original to a displayable preview" tabIndex={0}>
+
+```mermaid
+flowchart TB
+  accTitle: From an uploaded original to a displayable preview
+  accDescr: The host saves the original and media document. Generation uploads a preview file and appends its metadata. A read of the updated media produces a URL that the frontend uses to download the preview.
+  Original["Original saved by your app<br/>2400 × 1600 PNG"] --> Generate["generate() or worker<br/>Resize + encode"]
+  Generate --> File["Storage<br/>320 × 320 WebP file"]
+  Generate --> Metadata["Media document<br/>previews[] metadata"]
+  Metadata --> Read["resolve() with updated media<br/>Build ready URLs"]
+  Read --> Frontend["Your frontend<br/>Fetch the image by URL"]
+  File -. "Image bytes via that URL" .-> Frontend
+```
+
+</div>
+
+The file lives in storage; `previews[]` contains metadata about it. `resolve()` turns that metadata into ready URLs without processing image pixels. These diagrams show successful generation with default persistence; [original pass-through](#originals-and-private-access) and [errors](#errors) are described below.
+
 ## Choose a workflow {/* #modes-eager-vs-pre-warm-vs-lazy */}
 
 | You want… | Call | What happens before it returns | Return value |
@@ -199,6 +219,30 @@ Create **one `Resizer` per process**; a second construction throws. In handlers 
 ## Eager: generate previews now {/* #reading-the-generate-result */}
 
 Use `generate()` after saving the uploaded original and media document. The call waits for image processing, uploads, and (by default) saving preview metadata. It runs in the calling process and needs no queue or worker.
+
+<div className="resize-diagram resize-diagram--sequence" role="region" aria-label="Eager generation waits for previews to be saved" tabIndex={0}>
+
+```mermaid
+sequenceDiagram
+  accTitle: Eager generation waits for previews to be saved
+  accDescr: The app awaits generate. The resizer reads the original, processes the image, uploads the preview, and saves its metadata before returning created and failed. The app can then resolve the updated media to obtain a ready URL.
+  participant App as Your app
+  participant Resizer
+  participant Data as Files + media
+  App->>Resizer: generate()
+  Resizer->>Data: Read original file
+  Data-->>Resizer: Original bytes
+  Resizer->>Resizer: Resize + encode
+  Resizer->>Data: Upload preview<br/>Save metadata
+  Data-->>Resizer: Saved
+  Resizer-->>App: created: [preview]<br/>failed: 0
+  App->>Resizer: resolve()
+  Resizer-->>App: URL in decision.ready
+```
+
+</div>
+
+For the one-WebP example, `generate()` returns only after that file and its metadata have been saved. There is no queue in this flow.
 
 ```ts
 // In your upload handler, after fileDoc and fileDoc.original are saved.
@@ -440,6 +484,42 @@ The return value is still **`{ decision, output }`**: ready URLs and missing var
 
 ### How background generation works {/* #how-it-works */}
 
+Lazy reads and pre-warming use the same background path; the caller starts it at different times:
+
+<div className="resize-diagram resize-diagram--sequence" role="region" aria-label="Lazy and pre-warm calls do not wait for background generation" tabIndex={0}>
+
+```mermaid
+sequenceDiagram
+  accTitle: Queueing and background generation are separate
+  accDescr: Resolve on a read or prewarm after upload enqueues a missing thumbnail and returns its own result without waiting for generation. A separate worker takes the task, creates the preview, and saves metadata. A later resolve with freshly loaded media returns a ready URL.
+  participant App as Your app
+  participant Resizer
+  participant Queue
+  participant Worker
+  alt Lazy: a reader needs a thumbnail
+    App->>Resizer: resolve()
+    Resizer->>Queue: Enqueue missing WebP
+    Queue-->>Resizer: Accepted
+    Resizer-->>App: ready: []<br/>missing: [WebP]
+  else Pre-warm: an upload was saved
+    App->>Resizer: prewarm()
+    Resizer->>Queue: Enqueue missing WebP
+    Queue-->>Resizer: Accepted
+    Resizer-->>App: enqueued: 1
+  end
+  Note over App,Worker: The caller does not wait for image generation
+  Queue->>Worker: Task becomes available
+  Worker->>Worker: Load media + original
+  Worker->>Worker: Resize + upload<br/>Append previews[]
+  Note over App,Worker: After generation: reload the media on a later request
+  App->>Resizer: resolve()
+  Resizer-->>App: URL in decision.ready
+```
+
+</div>
+
+The queue example assumes one missing thumbnail, a successful enqueue, and no hooks. The worker may start as soon as the task is queued; the diagram separates its work to show what the caller awaits. The lazy return label abbreviates `decision.ready` and `decision.missing`; `output` is `undefined` without a formatting hook. `prewarm()` returns only its count.
+
 For one photo missing its `320×320` WebP thumbnail:
 
 1. Your DTO builder calls `resolve()`. It finds no matching stored preview.
@@ -483,7 +563,7 @@ The example processes a bounded page sequentially. If you parallelize reads, bou
 
 ## Pre-warm: request background generation at upload {/* #reading-the-prewarm-result */}
 
-Use the **same transport and worker setup as lazy mode**, but call `prewarm()` after saving the original and media document. This gives the worker a head start before the first reader arrives. It does not guarantee generation finishes before that read.
+Use the **same transport and worker setup as lazy mode**, but call `prewarm()` after saving the original and media document. This gives the worker a head start before the first reader arrives. It does not guarantee generation finishes before that read. See the [shared queue flow diagram](#how-it-works).
 
 ```ts
 import { getResizer } from '@adaptivestone/framework-module-resize';

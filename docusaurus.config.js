@@ -11,7 +11,9 @@ const config = {
   url: "https://framework.adaptivestone.com",
   baseUrl: "/",
   onBrokenLinks: "throw",
+  themes: ["@docusaurus/theme-mermaid"],
   markdown: {
+    mermaid: true,
     hooks: {
       onBrokenMarkdownLinks: "warn",
     },
@@ -43,6 +45,9 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
+      mermaid: {
+        theme: { light: "neutral", dark: "dark" },
+      },
       navbar: {
         title: "Adaptivestone framework",
         logo: {
