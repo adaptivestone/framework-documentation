@@ -95,8 +95,15 @@ Requires Node `>=24`, `@adaptivestone/framework` (`^5.0.1`), and `mongoose`. Fro
 
 ```bash
 npm i @adaptivestone/framework-module-resize
-npx resize-scaffold --eager
 ```
+
+The resize module ships its own setup generator, **`resize-scaffold`**, as a package executable. Run it from this package explicitly:
+
+```bash
+npm exec --package=@adaptivestone/framework-module-resize -- resize-scaffold --eager
+```
+
+`--package` names the module that provides the executable. Everything after `--` is the command and its arguments; `--eager` tells the generator to create the eager integration files. Run this in the host app where you installed the module.
 
 The scaffold creates editable `src/resizer.ts` and `src/config/resize.ts`. Existing files are preserved. Without `--eager`, it also creates the task model and worker command, and leaves a required storage placeholder in `src/resizer.ts`.
 
@@ -353,8 +360,10 @@ Keep the media model, size catalog, storage, and HTTP initialization from the se
 
 ### 1. Add Mongo queue support
 
+Run the same generator shipped by the resize module, this time without `--eager`:
+
 ```bash
-npx resize-scaffold
+npm exec --package=@adaptivestone/framework-module-resize -- resize-scaffold
 ```
 
 This adds `src/models/ResizeTask.ts` and `src/commands/ResizeWorker.ts`. They delegate to the package; keep those thin files rather than copying the implementation. Existing eager files are preserved, so edit your existing constructor to add the transport:
