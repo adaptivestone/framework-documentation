@@ -28,8 +28,6 @@ On an older module those two mails fail with `Template type js is not supported`
 
 :::
 
-The [configured CID image option](#inline-images) requires module **2.1.1 or newer**.
-
 ## Templates
 
 A template is a folder of files; each file's extension selects the engine that renders it. For each email you provide an HTML version, a subject, and (optionally) a text version, as separate files inside the template directory.
@@ -262,40 +260,60 @@ The registry is per **process**. If your app uses the cluster manager (`src/inde
 
 ### Inline Images
 
-By default, the module leaves image links in the rendered HTML. From
-`@adaptivestone/framework-module-email` **2.1.1**, you can configure CID images
-once in `src/config/mail.ts`. The module attaches each image only when the
-rendered HTML references its CID. This works with both `mail.send()` and
-`Mailer.sendRaw()` and keeps any attachments passed for a specific message.
+For a publicly hosted image, use its CDN URL in the template:
 
-```ts title="src/config/mail.ts"
+```html
+<img src="https://media.example.com/logo.png" width="180" alt="Brand" />
+```
+
+To embed an image in one email, pass it as a Nodemailer attachment to that
+message's `mail.send()` call. This standard per-message option is supported by
+`@adaptivestone/framework-module-email` **2.1.0**. Use the same content ID in the
+HTML template.
+
+```ts
 import path from "node:path";
+import Mailer from "@adaptivestone/framework-module-email";
 
-export default {
-  // Other mail settings…
-  inlineAttachments: [
+const mail = new Mailer(app, "welcome", data);
+// Leave the from argument empty to use the configured sender.
+await mail.send("user@example.com", "", {
+  attachments: [
     {
       filename: "logo.png",
       path: path.resolve("src/services/messaging/email/resources/logo.png"),
       cid: "brand@example.com",
     },
   ],
-};
+});
 ```
-
-Use the same ID in an HTML template:
 
 ```html
 <img src="cid:brand@example.com" width="180" alt="Brand" />
 ```
 
-The image file must be available to the process that sends the email. Nodemailer
-embeds it in the message as an inline MIME attachment, so the recipient does not
-need to fetch it from a remote server. Messages without that `cid:` reference do
-not carry the image.
+The attachment applies to this send only. Other messages are unaffected, and
+ordinary attachments can be included in the same `attachments` array. The image
+file must be available to the sending process. Nodemailer embeds it in the
+message, so the recipient does not need to fetch it from a remote server.
 
-For a one-off image, you can still pass a Nodemailer attachment with `cid` as
-the third argument to `mail.send()`, or the last argument to `Mailer.sendRaw()`.
+For direct sends, pass CID images through the usual Nodemailer `attachments`
+option as the last argument to `Mailer.sendRaw()`:
+
+```ts
+import path from "node:path";
+import Mailer from "@adaptivestone/framework-module-email";
+
+await Mailer.sendRaw(app, to, subject, html, text, from, {
+  attachments: [
+    {
+      filename: "logo.png",
+      path: path.resolve("src/services/messaging/email/resources/logo.png"),
+      cid: "brand@example.com",
+    },
+  ],
+});
+```
 
 The existing `data-inline` option is separate: Juice replaces the image source
 with a data URI during template rendering when you add the attribute:
@@ -305,8 +323,8 @@ with a data URI during template rendering when you add the attribute:
 ```
 
 The image path is relative to your project's
-`src/services/messaging/email/resources` folder. For publicly hosted images,
-you can continue to use a CDN URL.
+`src/services/messaging/email/resources` folder. Use a CDN URL when the
+recipient's email client can load a remote image.
 
 ### Template Variables
 
@@ -393,8 +411,7 @@ const { subject, text, inlinedHTML, htmlRaw } = await mail.renderTemplate();
 
 ## Configuration
 
-Please look at the `src/config/mail.ts` file for all configuration options,
-including [CID image attachments](#inline-images).
+Please look at the `src/config/mail.ts` file for all configuration options.
 
 ### Environment Variables
 
