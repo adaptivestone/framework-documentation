@@ -260,18 +260,71 @@ The registry is per **process**. If your app uses the cluster manager (`src/inde
 
 ### Inline Images
 
-By default, the framework email module does not inline images and keeps the links as they are.
-But if you want to inline some images, you can use the "data-inline" attribute in the "img" tag.
+For a publicly hosted image, use its CDN URL in the template:
+
+```html
+<img src="https://media.example.com/logo.png" width="180" alt="Brand" />
+```
+
+To embed an image in one email, pass it as a Nodemailer attachment to that
+message's `mail.send()` call. This standard per-message option is supported by
+`@adaptivestone/framework-module-email` **2.1.0**. Use the same content ID in the
+HTML template.
+
+```ts
+import path from "node:path";
+import Mailer from "@adaptivestone/framework-module-email";
+
+const mail = new Mailer(app, "welcome", data);
+// Leave the from argument empty to use the configured sender.
+await mail.send("user@example.com", "", {
+  attachments: [
+    {
+      filename: "logo.png",
+      path: path.resolve("src/services/messaging/email/resources/logo.png"),
+      cid: "brand@example.com",
+    },
+  ],
+});
+```
+
+```html
+<img src="cid:brand@example.com" width="180" alt="Brand" />
+```
+
+The attachment applies to this send only. Other messages are unaffected, and
+ordinary attachments can be included in the same `attachments` array. The image
+file must be available to the sending process. Nodemailer embeds it in the
+message, so the recipient does not need to fetch it from a remote server.
+
+For direct sends, pass CID images through the usual Nodemailer `attachments`
+option as the last argument to `Mailer.sendRaw()`:
+
+```ts
+import path from "node:path";
+import Mailer from "@adaptivestone/framework-module-email";
+
+await Mailer.sendRaw(app, to, subject, html, text, from, {
+  attachments: [
+    {
+      filename: "logo.png",
+      path: path.resolve("src/services/messaging/email/resources/logo.png"),
+      cid: "brand@example.com",
+    },
+  ],
+});
+```
+
+The existing `data-inline` option is separate: Juice replaces the image source
+with a data URI during template rendering when you add the attribute:
 
 ```html
 <img src="/cats.jpg" data-inline />
 ```
 
-The image path is relative to your project's "src/services/messaging/email/resources" folder.
-
-:::note
-The best practice is to put your images on a CDN.
-:::
+The image path is relative to your project's
+`src/services/messaging/email/resources` folder. Use a CDN URL when the
+recipient's email client can load a remote image.
 
 ### Template Variables
 
@@ -358,7 +411,7 @@ const { subject, text, inlinedHTML, htmlRaw } = await mail.renderTemplate();
 
 ## Configuration
 
-Please look at the ‘config/mail.ts’ file for all configuration options.
+Please look at the `src/config/mail.ts` file for all configuration options.
 
 ### Environment Variables
 
