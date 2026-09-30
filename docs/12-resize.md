@@ -222,7 +222,21 @@ await server.startServer();
 
 The dynamic import runs the construction after `init()`. A top-level `import './resizer.ts'` would execute before the entry's initialization code. `startServer()` calls `init()` again, which is a no-op once initialized.
 
-Create **one `Resizer` per process**; a second construction throws. In handlers and DTO builders, use `getResizer()` to access the constructed instance. The CLI/worker needs its own initialization, shown in the lazy setup.
+Construct each `Resizer` once per process. Most apps need one: `getResizer()` returns it in handlers and DTO builders. An app that needs different storage, media models or formats constructs more, each with its own `name` and `config`, and reads them with `getResizer(name)`. Constructing the same name twice throws. The CLI/worker needs its own initialization, shown in the lazy setup.
+
+```ts
+// src/resizer.ts — a second Resizer next to the default one
+import { Resizer } from '@adaptivestone/framework-module-resize';
+import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/resize.js';
+
+export const listings = new Resizer({
+  name: 'listings',
+  config: { ...defaultResizeConfig, mediaModelName: 'File', formats: ['webp', 'avif'] },
+  storage: listingsStorage, // any storage driver
+});
+
+// elsewhere: getResizer('listings').generate({ media, sizes })
+```
 
 ### 5. Store the original at upload {/* #original-upload */}
 
