@@ -2,7 +2,7 @@
 
 `@adaptivestone/framework-module-resize` creates resized copies of images for your framework app. For example, you upload a `2400×1600` photo once, then generate a `320×320` thumbnail for a listing and a larger image for its detail page.
 
-Your app saves the **original image file** and its location on a **media document** such as `File`. The module reads that original, resizes it with `sharp`, uploads the generated files, and adds their metadata to the document's `previews[]`. Your app then asks the module for URLs to include in its responses.
+Your app passes the uploaded bytes to the module, which stores the **original image file** unchanged and returns its location; your app saves that on a **media document** such as `File`. The module reads that original, resizes it with `sharp`, uploads the generated files, and adds their metadata to the document's `previews[]`. Your app then asks the module for URLs to include in its responses.
 
 A **preview** is a generated image file. A **variant** is one requested combination of size, output format, and optional filters. One `320×320` size in JPEG, WebP, and AVIF means **three variants and up to three generated files** for the same original photo.
 
@@ -26,7 +26,7 @@ flowchart TB
 
 </div>
 
-The file lives in storage; `previews[]` contains metadata about it. `resolve()` turns that metadata into ready URLs without processing image pixels. These diagrams show successful generation with default persistence; [original pass-through](#originals-and-private-access) and [errors](#errors) are described below.
+The file lives in storage; `previews[]` contains metadata about it. `resolve()` turns that metadata into ready URLs without processing image pixels. These diagrams show successful generation with default persistence; [original handling](#originals-and-private-access) and [errors](#errors) are described below.
 
 ## Choose a workflow {/* #modes-eager-vs-pre-warm-vs-lazy */}
 
@@ -34,6 +34,7 @@ The file lives in storage; `previews[]` contains metadata about it. `resolve()` 
 |---|---|---|---|
 | Previews ready when upload processing finishes | `generate()` — **eager** | Downloads the original, generates/uploads previews, and saves their metadata | `{ created, failed }`: new preview metadata objects and a failure count |
 | A fast upload that starts background generation | `prewarm()` — **pre-warm** | Hands missing variants to a queue; the worker generates them later | `{ enqueued }`: number of variants handed to the transport |
+| The same, but the upload must know every variant is ready or queued | `enqueueRequired()` — **strict pre-warm** | Queues missing variants and confirms each one | `{ status, ready, accepted, notRequired, unconfirmed, tasks, issues }` |
 | To generate only the sizes requested by readers | `resolve()` with a transport — **lazy** | Finds ready URLs and requests missing variants through the queue | `{ decision, output }`: availability now and an optional custom response |
 
 **Every workflow uses `resolve()` to read image URLs.** In eager mode it reads previews you already generated. In pre-warm mode it reads what the worker has finished. In lazy mode it also starts generation when a preview is missing.
@@ -74,7 +75,7 @@ Never pass arbitrary client dimensions into `sizes`. Map a client choice such as
 
 ### Output formats and content types
 
-`PreviewFormat` accepts exactly these three values:
+`PreviewFormat` is a Sharp output format id. The defaults are these three:
 
 | Value in `formats` | Generated file | Generated `contentType` | Useful when… |
 |---|---|---|---|
@@ -82,7 +83,7 @@ Never pass arbitrary client dimensions into `sizes`. Map a client choice such as
 | `'webp'` | WebP | `image/webp` | Your client accepts WebP, including images with transparency. |
 | `'avif'` | AVIF | `image/avif` | Your client accepts AVIF or you offer it as another `<picture>` source. |
 
-Use `'jpeg'`, not `'jpg'`, and `'webp'`, not `'image/webp'`, in `formats`. `contentType` is the MIME type used when serving the file. PNG can be an original, but `'png'` is not a generated preview format. SVG originals pass through unchanged instead of being converted to these formats.
+Use Sharp format ids: `'jpeg'`, not `'jpg'`, and `'webp'`, not `'image/webp'`. `contentType` is the MIME type used when serving the file. Another format supported by your Sharp build (for example `'png'` or `'tiff'`) can be generated once you add it to `formats` **and** give it an `encode.formats` entry; see [configuration](#configuration). SVG originals are converted to these raster formats like any other original; SVG is never a generated format.
 
 If you omit per-call `formats`, the module uses config, whose default is `['jpeg', 'webp', 'avif']`. Our examples explicitly use `previewFormats = ['webp']`. To generate all three, change that shared array and use it on both generation and reads. Three sizes in three formats can require nine preview files per photo. Requesting AVIF on a later read does not convert a stored WebP file; it requires its own variant.
 
@@ -93,12 +94,14 @@ These are exported types; use `import type` from the main package entry. Most ca
 | Type | Use it for |
 |---|---|
 | `MediaLike` | The media document passed to `media`; your model may have additional fields |
-| `Original` | Original file location and metadata on `media.original` |
+| `Original` | Original file location (`storageRef`) and metadata on `media.original`; returned by `uploadOriginal()` |
+| `UploadOriginalOpts` | A typed `uploadOriginal()` request |
 | `SizeInput[]` | Your allowed size catalog |
 | `PreviewFormat[]` | Your selected output formats |
 | `Preview` / `Preview[]` | Generated file metadata; `generate().created` is a `Preview[]` |
 | `GenerateOpts` / `GenerateResult` | A typed `generate()` request/result |
 | `PrewarmOpts` | A typed `prewarm()` request; its result is `{ enqueued: number }` |
+| `EnqueueRequiredOpts` / `EnqueueRequiredResult` | A typed `enqueueRequired()` request/result |
 | `ResolveOpts` / `ReadDecision` | A typed `resolve()` request and its `decision` object |
 | `ReadyEntry` / `MissingPreview` | Individual items in `decision.ready` / `decision.missing` |
 | `PictureUrls` | The URL map returned by the optional `formatPictureUrls()` helper |
@@ -148,7 +151,7 @@ export default class File extends BaseModel {
 }
 ```
 
-A media document passed to the module has this shape. This illustrates an already-saved record; use your actual document and storage key in calls:
+A media document passed to the module has this shape. This illustrates an already-saved record with a local filesystem original; use your actual document in calls:
 
 ```ts
 import type { MediaLike } from '@adaptivestone/framework-module-resize';
@@ -156,9 +159,11 @@ import type { MediaLike } from '@adaptivestone/framework-module-resize';
 const media: MediaLike = {
   id: '65f000000000000000000001',
   original: {
-    key: 'uploads/original-photo.png',
+    // The storage driver's locator, returned by uploadOriginal(). The name is random.
+    storageRef: { path: 'originals/4f1c9a0b.png', visibility: 'private' },
     format: 'png',
     contentType: 'image/png',
+    size: 482113,
     width: 2400,
     height: 1600,
   },
@@ -166,19 +171,22 @@ const media: MediaLike = {
 };
 ```
 
-`original.key` must locate a file the storage driver can read. S3 originals also normally store `bucket`. Capture display-oriented dimensions at upload if available; generation can backfill missing dimensions. The module does not save your original or create the media document for you. Save both before calling `generate()` or `prewarm()`.
+`original` is the value `uploadOriginal()` returns ([step 5](#original-upload)); save it unchanged. `storageRef` belongs to the storage driver: `LocalFsStorage` stores `{ path, visibility }`, `S3Storage` stores `{ bucket, key }`. Do not build it by hand. Framework `BaseModel` keeps empty objects inside it (`minimize: false`); keep that option if you define the schema with Mongoose directly. If dimensions are missing, generation backfills them. Save the media document before calling `generate()` or `prewarm()`; the module does not create it for you.
 
 ### 3. Configure the model name and storage
 
 ```ts
 // src/config/resize.ts
+import type { ResizeConfig } from '@adaptivestone/framework-module-resize';
 import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/resize.js';
 
 export default {
   ...defaultResizeConfig,
   mediaModelName: 'File', // Match your actual media model name.
-};
+} satisfies ResizeConfig;
 ```
+
+The config must be complete, so always spread the defaults. `new Resizer()` validates it and throws `ResizeConfigError` for a missing or invalid value, including keys removed since 0.2 (see [configuration](#configuration)).
 
 The eager scaffold uses local filesystem storage:
 
@@ -195,7 +203,7 @@ export const resizer = new Resizer({
 });
 ```
 
-With the sample original key, the source file lives at `./var/media/uploads/original-photo.png`. Configure your web server to serve that tree at `/media`. The driver reads/writes files and builds URLs; it does not mount an HTTP route. Local storage uses one public tree for originals and previews; use [S3 or another driver](#drivers--seams) if originals must be private.
+With the sample original, the source file lives at `./var/media-private/originals/4f1c9a0b.png`. Private originals go to `privateRootDir`, which defaults to a sibling folder named after `rootDir` plus `-private`. Generated previews go under `./var/media`. Configure your web server to serve **only** `./var/media` at `/media`, never the private folder. The driver reads/writes files and builds URLs; it does not mount an HTTP route.
 
 ### 4. Initialize once per process {/* #3-initialize-once-per-process */}
 
@@ -215,6 +223,27 @@ await server.startServer();
 The dynamic import runs the construction after `init()`. A top-level `import './resizer.ts'` would execute before the entry's initialization code. `startServer()` calls `init()` again, which is a no-op once initialized.
 
 Create **one `Resizer` per process**; a second construction throws. In handlers and DTO builders, use `getResizer()` to access the constructed instance. The CLI/worker needs its own initialization, shown in the lazy setup.
+
+### 5. Store the original at upload {/* #original-upload */}
+
+In your upload handler, pass the received bytes to `uploadOriginal()` and save the result on the media document:
+
+```ts
+import { getResizer } from '@adaptivestone/framework-module-resize';
+
+// fileDoc is the media document for this upload; buffer holds the uploaded bytes.
+fileDoc.original = await getResizer().uploadOriginal({
+  body: buffer,          // Buffer or Uint8Array
+  visibility: 'private', // originals stay private; generated previews are public
+});
+await fileDoc.save();
+```
+
+`uploadOriginal()` reads the format and dimensions from the bytes with Sharp, stores the bytes **unchanged** under a random name, and returns an `Original`: `storageRef`, `format`, `contentType`, `size`, and `width`/`height` when known. It does not create the media document or queue any work.
+
+- Input is checked against `upload.maxBytes` (default 25 MiB) and `upload.formats` (default JPEG, PNG, WebP, AVIF, GIF, SVG). Invalid, unsupported or oversized input throws `ResizeOriginalError`; a storage failure throws `ResizeStorageError`.
+- SVG must use `visibility: 'private'`; a public SVG upload is rejected. See [originals](#originals-and-private-access).
+- The optional `namespace` groups objects under a prefix, for example `` namespace: `users/${user.id}` ``. It is a placement hint, not access control.
 
 ## Eager: generate previews now {/* #reading-the-generate-result */}
 
@@ -268,13 +297,13 @@ if (failed > 0) {
 | `created` | `Preview[]` — an array of objects | Metadata for each new preview file successfully generated and uploaded **by this call**. `created.length` is the number of new files. |
 | `failed` | `number` | Count of individual variants whose processing, encoding, or upload failed. It is neither an error object nor an array. |
 
-With our one-size, one-format example, successful generation returns an object like this (the generated storage key is illustrative):
+With our one-size, one-format example, successful generation returns an object like this (the generated file name is illustrative):
 
 ```json
 {
   "created": [
     {
-      "key": "uploads/preview-example.webp",
+      "storageRef": { "path": "previews/8d0e2b7c.webp", "visibility": "public" },
       "sizeKey": "320x320",
       "format": "webp",
       "contentType": "image/webp",
@@ -288,11 +317,11 @@ With our one-size, one-format example, successful generation returns an object l
 }
 ```
 
-`created[0]` describes an uploaded image: `key` locates it in storage; `sizeKey` and `format` identify the variant; `actualWidth`/`actualHeight` describe the encoded file. S3 adds `bucket`. Filtered variants carry `filters`, and a fit variant carries `fit: true`. The object contains **metadata, not file bytes or a browser URL**. Use `resolve()` below for URLs.
+`created[0]` describes an uploaded image: `storageRef` is the storage driver's locator for it (`{ path, visibility }` for local files, `{ bucket, key }` for S3); `sizeKey` and `format` identify the variant; `actualWidth`/`actualHeight` describe the encoded file. Filtered variants carry `filters`, and a fit variant carries `fit: true`. The object contains **metadata, not file bytes or a browser URL**. Use `resolve()` below for URLs.
 
 With default `persist: true`, the new metadata is already appended to the database's `previews[]` and to the supplied `fileDoc.previews` when the call returns. Do not append it again. Existing previews are skipped and are not included in `created` or counted as failures.
 
-If you change the example to request JPEG, WebP, and AVIF, these are the possible outcomes for a valid raster original:
+If you change the example to request JPEG, WebP, and AVIF, these are the possible outcomes for a valid original (raster or SVG):
 
 | What happened | What you receive |
 |---|---|
@@ -302,7 +331,7 @@ If you change the example to request JPEG, WebP, and AVIF, these are the possibl
 | All three already exist | `{ created: [], failed: 0 }` |
 | All three new variants fail | A thrown `ResizeGenerateError`; no result object is returned |
 
-`failed` does not identify the failed variants or contain error messages; inspect logs and compare the requested catalog with stored previews. An empty catalog or SVG pass-through also returns `{ created: [], failed: 0 }` for a valid original.
+`failed` does not identify the failed variants or contain error messages; inspect logs and compare the requested catalog with stored previews. An empty catalog also returns `{ created: [], failed: 0 }` for a valid original.
 
 With `persist: false`, files are still uploaded, but metadata is neither saved to MongoDB nor appended to your supplied document. Store the returned `created` yourself if later reads should find those files.
 
@@ -344,7 +373,7 @@ If the WebP thumbnail exists, `decision.ready[0].url` contains its URL. The `for
   "sizes": {
     "320x320": {
       "webp": {
-        "url": "/media/uploads/preview-example.webp",
+        "url": "/media/previews/8d0e2b7c.webp",
         "contentType": "image/webp"
       }
     }
@@ -588,15 +617,43 @@ With all three formats missing and accepted, it returns `{ enqueued: 3 }`, even 
 
 `prewarm()` waits for hooks, locks, and the transport call, then returns. **There are no `created` or `failed` fields**: image processing happens later in the worker. Use worker logs/task observers to monitor failures. To display previews, load the updated media and call `resolve()`.
 
-`{ enqueued: 0 }` means this call reported no variants handed successfully to the transport. It can mean all variants already exist, SVG pass-through, held locks, no original key, no transport, or a logged internal failure. Zero alone cannot distinguish those cases. `prewarm()` catches internal failures so queue problems do not reject the upload flow.
+`{ enqueued: 0 }` means this call reported no variants handed successfully to the transport. It can mean all variants already exist, held locks, no original `storageRef`, no transport, or a logged internal failure. Zero alone cannot distinguish those cases. `prewarm()` catches internal failures so queue problems do not reject the upload flow. When you need to tell them apart, use `enqueueRequired()` below.
 
-You can pre-warm just thumbnails and let detail-page reads lazily request larger variants. `generate()` and `prewarm()` both skip stored identities and SVG originals; neither uses the [original-already-fits shortcut](#originals-and-private-access) used by `resolve()`.
+You can pre-warm just thumbnails and let detail-page reads lazily request larger variants. `generate()` and `prewarm()` both skip stored identities; neither uses the [original-already-fits shortcut](#originals-and-private-access) used by `resolve()`.
+
+### When the upload must know the work is queued {/* #enqueue-required */}
+
+`enqueueRequired()` takes the same options as `prewarm()`, but reports every requested variant instead of a count:
+
+```ts
+import { getResizer } from '@adaptivestone/framework-module-resize';
+
+const result = await getResizer().enqueueRequired({
+  media: fileDoc,
+  sizes: thumbnailSizes,
+  formats: previewFormats,
+});
+
+if (result.status === 'incomplete') {
+  // result.unconfirmed lists the variants with no confirmed task;
+  // result.issues says why, and whether a retry can help (issue.retryable).
+}
+```
+
+| `status` | Meaning |
+|---|---|
+| `'ready'` | Nothing needs queueing, and at least one requested variant is already stored |
+| `'accepted'` | Every variant that needs queueing is covered by a confirmed task (`result.tasks` holds the task IDs) |
+| `'not-required'` | Nothing is stored and nothing needs queueing: the request was empty (`reason: 'empty-request'`), or the `beforeEnqueue` hook removed everything (`reason: 'filtered'`) |
+| `'incomplete'` | At least one variant has no confirmed task, for example no transport, no original, or a lock held elsewhere; see `unconfirmed` and `issues` |
+
+The arrays `ready`, `accepted`, `notRequired`, and `unconfirmed` split the requested catalog. A lock held by another request never counts as queued. With Mongo, the module checks the active task rows to confirm such variants; SQS cannot, so those variants come back `unconfirmed` with a retryable issue. Delivery is still at-least-once, not exactly-once. Unlike `prewarm()`, `enqueueRequired()` is not wrapped in a never-throw guard: a media without `id`/`_id`, for example, throws.
 
 ## Method inputs at a glance
 
 | Option | Methods | Type and meaning |
 |---|---|---|
-| `media` | All, required | `MediaLike`: your loaded/saved media document, including `id` or `_id` |
+| `media` | All, required | `MediaLike`: your loaded/saved media document, including `id` or `_id`. "All" means `generate()`, `prewarm()`, `enqueueRequired()`, and `resolve()`. |
 | `sizes` | All, required | `SizeInput[]`: the fixed catalog for this operation |
 | `formats` | All, optional | `PreviewFormat[]`: overrides the configured formats for this call |
 | `pipeline` | All, optional | `string`: registered processing name; defaults to `'default'` |
@@ -614,7 +671,7 @@ Supply drivers when constructing your one `Resizer`. `storage` is required. `tra
 |---|---|---|
 | `storage` | `LocalFsStorage`, `S3Storage` | Read originals, upload previews, build URLs |
 | `transport` | `MongoTransport`, `SqsTransport` | Accept tasks and run the worker's consumption loop |
-| `mediaStore` | `FrameworkMediaStore` | Load media and append preview metadata |
+| `mediaStore` | `FrameworkMediaStore` | Load media and append preview metadata; checks `mediaModelName` when the worker starts |
 | `lockProvider` | `FrameworkLockProvider` | Coordinate dispatch and worker attempts |
 
 ### S3 storage
@@ -640,7 +697,7 @@ const storage = new S3Storage({
 
 Use your real bucket names and CDN URL. Credentials/region come from the AWS SDK configuration, or pass a configured `client`. The host creates the buckets and access/CDN policies. `publicBaseUrl` builds URLs; it does not make a bucket public. The old option name `publicUrl` is deprecated.
 
-Original locations normally include `{ bucket, key }`. Generated previews are uploaded with public visibility. API and worker must use compatible storage settings and permissions.
+S3 stores `{ bucket, key }` (plus `namespace` when you pass one) in `storageRef`. Private originals go to `bucketPrivate`, which must differ from `bucketPublic`; a private upload without a distinct private bucket throws. Generated previews go to `bucketPublic`. Reads and downloads accept only these two buckets, so a tampered `bucket` value cannot reach another bucket. API and worker must use compatible storage settings and permissions.
 
 ### SQS instead of Mongo tasks
 
@@ -660,7 +717,12 @@ const transport = new SqsTransport({
 
 Use your actual queue URL/region and run the same worker command. SQS does not require the Mongo `ResizeTask` model. It still uses the framework media store and locks unless you replace those drivers. Configure visibility timeout, heartbeat, retries, and DLQ/redrive in SQS/the driver; Mongo queue settings do not configure them.
 
-Custom drivers implement the exported `ResizeStorage`, `QueueTransport`, `MediaStore`, or `LockProvider` contract. They can be objects or classes and close over their own clients; no `app` argument is passed. Storage's optional `canServeOriginalPublicly` tells the reader whether an original is public. Without it, originals are conservatively treated as private. See the package [driver reference](https://github.com/adaptivestone/framework-module-resize#drivers--seams) for all options and subpaths.
+Custom drivers implement the exported `ResizeStorage`, `QueueTransport`, `MediaStore`, or `LockProvider` contract. They can be objects or classes and close over their own clients; no `app` argument is passed.
+
+- **Storage:** `storageRef` is opaque to the module. Your driver returns any JSON-compatible locator from `upload()` and receives it back unchanged in `download()`, `publicUrl()`, and `signedUrl()`. `upload()` also receives optional hints: `namespace` from `uploadOriginal()`, or `parentRef` (the original's ref) when the worker stores a preview. The optional `canServeOriginalPublicly` tells the reader whether an original is public; without it, originals are treated as private.
+- **Media store:** implement `load` and `appendPreviews`. The optional `verify()` runs once when the worker starts; throw there to stop the worker before it takes any task.
+
+See the package [driver reference](https://github.com/adaptivestone/framework-module-resize#drivers--seams) for all options and subpaths.
 
 ## Custom processing: pipelines, filters, and hooks {/* #pipelines--hooks */}
 
@@ -705,7 +767,7 @@ Queued tasks carry the pipeline name and requested variants, not functions or `c
 | `beforeEnqueue` | `prewarm()` and `resolve()` (even with enqueueing disabled); caller context | The missing-variant array to keep |
 | `formatPublicUrls` | `resolve()`; caller context | The value returned as `output` |
 | `onPreviewGenerated` | After persistence in eager/worker generation; context `{}` | Ignored; receives the new `Preview` |
-| `afterTaskComplete` | After successful queued handling | Ignored; receives `LeasedTask` and context `{}` |
+| `afterTaskComplete` | After a queued task stored every requested variant | Ignored; receives `LeasedTask` and context `{}` |
 | `onTaskFailed` | Mongo retryable attempt or SQS handler failure | Ignored; receives task, error, and context `{}` |
 | `onTaskDeadLettered` | Mongo terminal/exhausted task | Ignored; receives task, error, and context `{}` |
 
@@ -715,31 +777,53 @@ Taps run in registration order and are awaited. Thrown hook errors are logged an
 
 Generated previews are public objects. The host must authorize which media may be processed and returned. Original files have these additional read rules:
 
-- **SVG:** `original.contentType === 'image/svg+xml'` or `original.format === 'svg'` causes untouched pass-through at requested sizes/formats. It is never rasterized or enqueued. Sanitize SVG at upload in your app.
+- **SVG is untrusted input.** An SVG file can carry scripts and external references, so the module never serves SVG markup, not even to the owner. `uploadOriginal()` accepts SVG only with `visibility: 'private'`. Generation (eager or worker) renders it into your raster formats like any other original, and reads return those raster previews. Until they exist, SVG variants appear in `decision.missing` and are queued like raster ones. Rendering does not load files or URLs referenced inside the SVG. The stored private original is not sanitized; do not serve it yourself.
 - **A raster original already fits:** when no preview exists, a request with both width and height, no filters, and no `fit: true` can use the original if its known dimensions are both within the box. Width-only, height-only, and fit requests do not use this shortcut. Pipeline steps do not run on an original-backed response.
 
-An original must be publicly servable or accessible through an authorized signed URL. The S3 driver recognizes its public bucket and does not expose private originals anonymously. With a signing-capable driver, server-derived `ctx.isOwner` or `ctx.isAdmin` permits a five-minute signed original URL. Do not accept these flags from client input. Failed signing has no public-URL fallback for a private original. A private SVG that cannot be served yields no ready or missing variants because there is no raster fallback.
+An original must be publicly servable or accessible through an authorized signed URL. The S3 driver recognizes its public bucket and does not expose private originals anonymously. With a signing-capable driver, server-derived `ctx.isOwner` or `ctx.isAdmin` permits a five-minute signed original URL. Do not accept these flags from client input. Failed signing has no public-URL fallback for a private original. These original-backed reads apply to raster originals only; an SVG original is never returned.
 
 Original-backed entries have `isOriginal: true`. Their `format` is the requested slot, while `contentType` describes the original bytes; use the latter for HTML MIME types.
 
 ## Configuration
 
-The host's `src/config/resize.ts` is deep-merged over module defaults. Nested objects merge field by field; arrays **replace** defaults. Per-call `formats` overrides the resulting format configuration.
+The host's `src/config/resize.ts` spreads the module defaults from `@adaptivestone/framework-module-resize/config/resize.js` and adds `mediaModelName` plus your changes. The framework merges `resize.<NODE_ENV>.ts` (for example `resize.production.ts`) over that file: nested objects merge field by field and arrays **replace**. The module does not merge again. It validates the final object when `new Resizer()` runs and throws `ResizeConfigError` for anything missing or invalid. Per-call `formats` overrides `formats`.
 
 | Option | Default | Meaning |
 |---|---|---|
 | `mediaModelName` | Required | Your host media model name |
-| `formats` | `['jpeg', 'webp', 'avif']` | Formats used when a call omits `formats` |
+| `formats` | `['jpeg', 'webp', 'avif']` | Formats generated when a call omits `formats`; each needs an `encode.formats` entry |
+| `upload.maxBytes` | `26214400` (25 MiB) | Largest original `uploadOriginal()` accepts |
+| `upload.formats` | `['jpeg', 'png', 'webp', 'avif', 'gif', 'svg']` | Original formats `uploadOriginal()` accepts, detected from the bytes |
 | `maxSize` | `{ width: 2000, height: 1200 }` | Bounding box for `fit: true` |
-| `encode.quality` | `{ jpeg: 80, webp: 82, avif: 64 }` | Separate codec quality settings; the numbers are not comparable across formats |
-| `encode.flattenBackground` | `'#ffffff'` | Background when encoding transparent input as JPEG |
+| `encode.formats` | `jpeg: { quality: 80, mozjpeg: true, chromaSubsampling: '4:2:0' }`, `webp: { quality: 82, effort: 4 }`, `avif: { quality: 64, effort: 4 }` | Options passed to Sharp's encoder per format; quality numbers are not comparable across formats. `{}` keeps Sharp's defaults. |
+| `encode.flatten` | `{ formats: ['jpeg'], background: '#ffffff' }` | Formats whose transparent pixels are flattened onto `background` |
+| `limits.processingTimeoutSeconds` | `30` | Timeout for each Sharp operation |
 | `worker.enabled` | `false` | Whether the worker command is permitted to run |
 | `worker.concurrency` | `4` | Parallel variants per generation call/task, including eager calls |
 | `worker.sharpConcurrency` | `1` | Sharp/libvips concurrency set when the worker starts |
 | `queue.maxAttempts` | `5` | Mongo attempts before dead-letter |
 | `queue.taskTimeoutMs` | `600000` | Mongo task timeout in milliseconds |
 
-`webpAvifOnly: true` makes the configured format list `['webp', 'avif']`; explicit per-call formats still override it. Keep `queue.lockTtlMs.worker <= queue.leaseMs`; config resolution rejects the opposite. Storage buckets/URLs and SQS options belong on their drivers, not in resize config. See the [full config reference](https://github.com/adaptivestone/framework-module-resize#config-reference) for encode settings, limits, and queue timing.
+To change one encoder setting, spread the nested defaults:
+
+```ts
+encode: {
+  ...defaultResizeConfig.encode,
+  formats: { ...defaultResizeConfig.encode.formats, avif: { quality: 55, effort: 4 } },
+},
+```
+
+Keys renamed since 0.2 now fail validation with `RESIZE_CONFIG_REMOVED_KEY` instead of being silently ignored:
+
+| 0.2 key | Use instead |
+|---|---|
+| `webpAvifOnly: true` | `formats: ['webp', 'avif']` |
+| `encode.quality.<format>` | `encode.formats.<format>.quality` |
+| `encode.effort.<format>` | `encode.formats.<format>.effort` |
+| `encode.mozjpeg`, `encode.chromaSubsampling` | `encode.formats.jpeg.mozjpeg`, `encode.formats.jpeg.chromaSubsampling` |
+| `encode.flattenBackground` | `encode.flatten.background` |
+
+Keep `queue.lockTtlMs.worker <= queue.leaseMs`; validation rejects the opposite. Storage buckets/URLs and SQS options belong on their drivers, not in resize config. See the [full config reference](https://github.com/adaptivestone/framework-module-resize#config-reference) for encode settings, limits, and queue timing.
 
 ## Errors
 
@@ -748,10 +832,11 @@ The host's `src/config/resize.ts` is deep-merged over module defaults. Nested ob
 | Error | Meaning |
 |---|---|
 | `ResizeSetupError` | Missing/duplicate Resizer or incorrect wiring |
-| `ResizeConfigError` | Missing media model name or invalid configuration invariant |
-| `ResizeNoOriginalError` | Original absent or lacking a usable storage key; extends `ResizeMediaError` |
+| `ResizeConfigError` | Invalid or incomplete config, a removed 0.2 key, or a `mediaModelName` that names no registered model |
+| `ResizeNoOriginalError` | Original absent or without a `storageRef`; extends `ResizeMediaError` |
+| `ResizeOriginalError` | `uploadOriginal()` input is empty, unreadable, of a disabled format, or over a limit; extends `ResizeMediaError` |
 | `ResizeMediaError` | Unusable media/source, including metadata/size validation failures |
-| `ResizeGenerateError` | Variant errors left no successful new previews; carries numeric `failed` and `requested` |
+| `ResizeGenerateError` | Eager generation produced no new previews, or a queued task left variants missing; carries numeric `failed` and `requested`, plus the `missing` identities |
 | `ResizeStorageError` | Package-defined storage failure |
 | `ResizeSecurityError` | Refused storage access, such as traversal or an unapproved bucket |
 
@@ -782,15 +867,15 @@ Package-defined errors extend `ResizeError` and have a stable `code`. Dependency
 
 - `formatPictureUrls(decision, { id?, mediaType? })` returns a `PictureUrls` map of ready, unfiltered URLs. It performs no generation or persistence.
 - `resizeMediaPaths` is `['original', 'previews'] as const`; spread it into query projections and retain `id`/`_id`.
-- `isCatalogCovered(media, sizes, formats)` returns whether every requested identity is stored, or the original is SVG. It does not check storage objects, queue state, original permissions, or execute hooks. If hooks add sizes, checking only the unexpanded catalog is insufficient to skip generation.
+- `isCatalogCovered(media, sizes, formats)` returns whether every requested identity is stored. It does not check storage objects, queue state, original permissions, or execute hooks. If hooks add sizes, checking only the unexpanded catalog is insufficient to skip generation.
 
 The scaffold also supports `--check` for lazy integration files (`--check --eager` for eager), `--out <dir>`, `--eject` for an editable task model, and `--force` to overwrite existing files. By default it appends a guide pointer to the host's `AGENTS.md`; `--agents claude|print|skip` changes that behavior.
 
 ## Queue behavior and troubleshooting {/* #operations */}
 
-Mongo tasks move `pending → processing → completed`, or return to `pending` with retry backoff. Exhausted attempts become `dead`. An existing media row without a usable original key is dead-lettered on its first attempt; a deleted media row is a logged no-op completion.
+Mongo tasks move `pending → processing → completed`, or return to `pending` with retry backoff. Exhausted attempts become `dead`. An existing media row without an original `storageRef` is dead-lettered on its first attempt; a deleted media row is a logged no-op completion.
 
-A completed task can have **partial success**: good previews are saved, failed or lock-skipped variants remain missing. A later `resolve()`/`prewarm()` can request them again. Task completion alone does not guarantee that the whole catalog is ready.
+A task completes only when **every requested variant is stored**. If some variants fail, the successful previews are saved, and the task fails with `ResizeGenerateError` (code `RESIZE_WORKER_INCOMPLETE`, listing the `missing` identities). It then retries with backoff; the next attempt generates only what is still missing. Variants that keep failing reach the dead-letter state. A completed task therefore means its whole request is ready.
 
 Dispatch locks suppress concurrent requests per variant. Mongo also reuses identical active requests through a canonical `requestKey` and a partial unique index. That key includes media ID, pipeline, and the variants that survived dispatch locks. Different/overlapping catalogs may create separate tasks; legacy tasks without a key remain valid. Delivery is at-least-once, with the worker skipping identities already stored on the loaded media document.
 
@@ -800,10 +885,12 @@ The Mongo worker consumes one task at a time per process; `worker.concurrency` c
 |---|---|
 | Worker exits with “disabled” | Set `worker.enabled: true` in the host `src/config/resize.ts` |
 | Worker reports no Resizer/transport | Construct the Resizer in the CLI process and configure its transport |
-| Missing variants but no task rows | `enqueueMissing`, original key, task/lock models, hooks, held dispatch locks, and enqueue logs |
+| Worker stops at start with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a model registered in the worker process |
+| `new Resizer()` throws `RESIZE_CONFIG_REMOVED_KEY` | Rename the 0.2 key as shown in [configuration](#configuration) |
+| Missing variants but no task rows | `enqueueMissing`, original `storageRef`, task/lock models, hooks, held dispatch locks, and enqueue logs; `enqueueRequired()` reports the reason per variant |
 | Tasks remain pending | Worker process/enablement and matching API/worker database/queue |
-| Tasks repeatedly fail | Original access, image limits, registered pipeline code, and worker logs |
-| Completed task, missing size | Partial failures/skipped locks; requested size/format/filters versus stored previews |
+| Tasks repeatedly fail | Original access, image limits, registered pipeline code, and worker logs; `RESIZE_WORKER_INCOMPLETE` errors list the `missing` variants |
+| A size is missing but no task is active | The request never included it: compare the requested size/format/filters with stored previews, or check for a dead task |
 | Mongo has previews, response is empty | Query projection, stale media/DTO caches, and formatting of `decision`/`output` |
 | Returned URL gives 404/403 | Filesystem/CDN/bucket access; readiness is based on metadata, not an object-existence probe |
 
