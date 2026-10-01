@@ -519,6 +519,23 @@ npm run cli ResizeWorker
 
 This is a long-running process; keep it supervised by your process manager/container deployment. Starting the API alone does not run it.
 
+#### Named queues {/* #named-queues */}
+
+Every task records the `Resizer` that created it and the **queue** it waits in. A queue is just a name; when none is given it is `'default'`.
+
+| What you want | How |
+|---|---|
+| Send one Resizer's work to another queue | `new Resizer({ …, queue: 'bulk' })` |
+| Send one call's work to another queue | `prewarm({ media, sizes, queue: 'bulk' })`; `resolve()` and `enqueueRequired()` accept `queue` too |
+| Consume the default queue | `npm run cli ResizeWorker` (consumes only `'default'`) |
+| Consume another queue | `npm run cli ResizeWorker -- --queue=bulk` (consumes only `'bulk'`) |
+
+A common split keeps uploads and reads on `'default'` and sends a large backfill to `'bulk'` with its own worker, so the backfill never delays fresh uploads. The same request queued on two queues becomes two tasks.
+
+Any number of workers, on any number of servers, can consume one queue; each task is held by one worker at a time. If a worker dies mid-task, its lease expires and another worker takes the task, so delivery is at-least-once and generation skips previews that already exist.
+
+One worker process serves **every** `Resizer` constructed in it and runs each task with the Resizer named in it. Those Resizers must share one transport instance; otherwise the worker refuses to start (`RESIZE_WORKER_TRANSPORTS_DIFFER`). Construct every Resizer in both the API and the worker process: a task for a Resizer the worker does not know fails with `RESIZE_NO_RESIZER` and eventually dead-letters.
+
 ### 4. Read using `resolve()`
 
 Use the [same read example](#reading-the-resolve-result): pass your loaded media document, `thumbnailSizes`, and `previewFormats`. No special lazy-read method is needed. With the transport configured, missing variants are enqueued by default.
@@ -723,18 +740,20 @@ npm i @aws-sdk/client-sqs sqs-consumer
 import { SqsTransport } from '@adaptivestone/framework-module-resize/transports/sqs.js';
 
 const transport = new SqsTransport({
-  queueUrl: 'https://sqs.eu-west-1.amazonaws.com/123456789012/resize',
+  queueUrl: 'https://sqs.eu-west-1.amazonaws.com/123456789012/resize', // the 'default' queue
+  queues: { bulk: 'https://sqs.eu-west-1.amazonaws.com/123456789012/resize-bulk' }, // optional
   region: 'eu-west-1',
 });
 // Pass this as `transport` to the existing new Resizer({ ... }).
 ```
 
-Use your actual queue URL/region and run the same worker command. SQS does not require the Mongo `ResizeTask` model. It still uses the framework media store and locks unless you replace those drivers. Configure visibility timeout, heartbeat, retries, and DLQ/redrive in SQS/the driver; Mongo queue settings do not configure them.
+Use your actual queue URL/region and run the same worker command. `queueUrl` serves the `'default'` [queue](#named-queues); `queues` maps other queue names to their URLs, and an unknown name throws `RESIZE_SQS_QUEUE_UNKNOWN`. SQS does not require the Mongo `ResizeTask` model. It still uses the framework media store and locks unless you replace those drivers. Configure visibility timeout, heartbeat, retries, and DLQ/redrive in SQS/the driver; Mongo queue settings do not configure them.
 
 Custom drivers implement the exported `ResizeStorage`, `QueueTransport`, `MediaStore`, or `LockProvider` contract. They can be objects or classes and close over their own clients; no `app` argument is passed.
 
 - **Storage:** `storageRef` is opaque to the module. Your driver returns any JSON-compatible locator from `upload()` and receives it back unchanged in `download()`, `publicUrl()`, and `signedUrl()`. `upload()` also receives optional hints: `namespace` from `uploadOriginal()`, or `parentRef` (the original's ref) when the worker stores a preview. The optional `canServeOriginalPublicly` tells the reader whether an original is public; without it, originals are treated as private.
 - **Media store:** implement `load` and `appendPreviews`. The optional `verify()` runs once when the worker starts; throw there to stop the worker before it takes any task.
+- **Queue transport:** `enqueue(task)` receives `{ resizer, queue, mediaId, pipeline, previews }`; store `resizer` and `queue` with the task. `startWorker(handle, { signal, queue, onEvent })` consumes only that queue, hands `handle` tasks that carry `resizer` and `queue` (missing means `'default'`), and reports `onEvent('completed' | 'failed' | 'deadLettered', task, error?)` instead of calling hooks; the worker routes each event to the owning Resizer. An optional `findActive(task)` lets `enqueueRequired()` confirm work queued by another request.
 
 See the package [driver reference](https://github.com/adaptivestone/framework-module-resize#drivers--seams) for all options and subpaths.
 
@@ -902,7 +921,8 @@ The Mongo worker consumes one task at a time per process; `worker.concurrency` c
 | Worker stops at start with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a model registered in the worker process |
 | `new Resizer()` throws `RESIZE_CONFIG_REMOVED_KEY` | Rename the 0.2 key as shown in [configuration](#configuration) |
 | Missing variants but no task rows | `enqueueMissing`, original `storageRef`, task/lock models, hooks, held dispatch locks, and enqueue logs; `enqueueRequired()` reports the reason per variant |
-| Tasks remain pending | Worker process/enablement and matching API/worker database/queue |
+| Tasks remain pending | Worker process/enablement, matching API/worker database, and a worker for that task's queue (`--queue=<name>`) |
+| Worker logs `RESIZE_NO_RESIZER` for a task | Construct that Resizer in the worker process too |
 | Tasks repeatedly fail | Original access, image limits, registered pipeline code, and worker logs; `RESIZE_WORKER_INCOMPLETE` errors list the `missing` variants |
 | A size is missing but no task is active | The request never included it: compare the requested size/format/filters with stored previews, or check for a dead task |
 | Mongo has previews, response is empty | Query projection, stale media/DTO caches, and formatting of `decision`/`output` |
