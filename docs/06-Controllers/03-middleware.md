@@ -327,7 +327,13 @@ Upgrading resets existing rate-limit counters. Complete the rollout across worke
   }
 ```
 
-The rate limiter middleware allows you to include request components (`req.body`) for key generation. Please note that you have no access to `req.appInfo.request` at this stage.
+You can include request body fields in the key. The limiter runs before validation, so it reads the raw `req.body`, not `req.appInfo.request`. Each value is Unicode-normalized (NFKC), trimmed and lowercased, so `Foo@x.com`, ` foo@x.com` and `FOO@x.com` share one budget; blank values and objects/arrays are ignored. Field names and values are hashed into the key, so e-mails never appear in stored keys or logs.
+
+:::info Upgrading to 5.5.0
+
+Request-keyed limiters re-key on upgrade, which resets their counters. If you added a middleware that lowercases or trims body fields before `RateLimiter`, you can remove it.
+
+:::
 
 ```javascript
   static get middleware() {
@@ -339,6 +345,8 @@ The rate limiter middleware allows you to include request components (`req.body`
     ]);
 }
 ```
+
+The key must treat as equal every spelling your user lookup treats as equal. If your lookup normalizes further (for example, ignores dots or `+tags` in Gmail addresses), extend `RateLimiter` and override `generateConsumeKey` to build the key from the same canonical form.
 
 #### Typed named policies from config
 
