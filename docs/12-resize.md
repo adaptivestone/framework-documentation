@@ -454,7 +454,7 @@ Run the same generator shipped by the resize module, this time without `--eager`
 npm exec --package=@adaptivestone/framework-module-resize -- resize-scaffold
 ```
 
-This adds `src/models/ResizeTask.ts` and `src/commands/ResizeWorker.ts`. They delegate to the package; keep those thin files rather than copying the implementation. Existing eager files are preserved, so edit your existing constructor to add the transport:
+This adds `src/models/ResizeTask.ts` and `src/commands/ResizeWorker.ts`. They delegate to the package; keep those thin files rather than copying the implementation. The command also loads `src/resizer.ts`, so the worker process builds your Resizers (see step 3). Existing eager files are preserved, so edit your existing constructor to add the transport:
 
 ```ts
 // src/resizer.ts — replaces the eager constructor.
@@ -497,24 +497,25 @@ export default {
 
 This boolean permits worker execution; it does not start a worker in the API. You still launch the separate command below. The API and worker can share this config, and API reads can enqueue regardless of `worker.enabled`.
 
-### 3. Initialize the CLI and start the worker
+### 3. Start the worker
 
-`src/server.ts` initializes your HTTP process. The worker runs through `src/cli.ts`, so it needs its own `Resizer` construction before the command runs:
+`src/server.ts` initializes your HTTP process. The worker runs through `src/cli.ts`, a separate process that needs its own `Resizer` construction. The scaffolded command does it: the framework CLI loads config and models just before it runs the command, so `run()` loads the construction site first, then starts the module's worker. Your `src/cli.ts` stays unchanged.
 
 ```ts
-// src/cli.ts
-import Cli from '@adaptivestone/framework/Cli.js';
-import folderConfig from './folderConfig.ts';
+// src/commands/ResizeWorker.ts (scaffolded)
+import ModuleResizeWorker from '@adaptivestone/framework-module-resize/commands/ResizeWorker.js';
 
-const cli = new Cli(folderConfig);
-// Load config first. The selected command still controls model initialization.
-await cli.server.init({ isSkipModelInit: true, isSkipModelLoading: true });
-await import('./resizer.ts');
-const result = await cli.run();
-process.exit(result ? 0 : 1);
+export default class ResizeWorker extends ModuleResizeWorker {
+  async run(): Promise<boolean> {
+    await import('../resizer.ts');
+    return super.run();
+  }
+}
 ```
 
-The scaffolded `ResizeWorker` command requests model initialization and uses the active `Resizer`. Run it alongside the API:
+Keep the `import('../resizer.ts')` line if you edit the command; `resize-scaffold --check` reports a command without it as drift. A `src/cli.ts` that already imports `./resizer.ts` after `cli.server.init()` keeps working: both imports load the same module, so the Resizers are built once.
+
+Run the worker alongside the API:
 
 ```bash
 npm run cli ResizeWorker
@@ -537,7 +538,7 @@ A common split keeps uploads and reads on `'default'` and sends a large backfill
 
 Any number of workers, on any number of servers, can consume one queue; each task is held by one worker at a time. If a worker dies mid-task, its lease expires and another worker takes the task, so delivery is at-least-once and generation skips previews that already exist.
 
-One worker process serves **every** `Resizer` constructed in it and runs each task with the Resizer named in it. Those Resizers must share one transport instance; otherwise the worker refuses to start (`RESIZE_WORKER_TRANSPORTS_DIFFER`). Construct every Resizer in both the API and the worker process: a task for a Resizer the worker does not know fails with `RESIZE_NO_RESIZER` and eventually dead-letters.
+One worker process serves **every** `Resizer` constructed in it and runs each task with the Resizer named in it. Those Resizers must share one transport instance; otherwise the worker refuses to start (`RESIZE_WORKER_TRANSPORTS_DIFFER`). Construct every Resizer in `src/resizer.ts`, which both the API and the worker command load: a task for a Resizer the worker does not know fails with `RESIZE_NO_RESIZER` and eventually dead-letters.
 
 ### 4. Read using `resolve()`
 
@@ -944,12 +945,13 @@ The Mongo worker consumes one task at a time per process; `worker.concurrency` c
 | Symptom | Check |
 |---|---|
 | Worker exits with “disabled” | Set `worker.enabled: true` in the host `src/config/resize.ts` |
-| Worker reports no Resizer/transport | Construct the Resizer in the CLI process and configure its transport |
+| Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` is the old bare re-export: delete it and re-run `resize-scaffold`, so it loads `src/resizer.ts` |
+| Worker reports no transport | Configure a transport on the Resizers in `src/resizer.ts` |
 | Worker stops at start with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a model registered in the worker process |
 | `new Resizer()` throws `RESIZE_CONFIG_REMOVED_KEY` | Rename the 0.2 key as shown in [configuration](#configuration) |
 | Missing variants but no task rows | `enqueueMissing`, original `storageRef`, task/lock models, hooks, held dispatch locks, and enqueue logs; `enqueueRequired()` reports the reason per variant |
 | Tasks remain pending | Worker process/enablement, matching API/worker database, and a worker for that task's queue (`--queue=<name>`) |
-| Worker logs `RESIZE_NO_RESIZER` for a task | Construct that Resizer in the worker process too |
+| Worker logs `RESIZE_NO_RESIZER` for a task | Construct that Resizer in `src/resizer.ts`, which the worker command loads |
 | Tasks repeatedly fail | Original access, image limits, registered pipeline code, and worker logs; `RESIZE_WORKER_INCOMPLETE` errors list the `missing` variants |
 | A size is missing but no task is active | The request never included it: compare the requested size/format/filters with stored previews, or check for a dead task |
 | Mongo has previews, response is empty | Query projection, stale media/DTO caches, and formatting of `decision`/`output` |
