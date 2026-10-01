@@ -99,3 +99,30 @@ request: z.object({
 :::warning Deprecated: `YupFile`
 The older yup-specific `YupFile` helper (`@adaptivestone/framework/helpers/yup.js`) is **deprecated and will be removed in v6** — it now emits a runtime `DeprecationWarning` (escalate it to a thrown error with Node's `--throw-deprecation`). Migrate to the `File` export above; it works with any validator and needs no yup.
 :::
+
+## Hashing secrets
+
+Never store a secret in plain text. Pick the hash by what you store:
+
+| You store | Use | Why |
+| --- | --- | --- |
+| A long random token (session, recovery link) | `hashToken` from `models/User.js` | Fast; 256 random bits cannot be guessed |
+| A short code (e-mail/SMS login, reset code) | `hashSecret` / `verifySecret` from `helpers/crypto.js` | Keyed with `AUTH_SALT`, so a leaked hash cannot be brute-forced offline |
+| A user password | `hashPassword` / `verifyPassword` from `helpers/crypto.js` | Deliberately slow per guess |
+
+```ts
+import { hashSecret, verifySecret } from "@adaptivestone/framework/helpers/crypto.js";
+
+const LOGIN_CODE = { purpose: "email-login" };
+
+// when sending the code
+loginCode.codeHash = hashSecret(code, LOGIN_CODE);
+
+// when the user submits it (constant-time comparison)
+const valid = verifySecret(submittedCode, loginCode.codeHash, LOGIN_CODE);
+```
+
+- `purpose` names the feature. A hash made for one purpose never verifies under another, so give each feature its own.
+- The protection is `AUTH_SALT` staying out of the database. Anyone holding both finds a 6-digit code instantly, so keep codes short-lived and limit attempts.
+- Rotating `AUTH_SALT` invalidates every stored code hash. That suits codes that expire in minutes; reissue them after a rotation.
+- Hash exactly what you compare: normalize input (for example, strip spaces) before both calls.
