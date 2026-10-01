@@ -33,6 +33,8 @@ Run that entry directly:
 NODE_ENV=production node src/server.ts
 ```
 
+Since 5.4.2 the port opens only once every route, `bootHttp` hook and error handler is mounted, so a TCP readiness probe never reaches a half-booted server.
+
 ### PM2
 
 Install PM2 and configure it to start with the host:

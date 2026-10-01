@@ -139,7 +139,7 @@ class name. It does not kebab-case multi-word names: `UserSettings` becomes
 
 ### Project boot hook (`bootHttp`)
 
-For app-wide HTTP wiring that doesn't belong to any single controller — webhooks, healthchecks, OAuth callbacks, or boot-time setup — pass a **`bootHttp`** function to the `Server` constructor. The framework calls it with the live `app` during `startServer`, after controllers are registered but before the adapter mounts, so anything it adds is in place from the first request.
+For app-wide HTTP wiring that doesn't belong to any single controller — webhooks, healthchecks, OAuth callbacks, or boot-time setup — pass a **`bootHttp`** function to the `Server` constructor. The framework calls it with the live `app` during `startServer`, after controllers are registered but before the adapter mounts, so anything it adds is in place from the first request. Since 5.4.2 the server starts accepting connections only once everything is mounted, and `startServer()` resolves after the port is bound.
 
 Define it inline — `app` is inferred, no annotation needed:
 

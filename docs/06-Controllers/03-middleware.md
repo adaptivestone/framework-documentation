@@ -125,7 +125,7 @@ No parameters.
 import Cors from "@adaptivestone/framework/services/http/middleware/Cors.js";
 ```
 
-Adds CORS headers if the origin matches the config.
+Adds CORS headers if the origin matches the config. Every response also gets `Vary: Origin`, added to any existing `Vary` value, so shared caches keep responses for allowed and other origins apart.
 
 #### Parameters
 
@@ -265,6 +265,8 @@ parameters in generated OpenAPI documents automatically.
 // http://localhost:3300/someUrl?limit=10&page=2
 const { limit, skip, page } = req.appInfo.pagination;
 ```
+
+A `page` or `limit` that is not a number is rejected with `400`. A missing, zero or negative `limit` uses the default, and a larger one is reduced to `maxLimit`. A missing, zero, negative or absurdly large `page` (one that would make `skip` unsafe) becomes `1`.
 
 ### PrepareAppInfo
 
@@ -447,6 +449,8 @@ import RequestParser from "@adaptivestone/framework/services/http/middleware/Req
 This is the main middleware to parse requests (`application/json`, `multipart/form-data`, `application/octet-stream`, `application/x-www-form-urlencoded`).
 It is based on the [formidable](https://www.npmjs.com/package/formidable) package.
 After parsing, the data is available in `req.body`.
+
+A body over the size or count limits (`requestParser` in `config/http.ts`) gets a `413` response. For a non-multipart body over `maxFieldsSize` — declared or streamed — the connection is closed after the `413` instead of reading the rest of the body.
 
 #### Parameters
 

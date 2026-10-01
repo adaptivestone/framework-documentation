@@ -234,6 +234,15 @@ Only email and password are required.
 
 You are able to update a user as well. You need to specify the email or user ID to find the user and the '--update' flag to allow user updates.
 
+Add `--token` (framework 5.4.2 or newer) to also log the user in: the command creates a 30-day session and prints its token once.
+
+```bash
+node src/cli.ts createuser --email=somemail@gmail.com --password=somePassword --token
+# Session token (valid until 2026-10-31T12:00:00.000Z): aB3x…
+```
+
+The token is printed to standard output only — never to the logger, so it does not reach log files or Sentry. The database keeps only its hash, so this line is the only copy. Without `--token`, no session is created.
+
 ### Generate Random Bytes
 
 In some cases, you need a random byte string. This command helps you to generate a random byte string.
@@ -260,7 +269,7 @@ Generates two kinds of TS source from the framework's introspection:
 #### Run Generate TypeScript Types
 
 :::note Requires `oxc-parser`
-Framework 5.4.1 requires the optional peer range `^0.149.0`. Existing projects can update it with `npm i -D oxc-parser@^0.149.0`.
+Framework 5.4.2 requires the optional peer range `^0.152.0` (5.4.1 required `^0.149.0`). Existing projects can update it with `npm i -D oxc-parser@^0.152.0`.
 
 Code generation parses your controller sources with [`oxc-parser`](https://www.npmjs.com/package/oxc-parser), an **optional peer dependency**. Install it as a devDependency — `npm i -D oxc-parser`. It is never loaded at runtime, so it stays out of production installs; the command fails with that instruction if it is missing.
 :::
