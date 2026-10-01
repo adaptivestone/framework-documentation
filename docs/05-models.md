@@ -864,12 +864,14 @@ The authentication controller depends on this model.
 ```js
 const UserModel = this.app.getModel("User");
 const user = await UserModel.getUserByEmailAndPassword("email", "password");
-const userToken = await user.generateToken(); // Generates and stores a token in the database
+// Stores a new 30-day session (its hash only) and returns { token, valid }.
+// Rejects if the password changed after `user` was loaded.
+const userToken = await user.generateToken();
 const userPublic = await user.getPublic();
 // `hashPassword` is a standalone helper, not a model static:
 // import { hashPassword } from "@adaptivestone/framework/helpers/crypto.js";
 const hashedPassword = await hashPassword("password");
-const sameUser = await UserModel.getUserByToken(userToken);
+const sameUser = await UserModel.getUserByToken(userToken.token);
 const sameUserAgain = await UserModel.getUserByEmail(user.email);
 // The token generators live in `userHelpers`, not on the model:
 // import { userHelpers } from "@adaptivestone/framework/models/User.js";
