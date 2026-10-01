@@ -788,7 +788,7 @@ const { decision } = await getResizer().resolve({
 
 Map this filtered decision yourself; `formatPictureUrls()` deliberately excludes filtered entries because its size/format map cannot distinguish them.
 
-Within a media document, preview identity is **size key + format + canonical filters**. Pipeline names are not part of that identity: two pipelines with identical size/format/filters reuse the same stored preview and locks. Use distinct filters for different renderings, including on reads. Changing pipeline code or encode quality does not invalidate existing previews automatically.
+Within a media document, preview identity is **Resizer + pipeline + size key + format + canonical filters**. Each generated preview records the `resizer` and `pipeline` that rendered it, so `pipeline: 'watermark'` and `pipeline: 'default'` keep separate previews of the same photo at the same size, and so do two Resizers. A preview stored without these fields belongs to the default Resizer and pipeline. Changing pipeline code or encode quality does not invalidate existing previews automatically; give the pipeline a new name (for example `watermark-v2`) to regenerate its images.
 
 Queued tasks carry the pipeline name and requested variants, not functions or `ctx`. Register the processing code in the worker too. An unknown name uses an empty pipeline and does not throw. Queued steps receive `ctx === {}`; persist per-media data for `beforeSteps` on the media document, and carry per-variant settings in your allowed filters. Eager `generate()` passes the caller's real context to both kinds of steps.
 
@@ -900,7 +900,7 @@ Package-defined errors extend `ResizeError` and have a stable `code`. Dependency
 
 - `formatPictureUrls(decision, { id?, mediaType? })` returns a `PictureUrls` map of ready, unfiltered URLs. It performs no generation or persistence.
 - `resizeMediaPaths` is `['original', 'previews'] as const`; spread it into query projections and retain `id`/`_id`.
-- `isCatalogCovered(media, sizes, formats)` returns whether every requested identity is stored. It does not check storage objects, queue state, original permissions, or execute hooks. If hooks add sizes, checking only the unexpanded catalog is insufficient to skip generation.
+- `isCatalogCovered(media, sizes, formats, scope?)` returns whether every requested identity is stored, for the default Resizer and pipeline unless you pass `scope` (for example `{ resizer: 'default', pipeline: 'watermark' }`). It does not check storage objects, queue state, original permissions, or execute hooks. If hooks add sizes, checking only the unexpanded catalog is insufficient to skip generation.
 
 The scaffold also supports `--check` for lazy integration files (`--check --eager` for eager), `--out <dir>`, `--eject` for an editable task model, and `--force` to overwrite existing files. By default it appends a guide pointer to the host's `AGENTS.md`; `--agents claude|print|skip` changes that behavior.
 
