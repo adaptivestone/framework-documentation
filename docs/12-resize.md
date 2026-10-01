@@ -177,31 +177,33 @@ const media: MediaLike = {
 
 ```ts
 // src/config/resize.ts
-import type { ResizeConfig } from '@adaptivestone/framework-module-resize';
+import type { FrameworkResizeConfig } from '@adaptivestone/framework-module-resize/framework.js';
 import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/resize.js';
 
 export default {
   ...defaultResizeConfig,
   mediaModelName: 'File', // Match your actual media model name.
-} satisfies ResizeConfig;
+} satisfies FrameworkResizeConfig;
 ```
 
-The config must be complete, so always spread the defaults. `new Resizer()` validates it and throws `ResizeConfigError` for a missing or invalid value, including keys removed since 0.2 (see [configuration](#configuration)).
+The config must be complete, so always spread the defaults. Constructing the `Resizer` validates it and throws `ResizeConfigError` for a missing or invalid value, including keys removed since 0.2 (see [configuration](#configuration)).
 
 The eager scaffold uses local filesystem storage:
 
 ```ts
 // src/resizer.ts
-import { Resizer } from '@adaptivestone/framework-module-resize';
+import { createFrameworkResizer } from '@adaptivestone/framework-module-resize/framework.js';
 import { LocalFsStorage } from '@adaptivestone/framework-module-resize/storage/fs.js';
 
-export const resizer = new Resizer({
+export const resizer = createFrameworkResizer({
   storage: new LocalFsStorage({
     rootDir: './var/media',
     publicBaseUrl: '/media',
   }),
 });
 ```
+
+`createFrameworkResizer` comes from the module's framework adapter (`…/framework.js`). It reads `src/config/resize.ts` and adds the app logger and the framework media store, so you pass only the storage. (The package's main entry has no framework code at all; see [without the framework](#without-the-framework).)
 
 With the sample original, the source file lives at `./var/media-private/originals/4f1c9a0b.png`. Private originals go to `privateRootDir`, which defaults to a sibling folder named after `rootDir` plus `-private`. Generated previews go under `./var/media`. Configure your web server to serve **only** `./var/media` at `/media`, never the private folder. The driver reads/writes files and builds URLs; it does not mount an HTTP route.
 
@@ -222,16 +224,15 @@ await server.startServer();
 
 The dynamic import runs the construction after `init()`. A top-level `import './resizer.ts'` would execute before the entry's initialization code. `startServer()` calls `init()` again, which is a no-op once initialized.
 
-Construct each `Resizer` once per process. Most apps need one: `getResizer()` returns it in handlers and DTO builders. An app that needs different storage, media models or formats constructs more, each with its own `name` and `config`, and reads them with `getResizer(name)`. Constructing the same name twice throws. The CLI/worker needs its own initialization, shown in the lazy setup.
+Construct each `Resizer` once per process. Most apps need one: `getResizer()` returns it in handlers and DTO builders. An app that needs different storage, media models or formats constructs more, each with its own `name` and, if its settings differ, its own config file, and reads them with `getResizer(name)`. Constructing the same name twice throws. The CLI/worker needs its own initialization, shown in the lazy setup.
 
 ```ts
 // src/resizer.ts — a second Resizer next to the default one
-import { Resizer } from '@adaptivestone/framework-module-resize';
-import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/resize.js';
+import { createFrameworkResizer } from '@adaptivestone/framework-module-resize/framework.js';
 
-export const listings = new Resizer({
+export const listings = createFrameworkResizer({
   name: 'listings',
-  config: { ...defaultResizeConfig, mediaModelName: 'File', formats: ['webp', 'avif'] },
+  configName: 'resizeListings', // reads src/config/resizeListings.ts (a complete config, like resize.ts)
   storage: listingsStorage, // any storage driver
 });
 
@@ -457,12 +458,14 @@ This adds `src/models/ResizeTask.ts` and `src/commands/ResizeWorker.ts`. They de
 
 ```ts
 // src/resizer.ts — replaces the eager constructor.
-import { Resizer } from '@adaptivestone/framework-module-resize';
-import { MongoTransport } from '@adaptivestone/framework-module-resize/transports/mongo.js';
+import {
+  createFrameworkMongoTransport,
+  createFrameworkResizer,
+} from '@adaptivestone/framework-module-resize/framework.js';
 import { LocalFsStorage } from '@adaptivestone/framework-module-resize/storage/fs.js';
 
-export const resizer = new Resizer({
-  transport: new MongoTransport(),
+export const resizer = createFrameworkResizer({
+  transport: createFrameworkMongoTransport(), // the ResizeTask model + queue timing from your config
   storage: new LocalFsStorage({
     rootDir: './var/media',
     publicBaseUrl: '/media',
@@ -696,7 +699,7 @@ Setting `enqueueMissing: true` cannot create a missing transport. Passing a pipe
 
 ## Storage and queue drivers {/* #drivers--seams */}
 
-Supply drivers when constructing your one `Resizer`. `storage` is required. `transport` is optional for eager hosts. The media store and lock provider default to framework implementations.
+Supply drivers when constructing a `Resizer`. `storage` is required. `transport` is optional for eager hosts. `createFrameworkResizer` adds the framework media store, and with a transport the framework lock provider; pass your own to replace them.
 
 | Constructor option | Shipped implementations | Purpose |
 |---|---|---|
@@ -817,9 +820,33 @@ An original must be publicly servable or accessible through an authorized signed
 
 Original-backed entries have `isOriginal: true`. Their `format` is the requested slot, while `contentType` describes the original bytes; use the latter for HTML MIME types.
 
+## Without the framework {/* #without-the-framework */}
+
+The package's main entry contains no framework code, so it also runs in a plain Node app. Construct every part yourself:
+
+```ts
+import { Resizer, runWorker } from '@adaptivestone/framework-module-resize';
+import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/resize.js';
+import { MongoTransport } from '@adaptivestone/framework-module-resize/transports/mongo.js';
+
+const resizer = new Resizer({
+  config: { ...defaultResizeConfig, formats: ['webp'] },
+  logger: console,
+  storage,       // a shipped or custom storage driver
+  mediaStore,    // load(id) + appendPreviews(id, previews) over your database
+  transport: new MongoTransport({ model: ResizeTask }), // optional: queued modes only
+  lockProvider,  // required with a transport
+});
+
+// Worker process:
+await runWorker({ signal: shutdownController.signal });
+```
+
+`ResizeTask` is your own mongoose model with the fields and indexes of the package's `models/ResizeTask.js`. The framework adapter (`…/framework.js`) is just this wiring done for you.
+
 ## Configuration
 
-The host's `src/config/resize.ts` spreads the module defaults from `@adaptivestone/framework-module-resize/config/resize.js` and adds `mediaModelName` plus your changes. The framework merges `resize.<NODE_ENV>.ts` (for example `resize.production.ts`) over that file: nested objects merge field by field and arrays **replace**. The module does not merge again. It validates the final object when `new Resizer()` runs and throws `ResizeConfigError` for anything missing or invalid. Per-call `formats` overrides `formats`.
+The host's `src/config/resize.ts` spreads the module defaults from `@adaptivestone/framework-module-resize/config/resize.js` and adds `mediaModelName` plus your changes (`satisfies FrameworkResizeConfig`). A second Resizer can read its own file through `createFrameworkResizer({ configName: 'resizeListings' })`. The framework merges `resize.<NODE_ENV>.ts` (for example `resize.production.ts`) over that file: nested objects merge field by field and arrays **replace**. The module does not merge again. It validates the final object when `new Resizer()` runs and throws `ResizeConfigError` for anything missing or invalid. Per-call `formats` overrides `formats`.
 
 | Option | Default | Meaning |
 |---|---|---|
