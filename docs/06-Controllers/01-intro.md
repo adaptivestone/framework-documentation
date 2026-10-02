@@ -219,4 +219,5 @@ The most notable options are:
 port; // Port that the server will use. By default, process.env.HTTP_PORT or port 3300.
 hostname; // IP to bind to. By default, process.env.HTTP_HOST or '0.0.0.0' (any). Could be dangerous.
 corsDomains; // CORS-allowed domains.
+corsExposedHeaders; // Response headers browser code may read. By default ['Retry-After'].
 ```

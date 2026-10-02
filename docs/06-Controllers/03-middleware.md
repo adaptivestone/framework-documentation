@@ -131,14 +131,30 @@ Adds CORS headers if the origin matches the config. Every response also gets `Va
 
 `origins` - an array of strings or regex to check the origin. Required parameter.
 
+`exposedHeaders` - an array of response header names that browser code on an allowed origin may read. Optional.
+
 ```javascript
   static get middleware() {
     return new Map([
       ['GET/someUrl', [
-        [Cors, { origins: ['http://localhost',/./] }]
+        [Cors, { origins: ['http://localhost',/./], exposedHeaders: ['Retry-After'] }]
       ]]
     ]);
   }
+```
+
+#### Exposed headers
+
+Browsers let cross-origin JavaScript read only a few basic response headers (`Content-Type`, `Content-Length`, `Cache-Control`, `Content-Language`, `Expires`, `Last-Modified`, `Pragma`). Any other header is hidden: `response.headers.get('Retry-After')` returns `null` even though the header was sent. `exposedHeaders` sends `Access-Control-Expose-Headers` on responses to allowed origins (not on preflight requests), so the listed headers become readable.
+
+The global CORS middleware reads the list from `http.corsExposedHeaders`, next to `corsDomains`. It defaults to `['Retry-After']`, so a web app can show how long to wait after a [rate limiter](#ratelimiter) 429. An array in your `config/http.ts` replaces the default instead of extending it, so keep `Retry-After` when you add your own headers:
+
+```ts
+// config/http.ts
+export default {
+  corsDomains: ["https://app.example.com"],
+  corsExposedHeaders: ["Retry-After", "X-Request-Id"],
+};
 ```
 
 ### GetUserByToken
