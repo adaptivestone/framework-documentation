@@ -29,8 +29,7 @@ flowchart TB
 | You want… | Call | The call waits for… | It returns |
 |---|---|---|---|
 | Previews ready when the upload request finishes | `generate()`: **eager** | resizing, upload and saving | `{ created, failed }` |
-| A fast upload, with previews made in the background | `prewarm()`: **pre-warm** | queueing only | `{ enqueued }` |
-| The same, with confirmation for every variant | `enqueueRequired()`: **strict pre-warm** | queueing and confirmation | `{ status, … }` |
+| A fast upload, with previews made in the background | `prewarm()`: **pre-warm** | queueing and its confirmation | `{ status, … }` per variant |
 | Previews only for the sizes readers actually request | `resolve()` with a queue: **lazy** | queueing of the missing variants | `{ decision, output }` |
 
 Every workflow reads URLs with `resolve()` and writes the same `previews[]`. You can mix them, for example pre-warm thumbnails and let detail sizes generate lazily. You can also switch later without migrating data. Start with eager, and add the [queue](#background) when uploads must stay fast.
@@ -78,10 +77,10 @@ Keep Mongoose's `minimize: false`, which is the `BaseModel` default, because sto
 ```ts
 // src/config/resize.ts
 import type { FrameworkResizeConfig } from '@adaptivestone/framework-module-resize/framework.js';
-import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/resize.js';
+import { defaultFrameworkResizeConfig } from '@adaptivestone/framework-module-resize/config/resize.js';
 
 export default {
-  ...defaultResizeConfig,
+  ...defaultFrameworkResizeConfig,
   mediaModelName: 'File', // your media model
 } satisfies FrameworkResizeConfig;
 ```
@@ -93,24 +92,23 @@ Always spread the defaults. The module validates the complete object and throws 
 ```ts
 // src/resizer.ts
 import { createFrameworkResizer } from '@adaptivestone/framework-module-resize/framework.js';
-import { LocalFsStorage } from '@adaptivestone/framework-module-resize/storage/fs.js';
+import { LocalFsStorage } from '@adaptivestone/framework-module-resize/drivers/fs.js';
 
 export const resizer = createFrameworkResizer({
   storage: new LocalFsStorage({ rootDir: './var/media', publicBaseUrl: '/media' }),
 });
 ```
 
+`createFrameworkResizer` takes its config from `src/config/resize.ts`, and adds the app logger and the media store for `mediaModelName`. You pass the storage. Import `src/resizer.ts` wherever you need the Resizer; a normal static import is fine, because nothing is read from the framework until first use. Elsewhere in your code, `getResizer()` returns the same instance.
+
+A config mistake then shows up at the first upload or read. To catch it at startup instead, verify after initialization:
+
 ```ts
 // src/server.ts
-const server = new Server(folderConfig);
 await server.init();
-await import('./resizer.ts'); // after init(): config and models are loaded
-await server.startServer();   // init() runs only once, so this does not repeat it
+await resizer.verify(); // checks the config, the transport's timing and the media model
+await server.startServer();
 ```
-
-`createFrameworkResizer` reads `src/config/resize.ts`, then adds the app logger and the media store for `mediaModelName`. You pass the storage. Elsewhere in your code, `getResizer()` returns this instance.
-
-Load `resizer.ts` with a dynamic import after `init()`. A static `import './resizer.ts'` runs before the framework has loaded its config.
 
 `LocalFsStorage` writes:
 - previews under `rootDir`;
@@ -254,7 +252,7 @@ for (const file of files) {
      createFrameworkMongoTransport,
      createFrameworkResizer,
    } from '@adaptivestone/framework-module-resize/framework.js';
-   import { LocalFsStorage } from '@adaptivestone/framework-module-resize/storage/fs.js';
+   import { LocalFsStorage } from '@adaptivestone/framework-module-resize/drivers/fs.js';
 
    export const resizer = createFrameworkResizer({
      transport: createFrameworkMongoTransport(), // tasks in MongoDB; timing from config.queue
@@ -262,7 +260,7 @@ for (const file of files) {
    });
    ```
 
-3. Allow the worker to run by setting `worker: { ...defaultResizeConfig.worker, enabled: true }` in `src/config/resize.ts`. This only permits the worker command; the API never starts a worker.
+3. Allow the worker to run by setting `worker: { ...defaultFrameworkResizeConfig.worker, enabled: true }` in `src/config/resize.ts`. This only permits the worker command; the API never starts a worker.
 
 4. Create the indexes. `ResizeTask` and the framework's `Lock` model declare their indexes. Create them through your normal migration or deployment process before you deploy the API and the worker. The module never creates indexes at runtime. Mongo's duplicate detection depends on the partial unique index on active tasks.
 
@@ -272,23 +270,18 @@ for (const file of files) {
    npm run cli ResizeWorker
    ```
 
-The scaffolded command first loads `src/resizer.ts`, so the worker has the same Resizers as the API:
+The scaffolded command imports `src/resizer.ts`, so the worker has the same Resizers as the API:
 
 ```ts
 // src/commands/ResizeWorker.ts (scaffolded)
-import ModuleResizeWorker from '@adaptivestone/framework-module-resize/commands/ResizeWorker.js';
+import '../resizer.ts';
 
-export default class ResizeWorker extends ModuleResizeWorker {
-  async run(): Promise<boolean> {
-    await import('../resizer.ts'); // config and models are loaded by now
-    return super.run();
-  }
-}
+export { ResizeWorker as default } from '@adaptivestone/framework-module-resize/framework.js';
 ```
 
 Keep that import if you edit the command; `resize-scaffold --check` reports a command without it. The API and the worker must use the same database and the same storage. With `LocalFsStorage` that means the same filesystem; for workers on other machines, use S3 or other shared storage.
 
-### Lazy, pre-warm and strict pre-warm
+### Lazy and pre-warm
 
 <div className="resize-diagram resize-diagram--sequence" role="region" aria-label="Lazy and pre-warm calls do not wait for background generation" tabIndex={0}>
 
@@ -307,7 +300,7 @@ sequenceDiagram
   else Pre-warm: an upload was saved
     App->>Resizer: prewarm()
     Resizer->>Queue: Enqueue missing WebP
-    Resizer-->>App: enqueued: 1
+    Resizer-->>App: status: accepted
   end
   Queue->>Worker: Task
   Worker->>Worker: Resize, upload, append previews[]
@@ -321,23 +314,7 @@ sequenceDiagram
 **Lazy** needs no extra code: `resolve()` queues whatever is missing. **Pre-warm** queues the catalog right after the upload is saved, so the worker usually finishes before the first reader arrives:
 
 ```ts
-const { enqueued } = await getResizer().prewarm({
-  media: fileDoc,
-  sizes: thumbnailSizes,
-  formats: previewFormats,
-});
-```
-
-`enqueued` is the number of variants this call handed to the queue; all variants for one media go into one task. `prewarm()` never throws. A result of `0` can mean several things:
-- every preview already exists;
-- another request is queueing the same variants;
-- there is no original or no transport;
-- a failure happened, which is logged.
-
-When the upload must know that every variant is queued, use `enqueueRequired()` with the same options:
-
-```ts
-const result = await getResizer().enqueueRequired({
+const result = await getResizer().prewarm({
   media: fileDoc,
   sizes: thumbnailSizes,
   formats: previewFormats,
@@ -348,6 +325,8 @@ if (result.status === 'incomplete') {
 }
 ```
 
+`prewarm()` never throws, and it reports every requested variant. All variants for one media go into one task.
+
 | `status` | Meaning |
 |---|---|
 | `'ready'` | Nothing needs queueing, and at least one requested variant is already stored |
@@ -355,7 +334,7 @@ if (result.status === 'incomplete') {
 | `'not-required'` | Nothing to do: the request was empty, or the `beforeEnqueue` hook removed everything |
 | `'incomplete'` | At least one variant has no confirmed task, for example because there is no transport or no original |
 
-Sometimes another request is queueing the same variant at the same moment. With Mongo, `enqueueRequired()` confirms that variant by finding the other request's active task. SQS cannot look tasks up, so such a variant comes back `incomplete` and retryable. Unlike `prewarm()`, `enqueueRequired()` can throw, for example for a media document without an ID.
+The arrays `ready`, `accepted`, `notRequired` and `unconfirmed` split the requested catalog, and `result.tasks` holds the task receipts. Sometimes another request is queueing the same variant at the same moment. With Mongo, `prewarm()` confirms that variant by finding the other request's active task. SQS cannot look tasks up, so such a variant comes back `incomplete` and retryable. An unexpected error, for example a media document without an ID, is `incomplete` with a `RESIZE_ENQUEUE_INTERNAL_ERROR` issue.
 
 ### Queues and workers {/* #named-queues */}
 
@@ -364,7 +343,7 @@ Every task waits in a named queue. When you don't name one, it is `'default'`.
 | You want… | How |
 |---|---|
 | A Resizer's tasks on another queue | `createFrameworkResizer({ …, queue: 'bulk' })` |
-| One call's tasks on another queue | `prewarm({ …, queue: 'bulk' })`; `resolve()` and `enqueueRequired()` also accept `queue` |
+| One call's tasks on another queue | `prewarm({ …, queue: 'bulk' })`; `resolve()` also accepts `queue` |
 | A worker for `'default'` | `npm run cli ResizeWorker` |
 | A worker for another queue | `npm run cli ResizeWorker -- --queue=bulk` |
 
@@ -384,7 +363,7 @@ export const resizer = createFrameworkResizer({ transport, storage: avatarStorag
 export const listings = createFrameworkResizer({
   name: 'listings',
   configName: 'resizeListings', // src/config/resizeListings.ts, a complete config like resize.ts
-  transport,                    // one shared transport instance
+  transport,                    // may share the transport, or have its own
   storage: listingStorage,
 });
 
@@ -393,7 +372,7 @@ export const listings = createFrameworkResizer({
 
 - **One construction per name:** each name can be created only once per process.
 - **Create them all in `src/resizer.ts`:** every task records which Resizer created it, and the worker gives the task to the Resizer with that name, so the worker needs all of them. Creating them in `src/resizer.ts` gives both the API and the worker the same set.
-- **One shared transport:** Resizers served by one worker must use the same transport instance.
+- **Transports:** Resizers may share a transport or each have their own. The worker runs one loop per transport for its queue.
 - **No mixing:** previews from different Resizers never mix.
 - **Worker settings:** the worker reads its own settings (`worker.enabled` and the Sharp tuning) from `src/config/resize.ts`.
 
@@ -432,8 +411,8 @@ await getResizer().resolve({
 
 | Hook | Runs | Returns |
 |---|---|---|
-| `resolveSizes` | `generate()`, `prewarm()`, `enqueueRequired()`, `resolve()` | The sizes to use |
-| `beforeEnqueue` | `prewarm()`, `enqueueRequired()`, `resolve()`, before queueing | The missing variants to keep |
+| `resolveSizes` | `generate()`, `prewarm()`, `resolve()` | The sizes to use |
+| `beforeEnqueue` | `prewarm()` and `resolve()`, before queueing | The missing variants to keep |
 | `formatPublicUrls` | `resolve()` | The value returned as `output` |
 | `onPreviewGenerated` | After each new preview is saved | Nothing |
 | `afterTaskComplete` | After a queued task stored every variant | Nothing |
@@ -446,15 +425,16 @@ Hook functions run in the order they were registered, and each one is awaited. A
 
 | Option | Shipped drivers | Import from |
 |---|---|---|
-| `storage` (required) | `LocalFsStorage`, `S3Storage` | `…/storage/fs.js`, `…/storage/s3.js` |
-| `transport` (queue only) | Mongo via `createFrameworkMongoTransport()`, `SqsTransport` | `…/framework.js`, `…/transports/sqs.js` |
-| `mediaStore` | `FrameworkMediaStore`, added by `createFrameworkResizer` | `…/mediaStore/framework.js` |
-| `lockProvider` | `FrameworkLockProvider`, added when there is a transport | `…/locks/framework.js` |
+| `storage` (required) | `LocalFsStorage`, `S3Storage` | `…/drivers/fs.js`, `…/drivers/s3.js` |
+| `transport` (queue only) | Mongo via `createFrameworkMongoTransport()`, `SqsTransport` | `…/framework.js`, `…/drivers/sqs.js` |
+| `mediaStore` | `FrameworkMediaStore`, added by `createFrameworkResizer` | `…/framework.js` |
+
+The transport owns its **locks** (`locks`, a `LockStore`), because locks exist only for queued work. `createFrameworkMongoTransport()` uses `FrameworkLockStore`, which wraps the framework's own `Lock` model. The framework drivers are thin wrappers over framework-free ones in `…/drivers/mongo.js`: `FrameworkMediaStore` is `MongoMediaStore` with the model taken from the app.
 
 **S3** needs `npm i @aws-sdk/client-s3 @aws-sdk/s3-request-presigner`:
 
 ```ts
-import { S3Storage } from '@adaptivestone/framework-module-resize/storage/s3.js';
+import { S3Storage } from '@adaptivestone/framework-module-resize/drivers/s3.js';
 
 const storage = new S3Storage({
   bucketPublic: 'my-cdn',        // previews
@@ -469,20 +449,21 @@ You create the buckets and their access policies; `publicBaseUrl` only builds UR
 **SQS** needs `npm i @aws-sdk/client-sqs sqs-consumer`:
 
 ```ts
-import { appLogger } from '@adaptivestone/framework-module-resize/framework.js';
-import { SqsTransport } from '@adaptivestone/framework-module-resize/transports/sqs.js';
+import { appLogger, FrameworkLockStore } from '@adaptivestone/framework-module-resize/framework.js';
+import { SqsTransport } from '@adaptivestone/framework-module-resize/drivers/sqs.js';
 
 const transport = new SqsTransport({
   queueUrl: 'https://sqs.eu-west-1.amazonaws.com/123456789012/resize',              // queue 'default'
   queues: { bulk: 'https://sqs.eu-west-1.amazonaws.com/123456789012/resize-bulk' }, // optional
   region: 'eu-west-1',
+  locks: new FrameworkLockStore(), // SQS has no locks of its own
   logger: appLogger,
 });
 ```
 
 SQS needs no `ResizeTask` model. Retries and dead-lettering come from the queue's redrive policy: set `maxReceiveCount` to `queue.maxAttempts`. `onTaskDeadLettered` does not fire for SQS.
 
-You can replace any driver with an object or class that implements the exported contract type: `ResizeStorage`, `QueueTransport`, `MediaStore` or `LockProvider`. Drivers receive no `app` argument; each one uses its own clients. The [package reference](https://github.com/adaptivestone/framework-module-resize#drivers) lists every option and contract.
+Every kind of driver has an exported abstract class: `ResizeStorage`, `MediaStore`, `QueueTransport` and `LockStore`. A custom driver extends one (for example `class PostgresMediaStore extends MediaStore`), or is any object of the same shape. Drivers receive no `app` argument; each one uses its own clients. The [package reference](https://github.com/adaptivestone/framework-module-resize#drivers) lists every option and contract.
 
 ## Originals, SVG and private access
 
@@ -502,33 +483,40 @@ Previews are public. Store originals privately (`visibility: 'private'`). Your a
 
 ## Without the framework
 
-The package's main entry contains no framework code, so it also runs in a plain Node app. Create every part yourself:
+The core and the shipped drivers contain no framework code, and the framework is an optional peer dependency. A plain Node app with MongoDB uses the Mongo drivers and writes no driver code:
 
 ```ts
+import mongoose from 'mongoose';
 import { Resizer, runWorker } from '@adaptivestone/framework-module-resize';
 import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/resize.js';
-import { MongoTransport } from '@adaptivestone/framework-module-resize/transports/mongo.js';
+import { LocalFsStorage } from '@adaptivestone/framework-module-resize/drivers/fs.js';
+import {
+  createResizeModels, MongoLockStore, MongoMediaStore, MongoTransport,
+} from '@adaptivestone/framework-module-resize/drivers/mongo.js';
+
+const { ResizeTask, ResizeLock } = createResizeModels(mongoose.connection);
 
 const resizer = new Resizer({
   config: { ...defaultResizeConfig, formats: ['webp'] },
-  logger: console,
-  storage,       // a shipped or custom storage driver
-  mediaStore,    // { load(id), appendPreviews(id, previews) } over your database
-  transport: new MongoTransport({ model: ResizeTask }), // optional: queued workflows only
-  lockProvider,  // { acquire(key, ttlMs), release(key) }; required with a transport
+  storage: new LocalFsStorage({ rootDir: './var/media', publicBaseUrl: '/media' }),
+  mediaStore: new MongoMediaStore({ model: File }), // File spreads resizeMediaSchemaFragment
+  transport: new MongoTransport({ // optional: queued workflows only
+    model: ResizeTask,
+    locks: new MongoLockStore({ model: ResizeLock }),
+  }),
 });
 
 // In the worker process:
 await runWorker({ signal: shutdown.signal, queue: 'default' });
 ```
 
-- `ResizeTask` is your own Mongoose model. It needs the fields and indexes of the package's `models/ResizeTask.js`.
-- The `worker.*` config keys are read only by the framework's worker command. Pass Sharp tuning to `runWorker({ sharp: { concurrency, cache } })` instead.
+- `createResizeModels(connection)` registers `ResizeTask` (the queue) and `ResizeLock` with the package's schemas and indexes, and turns `autoIndex` off: create the indexes through your migration process (for example `ResizeTask.createIndexes()`).
+- `config` is optional and holds image settings only. Queue timing (`leaseMs`, `lockTtlMs`, `maxAttempts`, …) is a `MongoTransport` option, and Sharp tuning is `runWorker({ sharp: { concurrency, cache } })`.
 - The framework adapter (`…/framework.js`) does exactly this wiring for you.
 
 ## Configuration
 
-`src/config/resize.ts` spreads the package defaults and adds `mediaModelName` plus your changes. The framework merges `resize.<NODE_ENV>.ts` over it: objects merge field by field, and arrays are replaced. The module validates the result when the Resizer is created.
+`src/config/resize.ts` spreads `defaultFrameworkResizeConfig` and adds `mediaModelName` plus your changes. The framework merges `resize.<NODE_ENV>.ts` over it: objects merge field by field, and arrays are replaced. The image settings go to the Resizer; the adapter reads `mediaModelName`, `queue` (the Mongo transport's timing and lock TTLs) and `worker` (the worker command). `queue` and `worker` may be omitted, and then the defaults apply.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -538,16 +526,17 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 | `upload.formats` | `jpeg`, `png`, `webp`, `avif`, `gif`, `svg` | Original formats `uploadOriginal()` accepts |
 | `maxSize` | `{ width: 2000, height: 1200 }` | The box for `fit` |
 | `encode.formats` | JPEG quality 80, WebP 82, AVIF 64 | Sharp encoder options per format; `{}` keeps Sharp's defaults |
+| `concurrency` | `4` | Variants processed in parallel per task or `generate()` call |
 | `worker.enabled` | `false` | Allows the worker command to run |
-| `worker.concurrency` | `4` | Variants processed in parallel per task or `generate()` call |
 | `queue.maxAttempts` | `5` | Attempts before a Mongo task is dead-lettered |
+| `queue.leaseMs`, `queue.lockTtlMs` | `60000`, `{ dispatch: 60000, worker: 60000 }` | The task lease and lock TTLs; the worker lock must not outlive the lease |
 
 To change one encoder setting, spread the nested defaults:
 
 ```ts
 encode: {
-  ...defaultResizeConfig.encode,
-  formats: { ...defaultResizeConfig.encode.formats, avif: { quality: 55, effort: 4 } },
+  ...defaultFrameworkResizeConfig.encode,
+  formats: { ...defaultFrameworkResizeConfig.encode.formats, avif: { quality: 55, effort: 4 } },
 },
 ```
 
@@ -562,12 +551,12 @@ The [full config reference](https://github.com/adaptivestone/framework-module-re
 
 ## Errors
 
-`resolve()` and `prewarm()` never throw: they log the failure and return a safe result. Every other error from the module extends `ResizeError` and carries a stable `code`:
+`resolve()` and `prewarm()` never throw: they log the failure and return a safe result (`prewarm()` reports it as an issue). Every other error from the module extends `ResizeError` and carries a stable `code`:
 
 | Error | Meaning | What to do |
 |---|---|---|
 | `ResizeSetupError` | The wiring is wrong, e.g. a duplicate Resizer name | Fix the code |
-| `ResizeConfigError` | The config is invalid or incomplete | Fix the config; it fails at startup |
+| `ResizeConfigError` | The config is invalid or incomplete | Fix the config; `resizer.verify()` reports it at startup |
 | `ResizeOriginalError` | Uploaded bytes are invalid, unsupported or too large | Reject the upload |
 | `ResizeNoOriginalError` | The media has no original | Upload the original first |
 | `ResizeMediaError` | The media can't be used; the two errors above extend it | Skip that media |
@@ -594,17 +583,16 @@ If two copies of the package are installed, `instanceof` can fail across them. `
 - **Task states.** Mongo tasks go `pending → processing → completed`. A failed attempt returns to `pending` with a growing delay. After `queue.maxAttempts`, the task becomes `dead`.
 - **Partial attempts.** A task completes only when every requested variant is stored. When an attempt is only partly successful, its previews are saved and the next attempt makes only the missing ones.
 - **Cleanup and retries.** Completed tasks are removed after about 24 hours and dead tasks after about 30 days. To retry a dead task after fixing its cause, call `prewarm()` again for that media.
-- **Throughput.** A Mongo worker processes one task at a time, and `worker.concurrency` parallelizes the variants within it. For more throughput, run more worker processes.
+- **Throughput.** A Mongo worker processes one task at a time, and `concurrency` parallelizes the variants within it. For more throughput, run more worker processes.
 
 | Symptom | Check |
 |---|---|
 | Worker exits with "disabled" | `worker.enabled: true` in `src/config/resize.ts` |
-| Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` must load `../resizer.ts`; delete the old file and run `resize-scaffold` again |
+| Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` must import `../resizer.ts`; delete the old file and run `resize-scaffold` again |
 | Worker logs `RESIZE_NO_RESIZER` for a task | That Resizer must be created in `src/resizer.ts` |
-| Worker stops with `RESIZE_WORKER_TRANSPORTS_DIFFER` | Resizers in one worker must share one transport instance |
 | Worker stops with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a registered model |
 | Tasks stay `pending` | Is a worker running for that queue (`--queue`), on the same database? |
-| Variants are missing but there are no tasks | `enqueueMissing`, the original's `storageRef`, the indexes, hooks and logs; `enqueueRequired()` reports the reason per variant |
+| Variants are missing but there are no tasks | `enqueueMissing`, the original's `storageRef`, the indexes, hooks and logs; `prewarm()` reports the reason per variant |
 | Tasks fail repeatedly | Original access, image limits, pipeline code and worker logs; `RESIZE_WORKER_INCOMPLETE` lists the missing variants |
 | `previews[]` has entries but the response is empty | The query projection (`resizeMediaPaths`), stale caches, or how you map `decision` |
 | A returned URL gives 404 or 403 | Static-file, CDN or bucket access; the module doesn't check whether the file exists |
