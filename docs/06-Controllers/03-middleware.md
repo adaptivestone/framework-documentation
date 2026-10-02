@@ -103,7 +103,7 @@ The framework has a few middlewares that you can use.
 
 Every user-facing message the built-in middleware return (the auth 401, both role rejections, the rate-limit 429 and the two request-parser failures) is emitted as an i18n key with its English text as the in-code default. They read as English out of the box; define the key in your own locale files to reword or translate one. The key table lives in [i18n › Middleware keys](../08-i18n.md#middleware-keys).
 
-Status codes and machine-readable fields are not affected — the auth 401 still carries `error: "AUTH001"` whatever `message` says.
+Status codes and machine-readable fields are not affected — the auth 401 still carries `error: "AUTH001"` whatever `message` says. Since 5.5 these responses are thrown errors, so you can also reshape them with an error handler: see [Error handling › Errors from middleware](./04-error-handling.md#errors-from-middleware).
 
 :::
 
@@ -606,6 +606,34 @@ export default CustomMiddleware;
 :::warning Deprecated: instance schema getters
 The non-static form — `get relatedQueryParameters()` / `get relatedRequestParameters()` (and `get relatedReqParameters()`) — is **deprecated and will be removed in v6**. It forces the framework to instantiate the middleware (running its constructor) just to read the schema, so use `static get` instead. The instance form still works through v5: when it's detected, the framework instantiates the middleware as a fallback and emits a one-per-class `DeprecationWarning` (`ASF_DEP_MW_INSTANCE_SCHEMA`).
 :::
+
+### Rejecting a request
+
+Instead of writing the response yourself, you can throw an [HTTP error](./04-error-handling.md#throwing-http-errors-from-your-code). It is answered through the error-handler registry, like an error from a route handler, so it gets the same response shape, translation and logging, and apps can reshape it:
+
+```js
+import { HttpError } from "@adaptivestone/framework/services/http/httpErrors.js";
+
+class RequireSubscription extends AbstractMiddleware {
+  static get description() {
+    return "Allows only users with an active subscription";
+  }
+
+  async middleware(req, res, next) {
+    if (!req.appInfo.user?.subscriptionActive) {
+      throw new HttpError(402, {
+        code: "SUB001",
+        i18nKey: "middleware.subscription.required",
+        message: "An active subscription is required",
+      });
+      // → 402 {"error": "SUB001", "message": "<translation, or the English message>"}
+    }
+    return next();
+  }
+}
+```
+
+This works since 5.5; before, any error thrown in a middleware became a 500.
 
 ### Translatable messages
 

@@ -1,6 +1,6 @@
 # Error handling
 
-What happens when a route handler throws? The framework resolves the error through an ordered **error-handler registry**:
+What happens when a route handler or a middleware throws? The framework resolves the error through an ordered **error-handler registry**:
 
 1. **Your registered handlers** — checked first, in registration order.
 2. **Built-ins** — the `HttpError` mapper, the Mongoose validation safety net, then the Mongoose cast safety net.
@@ -104,6 +104,21 @@ throw new ConflictError({
 - The English `message` is used as-is, never interpreted as i18next syntax, so it can safely include request data.
 - The details are readable on the error too: `err.code`, `err.i18nKey`, and `err.issues` for the field errors.
 
+### Response headers
+
+Add `headers` to the details object when the answer needs them, for example how long to wait before retrying:
+
+```js
+throw new HttpError(503, {
+  code: "MAINTENANCE",
+  message: "Back in a few minutes.",
+  headers: { "Retry-After": "120" },
+});
+// → 503 Retry-After: 120 {"error": "MAINTENANCE", "message": "Back in a few minutes."}
+```
+
+`headers` works with a custom `body` too.
+
 To keep throw sites short, wrap your own convention in a subclass:
 
 ```js
@@ -166,10 +181,10 @@ your test setup.
 
 The handler contract:
 
-- **Signature**: `(err, req) => { status, body } | null` — async is fine, the result is awaited.
+- **Signature**: `(err, req) => { status, body, headers? } | null` — async is fine, the result is awaited.
 - `err` is typed as an instance of the class you registered — `err.code` autocompletes, no casts.
 - `req` is the same request the route handler had — `req.appInfo.request`, `req.appInfo.i18n`, etc.
-- Return `{ status, body }` to produce the response (the framework sends it — handlers never touch `res`, so double-send protection and logging stay in one place).
+- Return `{ status, body }` to produce the response, with optional `headers` (the framework sends it — handlers never touch `res`, so double-send protection and logging stay in one place).
 - Return `null`/`undefined` to pass the error to the next entry.
 - `registerErrorHandler` returns an **unregister function** — handy in tests.
 - Third argument `{ logLevel }` controls how the handled error is logged (default `warn`):
@@ -240,6 +255,28 @@ What's available on `req`:
 | `req.method`, `req.path`, `req.headers`, … | Anything Express exposes | — |
 
 One design boundary to keep in mind: the handler decides the **response**; the framework does the sending and the logging. If you find a handler reaching for `res` or a logger, that logic probably belongs in the route handler's own `try/catch` instead.
+
+## Errors from middleware
+
+Since 5.5, an error thrown in a middleware goes through the same registry as an error from a route handler. Before, any middleware error became a 500. The built-in middleware throw coded errors:
+
+| Middleware | Error | Status | `error` |
+| --- | --- | --- | --- |
+| `Auth` | `UnauthorizedError` | 401 | `AUTH001` |
+| `Role`, no user | `UnauthorizedError` | 401 | `AUTH001` |
+| `Role`, no matching role | `ForbiddenError` | 403 | `NO_ACCESS` |
+| `RateLimiter` | `HttpError` (with `Retry-After`) | 429 | `TOO_MANY_REQUESTS` |
+
+So one handler can reshape the framework's answers along with your own. For example, every 401, including the one from `Auth`:
+
+```js
+app.httpServer.registerErrorHandler(UnauthorizedError, (err, req) => ({
+  status: 401,
+  body: { error: err.code ?? "UNAUTHORIZED", message: err.message, loginUrl: "/login" },
+}));
+```
+
+Your own middleware can reject the same way; see [Middleware › Rejecting a request](./03-middleware.md#rejecting-a-request).
 
 ## Matching order
 
