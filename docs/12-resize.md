@@ -77,10 +77,10 @@ Keep Mongoose's `minimize: false`, which is the `BaseModel` default, because sto
 ```ts
 // src/config/resize.ts
 import type { FrameworkResizeConfig } from '@adaptivestone/framework-module-resize/framework.js';
-import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/resize.js';
+import { defaultFrameworkResizeConfig } from '@adaptivestone/framework-module-resize/config/resize.js';
 
 export default {
-  ...defaultResizeConfig,
+  ...defaultFrameworkResizeConfig,
   mediaModelName: 'File', // your media model
 } satisfies FrameworkResizeConfig;
 ```
@@ -260,7 +260,7 @@ for (const file of files) {
    });
    ```
 
-3. Allow the worker to run by setting `worker: { ...defaultResizeConfig.worker, enabled: true }` in `src/config/resize.ts`. This only permits the worker command; the API never starts a worker.
+3. Allow the worker to run by setting `worker: { ...defaultFrameworkResizeConfig.worker, enabled: true }` in `src/config/resize.ts`. This only permits the worker command; the API never starts a worker.
 
 4. Create the indexes. `ResizeTask` and the framework's `Lock` model declare their indexes. Create them through your normal migration or deployment process before you deploy the API and the worker. The module never creates indexes at runtime. Mongo's duplicate detection depends on the partial unique index on active tasks.
 
@@ -510,7 +510,7 @@ const resizer = new Resizer({
 await runWorker({ signal: shutdown.signal, queue: 'default' });
 ```
 
-- `createResizeModels(connection)` registers `ResizeTask` (the queue) and `ResizeLock` with the package's schemas and indexes. Create the indexes through your migration process.
+- `createResizeModels(connection)` registers `ResizeTask` (the queue) and `ResizeLock` with the package's schemas and indexes, and turns `autoIndex` off: create the indexes through your migration process (for example `ResizeTask.createIndexes()`).
 - `config` is optional and holds image settings only. Queue timing (`leaseMs`, `lockTtlMs`, `maxAttempts`, …) is a `MongoTransport` option, and Sharp tuning is `runWorker({ sharp: { concurrency, cache } })`.
 - The framework adapter (`…/framework.js`) does exactly this wiring for you.
 
@@ -535,8 +535,8 @@ To change one encoder setting, spread the nested defaults:
 
 ```ts
 encode: {
-  ...defaultResizeConfig.encode,
-  formats: { ...defaultResizeConfig.encode.formats, avif: { quality: 55, effort: 4 } },
+  ...defaultFrameworkResizeConfig.encode,
+  formats: { ...defaultFrameworkResizeConfig.encode.formats, avif: { quality: 55, effort: 4 } },
 },
 ```
 
@@ -556,7 +556,7 @@ The [full config reference](https://github.com/adaptivestone/framework-module-re
 | Error | Meaning | What to do |
 |---|---|---|
 | `ResizeSetupError` | The wiring is wrong, e.g. a duplicate Resizer name | Fix the code |
-| `ResizeConfigError` | The config is invalid or incomplete | Fix the config; it fails at startup |
+| `ResizeConfigError` | The config is invalid or incomplete | Fix the config; `resizer.verify()` reports it at startup |
 | `ResizeOriginalError` | Uploaded bytes are invalid, unsupported or too large | Reject the upload |
 | `ResizeNoOriginalError` | The media has no original | Upload the original first |
 | `ResizeMediaError` | The media can't be used; the two errors above extend it | Skip that media |
