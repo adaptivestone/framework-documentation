@@ -18,7 +18,7 @@ Out of the box, the framework supports environment variables with [process.loadE
 
 The framework will grab and parse the .env file in the root of the project directory to fill environment variables.
 
-The sample project ships with a basic .env.example file.
+The sample project ships with a basic .env.example file. On a fresh clone, `npm run cli createEnv` copies it to `.env` and fills in a new `AUTH_SALT` (see [CLI › Create .env](10-cli.md#create-env)).
 
 :::tip
 
