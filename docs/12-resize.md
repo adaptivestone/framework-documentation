@@ -29,8 +29,7 @@ flowchart TB
 | You want… | Call | The call waits for… | It returns |
 |---|---|---|---|
 | Previews ready when the upload request finishes | `generate()`: **eager** | resizing, upload and saving | `{ created, failed }` |
-| A fast upload, with previews made in the background | `prewarm()`: **pre-warm** | queueing only | `{ enqueued }` |
-| The same, with confirmation for every variant | `enqueueRequired()`: **strict pre-warm** | queueing and confirmation | `{ status, … }` |
+| A fast upload, with previews made in the background | `prewarm()`: **pre-warm** | queueing and its confirmation | `{ status, … }` per variant |
 | Previews only for the sizes readers actually request | `resolve()` with a queue: **lazy** | queueing of the missing variants | `{ decision, output }` |
 
 Every workflow reads URLs with `resolve()` and writes the same `previews[]`. You can mix them, for example pre-warm thumbnails and let detail sizes generate lazily. You can also switch later without migrating data. Start with eager, and add the [queue](#background) when uploads must stay fast.
@@ -288,7 +287,7 @@ export default class ResizeWorker extends ModuleResizeWorker {
 
 Keep that import if you edit the command; `resize-scaffold --check` reports a command without it. The API and the worker must use the same database and the same storage. With `LocalFsStorage` that means the same filesystem; for workers on other machines, use S3 or other shared storage.
 
-### Lazy, pre-warm and strict pre-warm
+### Lazy and pre-warm
 
 <div className="resize-diagram resize-diagram--sequence" role="region" aria-label="Lazy and pre-warm calls do not wait for background generation" tabIndex={0}>
 
@@ -307,7 +306,7 @@ sequenceDiagram
   else Pre-warm: an upload was saved
     App->>Resizer: prewarm()
     Resizer->>Queue: Enqueue missing WebP
-    Resizer-->>App: enqueued: 1
+    Resizer-->>App: status: accepted
   end
   Queue->>Worker: Task
   Worker->>Worker: Resize, upload, append previews[]
@@ -321,23 +320,7 @@ sequenceDiagram
 **Lazy** needs no extra code: `resolve()` queues whatever is missing. **Pre-warm** queues the catalog right after the upload is saved, so the worker usually finishes before the first reader arrives:
 
 ```ts
-const { enqueued } = await getResizer().prewarm({
-  media: fileDoc,
-  sizes: thumbnailSizes,
-  formats: previewFormats,
-});
-```
-
-`enqueued` is the number of variants this call handed to the queue; all variants for one media go into one task. `prewarm()` never throws. A result of `0` can mean several things:
-- every preview already exists;
-- another request is queueing the same variants;
-- there is no original or no transport;
-- a failure happened, which is logged.
-
-When the upload must know that every variant is queued, use `enqueueRequired()` with the same options:
-
-```ts
-const result = await getResizer().enqueueRequired({
+const result = await getResizer().prewarm({
   media: fileDoc,
   sizes: thumbnailSizes,
   formats: previewFormats,
@@ -348,6 +331,8 @@ if (result.status === 'incomplete') {
 }
 ```
 
+`prewarm()` never throws, and it reports every requested variant. All variants for one media go into one task.
+
 | `status` | Meaning |
 |---|---|
 | `'ready'` | Nothing needs queueing, and at least one requested variant is already stored |
@@ -355,7 +340,7 @@ if (result.status === 'incomplete') {
 | `'not-required'` | Nothing to do: the request was empty, or the `beforeEnqueue` hook removed everything |
 | `'incomplete'` | At least one variant has no confirmed task, for example because there is no transport or no original |
 
-Sometimes another request is queueing the same variant at the same moment. With Mongo, `enqueueRequired()` confirms that variant by finding the other request's active task. SQS cannot look tasks up, so such a variant comes back `incomplete` and retryable. Unlike `prewarm()`, `enqueueRequired()` can throw, for example for a media document without an ID.
+The arrays `ready`, `accepted`, `notRequired` and `unconfirmed` split the requested catalog, and `result.tasks` holds the task receipts. Sometimes another request is queueing the same variant at the same moment. With Mongo, `prewarm()` confirms that variant by finding the other request's active task. SQS cannot look tasks up, so such a variant comes back `incomplete` and retryable. An unexpected error, for example a media document without an ID, is `incomplete` with a `RESIZE_ENQUEUE_INTERNAL_ERROR` issue.
 
 ### Queues and workers {/* #named-queues */}
 
@@ -364,7 +349,7 @@ Every task waits in a named queue. When you don't name one, it is `'default'`.
 | You want… | How |
 |---|---|
 | A Resizer's tasks on another queue | `createFrameworkResizer({ …, queue: 'bulk' })` |
-| One call's tasks on another queue | `prewarm({ …, queue: 'bulk' })`; `resolve()` and `enqueueRequired()` also accept `queue` |
+| One call's tasks on another queue | `prewarm({ …, queue: 'bulk' })`; `resolve()` also accepts `queue` |
 | A worker for `'default'` | `npm run cli ResizeWorker` |
 | A worker for another queue | `npm run cli ResizeWorker -- --queue=bulk` |
 
@@ -432,8 +417,8 @@ await getResizer().resolve({
 
 | Hook | Runs | Returns |
 |---|---|---|
-| `resolveSizes` | `generate()`, `prewarm()`, `enqueueRequired()`, `resolve()` | The sizes to use |
-| `beforeEnqueue` | `prewarm()`, `enqueueRequired()`, `resolve()`, before queueing | The missing variants to keep |
+| `resolveSizes` | `generate()`, `prewarm()`, `resolve()` | The sizes to use |
+| `beforeEnqueue` | `prewarm()` and `resolve()`, before queueing | The missing variants to keep |
 | `formatPublicUrls` | `resolve()` | The value returned as `output` |
 | `onPreviewGenerated` | After each new preview is saved | Nothing |
 | `afterTaskComplete` | After a queued task stored every variant | Nothing |
@@ -572,7 +557,7 @@ The [full config reference](https://github.com/adaptivestone/framework-module-re
 
 ## Errors
 
-`resolve()` and `prewarm()` never throw: they log the failure and return a safe result. Every other error from the module extends `ResizeError` and carries a stable `code`:
+`resolve()` and `prewarm()` never throw: they log the failure and return a safe result (`prewarm()` reports it as an issue). Every other error from the module extends `ResizeError` and carries a stable `code`:
 
 | Error | Meaning | What to do |
 |---|---|---|
@@ -614,7 +599,7 @@ If two copies of the package are installed, `instanceof` can fail across them. `
 | Worker stops with `RESIZE_WORKER_TRANSPORTS_DIFFER` | Resizers in one worker must share one transport instance |
 | Worker stops with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a registered model |
 | Tasks stay `pending` | Is a worker running for that queue (`--queue`), on the same database? |
-| Variants are missing but there are no tasks | `enqueueMissing`, the original's `storageRef`, the indexes, hooks and logs; `enqueueRequired()` reports the reason per variant |
+| Variants are missing but there are no tasks | `enqueueMissing`, the original's `storageRef`, the indexes, hooks and logs; `prewarm()` reports the reason per variant |
 | Tasks fail repeatedly | Original access, image limits, pipeline code and worker logs; `RESIZE_WORKER_INCOMPLETE` lists the missing variants |
 | `previews[]` has entries but the response is empty | The query projection (`resizeMediaPaths`), stale caches, or how you map `decision` |
 | A returned URL gives 404 or 403 | Static-file, CDN or bucket access; the module doesn't check whether the file exists |
