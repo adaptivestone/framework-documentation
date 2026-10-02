@@ -4,7 +4,7 @@ What happens when a route handler throws? The framework resolves the error throu
 
 1. **Your registered handlers** — checked first, in registration order.
 2. **Built-ins** — the `HttpError` mapper, the Mongoose validation safety net, then the Mongoose cast safety net.
-3. **Fallback** — nothing matched: the error is logged at `error` level and the client gets `500 {"message": "Platform error. Please check later or contact support"}`.
+3. **Fallback** — nothing matched: the error is logged at `error` level and the client gets `500 {"message": "Something went wrong. Please try again later."}`. Every framework 500 uses this one text, translatable through the `http.serverError` key.
 
 The first entry whose error class matches (`instanceof`) and whose handler returns a response wins. That gives you two tools: **throw** typed HTTP errors from your own code, and **register** handlers for error types you don't own.
 
