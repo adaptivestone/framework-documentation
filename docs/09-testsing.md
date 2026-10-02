@@ -201,6 +201,91 @@ Native global setup, whole-module mocks, and test coverage remain experimental
 Node.js test-runner surfaces. Pin the test runtime in CI rather than following
 an unbounded `latest` release.
 
+## Running tests with Bun
+
+Bun 1.4.0 or newer runs the same test files and the same preload. Bun
+implements the `node:test` API, but not Node's test-runner command line, so
+the run is configured with different flags:
+
+| Node.js | Bun |
+| --- | --- |
+| `node --test` | `bun test` |
+| `--import=./src/tests/setupNodeTest.ts` | `--preload ./src/tests/setupNodeTest.ts` (the same file) |
+| One process per test file | `--isolate`: a fresh module registry per file, so each file boots its own server as under Node |
+| `--test-timeout=10000` | `--timeout=10000` |
+| `--test-global-setup=./src/tests/globalSetupNodeTest.ts` | No equivalent: start MongoDB yourself and pass `TEST_MONGO_URI` |
+
+`TEST_MONGO_URI` must contain the placeholder `__DB_TO_REPLACE__`; each test
+file replaces it with its own database name. This script starts an in-memory
+replica set unless `TEST_MONGO_URI` is already set (for example, by CI or Docker
+Compose):
+
+```bash title="scripts/bun-test.sh"
+#!/usr/bin/env bash
+# Run the test suite with Bun. Bun has no global-setup hook, so this script
+# starts MongoDB itself unless TEST_MONGO_URI is already set.
+set -euo pipefail
+
+if [ -z "${TEST_MONGO_URI:-}" ]; then
+  URI_FILE="$(mktemp)"
+  MONGO_URI_FILE="$URI_FILE" bun -e '
+    import { writeFileSync } from "node:fs";
+    import { MongoMemoryReplSet } from "mongodb-memory-server";
+    const rs = await MongoMemoryReplSet.create({
+      replSet: { count: 1, storageEngine: "wiredTiger" },
+    });
+    await rs.waitUntilRunning();
+    writeFileSync(process.env.MONGO_URI_FILE, rs.getUri("__DB_TO_REPLACE__"));
+    process.on("SIGTERM", async () => { await rs.stop(); process.exit(0); });
+    setInterval(() => {}, 1 << 30);
+  ' &
+  MONGO_PID=$!
+  trap 'kill "$MONGO_PID" 2>/dev/null || true; rm -f "$URI_FILE"' EXIT
+  for _ in $(seq 1 120); do
+    [ -s "$URI_FILE" ] && break
+    kill -0 "$MONGO_PID" 2>/dev/null || { echo "MongoDB failed to start" >&2; exit 1; }
+    sleep 1
+  done
+  [ -s "$URI_FILE" ] || { echo "Timed out waiting for MongoDB" >&2; exit 1; }
+  export TEST_MONGO_URI="$(cat "$URI_FILE")"
+fi
+
+bun test --isolate --timeout=10000 --preload ./src/tests/setupNodeTest.ts "${@:-src/}"
+```
+
+```json title="package.json"
+{
+  "scripts": {
+    "test:bun": "bash ./scripts/bun-test.sh"
+  }
+}
+```
+
+Arguments are passed through, so `npm run test:bun -- src/controllers/Auth.test.ts`
+runs one file.
+
+### What works and what differs
+
+- **Server readiness needs no extra code.** The preload's hooks finish before
+  the first test runs, as under Node, so the first test can call the server
+  right away. Do not add a top-level `await` to a preload: it delays the rest
+  of that preload, and a `configureTestServer()` call placed after it arrives
+  once the server has already booted, which throws.
+- **`mock.module()` is not available.** Bun does not implement Node's
+  `--experimental-test-module-mocks` ([oven-sh/bun#5090](https://github.com/oven-sh/bun/issues/5090)),
+  so files that mock whole modules fail. Keep them on the Node run and exclude
+  them from Bun with `--path-ignore-patterns='**/name.test.ts'`.
+- **Compare Mongoose arrays as plain arrays.** Bun 1.4 reports a `Proxy`,
+  which is what a Mongoose array is, as unequal in `assert.deepStrictEqual`.
+  Spread it first: `assert.deepStrictEqual([...doc.tags], ['a', 'b'])`.
+- **Keep coverage on the Node run.** Node's `--experimental-test-coverage` and
+  threshold flags do not apply to `bun test`; Bun's own coverage uses
+  different flags.
+
+The framework runs its own suite this way on Bun 1.4.0 and the latest Bun in
+CI. Node remains the primary runtime, so keep `npm test` as the main CI gate
+and add the Bun run alongside it.
+
 ## Writing a Node.js test
 
 Use `node:test` with the standard strict assertion module:
