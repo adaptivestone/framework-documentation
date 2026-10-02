@@ -50,11 +50,45 @@ Available classes (all from `services/http/httpErrors.js`):
 | `ConflictError` | 409 | `Conflict` |
 | `HttpError` | any | — (base class) |
 
-Every constructor accepts `(message, body?)`. The response body is `{ message }` unless you pass an explicit `body`, which replaces it:
+Every constructor accepts `(message, body?)`, or a details object in place of the message (see [Error codes and translated messages](#error-codes-and-translated-messages)). The response body is `{ message }` unless you pass an explicit `body`, which replaces it:
 
 ```js
 throw new HttpError(422, "Unprocessable", { errors: { csv: "row 17 malformed" } });
 // → 422 {"errors": {"csv": "row 17 malformed"}}
+```
+
+### Error codes and translated messages
+
+Instead of the message, pass a details object. `code` is a machine-readable code the client can branch on; `i18nKey` names the translation of the message and is never sent to the client:
+
+```js
+throw new ConflictError({
+  code: "ALREADY_CONFIRMED",
+  i18nKey: "accounts.errors.alreadyConfirmed",
+  message: "This account is already confirmed.",
+});
+// → 409 {"error": "ALREADY_CONFIRMED", "message": "<translation, or the English message>"}
+```
+
+- `message` is required: it is the English fallback when the request's language has no `i18nKey` translation (or i18n is off), and the text that appears in logs.
+- `code` and `i18nKey` are optional and independent. Without `code` the body is `{ message }`; without `i18nKey` the message is never translated.
+- The English `message` is used as-is, never interpreted as i18next syntax, so it can safely include request data.
+- An explicit `body` still replaces the whole response body.
+
+To keep throw sites short, wrap your own convention in a subclass:
+
+```js
+import { BadRequestError } from "@adaptivestone/framework/services/http/httpErrors.js";
+
+const EN = { LOGIN_CODE_EXPIRED: "This code has expired. Request a new one." };
+
+export class AccountsError extends BadRequestError {
+  constructor(code) {
+    super({ code, i18nKey: `accounts.errors.${code}`, message: EN[code] });
+  }
+}
+
+throw new AccountsError("LOGIN_CODE_EXPIRED");
 ```
 
 For a status you use often, subclass once and throw everywhere:
