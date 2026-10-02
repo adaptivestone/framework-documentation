@@ -93,7 +93,7 @@ Always spread the defaults. The module validates the complete object and throws 
 ```ts
 // src/resizer.ts
 import { createFrameworkResizer } from '@adaptivestone/framework-module-resize/framework.js';
-import { LocalFsStorage } from '@adaptivestone/framework-module-resize/storage/fs.js';
+import { LocalFsStorage } from '@adaptivestone/framework-module-resize/drivers/fs.js';
 
 export const resizer = createFrameworkResizer({
   storage: new LocalFsStorage({ rootDir: './var/media', publicBaseUrl: '/media' }),
@@ -254,7 +254,7 @@ for (const file of files) {
      createFrameworkMongoTransport,
      createFrameworkResizer,
    } from '@adaptivestone/framework-module-resize/framework.js';
-   import { LocalFsStorage } from '@adaptivestone/framework-module-resize/storage/fs.js';
+   import { LocalFsStorage } from '@adaptivestone/framework-module-resize/drivers/fs.js';
 
    export const resizer = createFrameworkResizer({
      transport: createFrameworkMongoTransport(), // tasks in MongoDB; timing from config.queue
@@ -446,15 +446,17 @@ Hook functions run in the order they were registered, and each one is awaited. A
 
 | Option | Shipped drivers | Import from |
 |---|---|---|
-| `storage` (required) | `LocalFsStorage`, `S3Storage` | `…/storage/fs.js`, `…/storage/s3.js` |
-| `transport` (queue only) | Mongo via `createFrameworkMongoTransport()`, `SqsTransport` | `…/framework.js`, `…/transports/sqs.js` |
-| `mediaStore` | `FrameworkMediaStore`, added by `createFrameworkResizer` | `…/mediaStore/framework.js` |
-| `lockProvider` | `FrameworkLockProvider`, added when there is a transport | `…/locks/framework.js` |
+| `storage` (required) | `LocalFsStorage`, `S3Storage` | `…/drivers/fs.js`, `…/drivers/s3.js` |
+| `transport` (queue only) | Mongo via `createFrameworkMongoTransport()`, `SqsTransport` | `…/framework.js`, `…/drivers/sqs.js` |
+| `mediaStore` | `FrameworkMediaStore`, added by `createFrameworkResizer` | `…/framework.js` |
+| `lockProvider` | `FrameworkLockStore` (the framework's `Lock` model), added when there is a transport | `…/framework.js` |
+
+The framework drivers are thin wrappers over framework-free ones in `…/drivers/mongo.js`: `FrameworkMediaStore` is `MongoMediaStore` with the model taken from the app.
 
 **S3** needs `npm i @aws-sdk/client-s3 @aws-sdk/s3-request-presigner`:
 
 ```ts
-import { S3Storage } from '@adaptivestone/framework-module-resize/storage/s3.js';
+import { S3Storage } from '@adaptivestone/framework-module-resize/drivers/s3.js';
 
 const storage = new S3Storage({
   bucketPublic: 'my-cdn',        // previews
@@ -470,7 +472,7 @@ You create the buckets and their access policies; `publicBaseUrl` only builds UR
 
 ```ts
 import { appLogger } from '@adaptivestone/framework-module-resize/framework.js';
-import { SqsTransport } from '@adaptivestone/framework-module-resize/transports/sqs.js';
+import { SqsTransport } from '@adaptivestone/framework-module-resize/drivers/sqs.js';
 
 const transport = new SqsTransport({
   queueUrl: 'https://sqs.eu-west-1.amazonaws.com/123456789012/resize',              // queue 'default'
@@ -482,7 +484,7 @@ const transport = new SqsTransport({
 
 SQS needs no `ResizeTask` model. Retries and dead-lettering come from the queue's redrive policy: set `maxReceiveCount` to `queue.maxAttempts`. `onTaskDeadLettered` does not fire for SQS.
 
-You can replace any driver with an object or class that implements the exported contract type: `ResizeStorage`, `QueueTransport`, `MediaStore` or `LockProvider`. Drivers receive no `app` argument; each one uses its own clients. The [package reference](https://github.com/adaptivestone/framework-module-resize#drivers) lists every option and contract.
+Every kind of driver has an exported abstract class: `ResizeStorage`, `MediaStore`, `QueueTransport` and `LockStore`. A custom driver extends one (for example `class PostgresMediaStore extends MediaStore`), or is any object of the same shape. Drivers receive no `app` argument; each one uses its own clients. The [package reference](https://github.com/adaptivestone/framework-module-resize#drivers) lists every option and contract.
 
 ## Originals, SVG and private access
 
@@ -502,27 +504,32 @@ Previews are public. Store originals privately (`visibility: 'private'`). Your a
 
 ## Without the framework
 
-The package's main entry contains no framework code, so it also runs in a plain Node app. Create every part yourself:
+The core and the shipped drivers contain no framework code, and the framework is an optional peer dependency. A plain Node app with MongoDB uses the Mongo drivers and writes no driver code:
 
 ```ts
+import mongoose from 'mongoose';
 import { Resizer, runWorker } from '@adaptivestone/framework-module-resize';
 import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/resize.js';
-import { MongoTransport } from '@adaptivestone/framework-module-resize/transports/mongo.js';
+import { LocalFsStorage } from '@adaptivestone/framework-module-resize/drivers/fs.js';
+import {
+  createResizeModels, MongoLockStore, MongoMediaStore, MongoTransport,
+} from '@adaptivestone/framework-module-resize/drivers/mongo.js';
+
+const { ResizeTask, ResizeLock } = createResizeModels(mongoose.connection);
 
 const resizer = new Resizer({
   config: { ...defaultResizeConfig, formats: ['webp'] },
-  logger: console,
-  storage,       // a shipped or custom storage driver
-  mediaStore,    // { load(id), appendPreviews(id, previews) } over your database
+  storage: new LocalFsStorage({ rootDir: './var/media', publicBaseUrl: '/media' }),
+  mediaStore: new MongoMediaStore({ model: File }), // File spreads resizeMediaSchemaFragment
   transport: new MongoTransport({ model: ResizeTask }), // optional: queued workflows only
-  lockProvider,  // { acquire(key, ttlMs), release(key) }; required with a transport
+  lockProvider: new MongoLockStore({ model: ResizeLock }), // required with a transport
 });
 
 // In the worker process:
 await runWorker({ signal: shutdown.signal, queue: 'default' });
 ```
 
-- `ResizeTask` is your own Mongoose model. It needs the fields and indexes of the package's `models/ResizeTask.js`.
+- `createResizeModels(connection)` registers `ResizeTask` (the queue) and `ResizeLock` with the package's schemas and indexes. Create the indexes through your migration process.
 - The `worker.*` config keys are read only by the framework's worker command. Pass Sharp tuning to `runWorker({ sharp: { concurrency, cache } })` instead.
 - The framework adapter (`…/framework.js`) does exactly this wiring for you.
 
