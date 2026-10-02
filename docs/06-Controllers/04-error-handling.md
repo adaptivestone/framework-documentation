@@ -68,8 +68,22 @@ throw new HttpError(422, {
 
 `errors` takes a string or an array per field, or validation issues (`[{ message, path, params }]`). A message that is an i18n key (for example `accounts.errors.csvRow`) is translated the same way validation messages are; free text is sent as-is. An empty `errors` object is left out.
 
+### A fully custom response body
+
+When a response genuinely needs a different shape, say so explicitly with `body`. It **is** the response: sent as-is, with no `error`, `message` or `errors` added. `message` is still required and only goes to the log:
+
+```js
+throw new ConflictError({
+  message: "Task already exists",
+  body: { existingId: task.id },
+});
+// → 409 {"existingId": "..."}
+```
+
+`body` opts this response out of the contract, so clients get no guaranteed `message` or `errors` from it. It cannot be combined with `code`, `i18nKey` or `errors`: TypeScript rejects the combination, and at runtime `body` wins and a one-time `ASF_HTTP_ERROR_BODY_MIXED` warning names the ignored fields. Prefer the contract whenever it fits.
+
 :::warning Deprecated: `body` as a separate argument
-The older form `new HttpError(422, "Unprocessable", body)` (and `new NotFoundError(message, body)`) still works but is **deprecated and will be removed in v6**: a free-form body breaks the contract above. It logs a one-time `DeprecationWarning` per error class (`ASF_DEP_HTTP_ERROR_BODY`). Put field errors in `errors`; if you truly need a different shape, [register an error handler](#mapping-errors-you-dont-own). A plain message string such as `new NotFoundError("Post not found")` is not deprecated.
+The older form `new HttpError(422, "Unprocessable", body)` (and `new NotFoundError(message, body)`) still works but is **deprecated and will be removed in v6**. It logs a one-time `DeprecationWarning` per error class (`ASF_DEP_HTTP_ERROR_BODY`). Use the details object instead: `{ message, errors }` for field errors, or `{ message, body }` for a custom body. A plain message string such as `new NotFoundError("Post not found")` is not deprecated.
 :::
 
 ### Error codes and translated messages
