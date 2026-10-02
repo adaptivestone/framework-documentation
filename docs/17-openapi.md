@@ -35,7 +35,7 @@ Everything comes from the route definitions you already have — there is nothin
 | path `parameters` | `:name` path segments; typed by the route [`params:`](06-Controllers/02-routes.md#params) schema when declared, otherwise `string` |
 | query `parameters` | route [`query:`](06-Controllers/02-routes.md#query) schema (+ middleware query schemas) |
 | `requestBody` | route [`request:`](06-Controllers/02-routes.md#request) schema or [content-type map](06-Controllers/02-routes.md#different-schemas-per-content-type) (+ middleware request schemas) |
-| `security` | middleware [`static get usedAuthParameters()`](#documenting-auth-security-schemes) |
+| `security` | middleware [`static get usedAuthParameters()`](#documenting-auth-security-schemes) (schemes) and `static get requiresAuth()` (required vs optional) |
 | `info` / `servers` | your `package.json` + the `http` config (`port`, `myDomain`) |
 
 Output is **OpenAPI 3.1** (JSON Schema 2020-12) only.
@@ -88,7 +88,7 @@ This is why the generator must load your controllers at runtime rather than read
 
 ## Documenting auth (security schemes)
 
-A middleware advertises the security scheme(s) it enforces with a `static get usedAuthParameters()` getter. The generator reads it **off the class — no instantiation** — adds each entry to `components.securitySchemes`, and attaches a `security` requirement to every operation whose middleware chain includes that middleware.
+A middleware advertises the security scheme(s) it reads credentials from with a `static get usedAuthParameters()` getter. The generator reads it **off the class — no instantiation** — adds each entry to `components.securitySchemes`, and attaches a `security` entry to every operation whose middleware chain includes that middleware.
 
 ```ts
 import AbstractMiddleware from "@adaptivestone/framework/services/http/middleware/AbstractMiddleware.js";
@@ -117,7 +117,22 @@ class TokenAuth extends AbstractMiddleware {
 | `scheme` | for `http`: `'bearer'`, `'basic'`, … |
 | `description` | shown in the docs UI |
 
-The built-in [`GetUserByToken`](06-Controllers/03-middleware.md) already declares its `Authorization` header + bearer schemes, so any route behind it is documented as secured automatically.
+### Required or optional
+
+Reading a token is not the same as requiring one. A middleware that **rejects** requests without an authenticated user says so with `static get requiresAuth()`:
+
+```ts
+class TokenAuth extends AbstractMiddleware {
+  static get requiresAuth() {
+    return true; // this middleware answers 401 without a user
+  }
+}
+```
+
+- If **any** middleware in a route's chain has `requiresAuth`, the operation's security is **required**: `security: [{ bearerAuth: [] }, …]`.
+- If the chain only **reads** credentials, the security is **optional**: `security: [{}, { bearerAuth: [] }, …]`. The empty `{}` tells clients an anonymous request is valid too, so generated clients send a token when they have one but don't require it.
+
+The built-in [`GetUserByToken`](06-Controllers/03-middleware.md) declares the `Authorization` header and bearer schemes and only reads the token, so on its own it documents auth as optional (for example, a public login route). The built-in `Auth` and `Role` middleware have `requiresAuth`, so routes behind them are documented as requiring a token.
 
 ## Current limitations
 
