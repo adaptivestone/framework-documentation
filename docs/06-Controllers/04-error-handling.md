@@ -50,12 +50,27 @@ Available classes (all from `services/http/httpErrors.js`):
 | `ConflictError` | 409 | `Conflict` |
 | `HttpError` | any | — (base class) |
 
-Every constructor accepts `(message, body?)`, or a details object in place of the message (see [Error codes and translated messages](#error-codes-and-translated-messages)). The response body is `{ message }` unless you pass an explicit `body`, which replaces it:
+Every constructor accepts a message string, or a details object in place of it (see [Error codes and translated messages](#error-codes-and-translated-messages)). Every framework error response follows one contract, so clients can rely on it:
+
+```ts
+{ error?: string; message: string; errors?: { [field: string]: string[] } }
+```
+
+`error` is a machine-readable code, `message` the human text, and `errors` the field errors: always an array per field, exactly as [request validation](02-routes.md#validation) answers. Field errors go in `errors`:
 
 ```js
-throw new HttpError(422, "Unprocessable", { errors: { csv: "row 17 malformed" } });
-// → 422 {"errors": {"csv": "row 17 malformed"}}
+throw new HttpError(422, {
+  message: "Unprocessable",
+  errors: { csv: "row 17 malformed" },
+});
+// → 422 {"message": "Unprocessable", "errors": {"csv": ["row 17 malformed"]}}
 ```
+
+`errors` takes a string or an array per field, or validation issues (`[{ message, path, params }]`). A message that is an i18n key (for example `accounts.errors.csvRow`) is translated the same way validation messages are; free text is sent as-is. An empty `errors` object is left out.
+
+:::warning Deprecated: `body` as a separate argument
+The older form `new HttpError(422, "Unprocessable", body)` (and `new NotFoundError(message, body)`) still works but is **deprecated and will be removed in v6**: a free-form body breaks the contract above. It logs a one-time `DeprecationWarning` per error class (`ASF_DEP_HTTP_ERROR_BODY`). Put field errors in `errors`; if you truly need a different shape, [register an error handler](#mapping-errors-you-dont-own). A plain message string such as `new NotFoundError("Post not found")` is not deprecated.
+:::
 
 ### Error codes and translated messages
 
@@ -71,9 +86,9 @@ throw new ConflictError({
 ```
 
 - `message` is required: it is the English fallback when the request's language has no `i18nKey` translation (or i18n is off), and the text that appears in logs.
-- `code` and `i18nKey` are optional and independent. Without `code` the body is `{ message }`; without `i18nKey` the message is never translated.
+- `code`, `i18nKey` and `errors` are optional and independent. Without `code` there is no `error` field; without `i18nKey` the message is never translated.
 - The English `message` is used as-is, never interpreted as i18next syntax, so it can safely include request data.
-- An explicit `body` still replaces the whole response body.
+- The details are readable on the error too: `err.code`, `err.i18nKey`, and `err.issues` for the field errors.
 
 To keep throw sites short, wrap your own convention in a subclass:
 
@@ -226,7 +241,7 @@ The recommended practice is to mirror model constraints in your route schema —
 
 But when a constraint slips through, `doc.save()` throws a Mongoose `ValidationError`, and a built-in registry entry catches it:
 
-- If **every** failing model path is a field the client actually sent (a key of the validated `request:`/`query:` input), the client gets `400 {"errors": {"name": "..."}}` — same shape as route validation errors — and the framework logs a `warn`: your route schema is missing a constraint worth mirroring.
+- If **every** failing model path is a field the client actually sent (a key of the validated `request:`/`query:` input), the client gets `400 {"message": "Validation failed", "errors": {"name": ["..."]}}` — the same shape as route validation errors — and the framework logs a `warn`: your route schema is missing a constraint worth mirroring.
 - If **any** failing path is internal or renamed (the client sent `name`, the model field is `userName`), it stays an honest **500**. Model field names are never leaked to the client, and a server-side data bug is never blamed on the client.
 
 Each message is **rebuilt from the validation kind and the schema constraint** — `maxlength` → `"Must be at most 255 characters"`, a `Number` cast failure → `"Must be a number"`, `enum` → `"Must be one of: …"` — and **never includes the value the client submitted**. Mongoose's own default messages interpolate that value (a phone number, a password pasted into the wrong field), which would otherwise leak it into the response and the log. For the same reason a *custom* message set on the model (`maxLength: [50, 'Name too long']`) is **not** passed through — it's rebuilt generically, since a custom string can't be told apart from a templated default that embedded the value. The `warn` log line for a handled error is sanitized the same way; a failure that stays a 500 logs the original error in full. These fallback messages are plain English and not translated; put user-facing, i18n wording on the route schema.
@@ -251,7 +266,7 @@ async getPerson(req, res) {
 
 `GET /person/abc` cannot be cast to an ObjectId, so Mongoose throws a `CastError`. A `CastError` is **not** a `ValidationError` — they are siblings — so the validation safety net above structurally cannot see it. A built-in entry handles it separately:
 
-- If the rejected value is one the **client actually supplied** — matched by value against the path params and the validated `request:`/`query:` input — the client gets `400 {"errors": {"id": "Must be a valid id"}}`, keyed by the public input name, logged at `warn`.
+- If the rejected value is one the **client actually supplied** — matched by value against the path params and the validated `request:`/`query:` input — the client gets `400 {"message": "Validation failed", "errors": {"id": ["Must be a valid id"]}}`, keyed by the public input name, logged at `warn`.
 - If the value was **computed server-side**, nothing matches and it stays an honest **500** at `error` level. A bug in your own code is never blamed on the caller.
 
 The message is rebuilt from the cast *kind* (`Must be a valid id`, `Must be a number`, `Must be a valid date`), so neither the rejected value nor the internal model path (`_id`) reaches the response — and the `warn` log line is sanitized the same way.

@@ -176,7 +176,7 @@ get: {
 A failure is a **400** with the framework's usual error shape, returned before your handler runs:
 
 ```json
-{ "errors": { "id": ["must be a valid id"] } }
+{ "message": "Validation failed", "errors": { "id": ["must be a valid id"] } }
 ```
 
 The validated, coerced values are available as `req.appInfo.params`. Because coercion comes from the validator, a numeric or date param arrives already converted:
@@ -714,10 +714,11 @@ Drivers are matched in registration order; user-registered drivers take priority
 
 ### ValidationError
 
-When validation fails, the framework throws a `ValidationError`. The instance's `.message` is the path-keyed payload object that ships out via `res.json({ errors: err.message })`, producing:
+When validation fails, the framework throws a `ValidationError`. The instance's `.message` is the path-keyed payload object, sent as the `errors` of the response:
 
 ```json
 {
+  "message": "Validation failed",
   "errors": {
     "fieldName": ["error description"],
     "anotherField": ["another field error"]
@@ -727,7 +728,7 @@ When validation fails, the framework throws a `ValidationError`. The instance's 
 
 Each value is always an array of messages. A field that fails multiple validators surfaces all of them: `{password: ["min8", "startUpper"]}`.
 
-`errors` is the **entire** body — no `data`, no `message` alongside it. If you are replacing a hand-rolled in-handler guard with a `request:`/`query:`/`params:` schema and your project envelope is `{ data, message?, errors? }`, clients and tests that read the other keys (for example asserting `body.data === null`) must switch to expecting `errors` only.
+The body is `message` plus `errors` — no `data`. `message` is translatable through the `http.validationFailed` key. Every framework error response follows the same contract, `{ error?, message, errors? }`, so a client can always read field errors from `body.errors` (see [Error handling](04-error-handling.md#error-codes-and-translated-messages)). If you are replacing a hand-rolled in-handler guard with a `request:`/`query:`/`params:` schema and your project envelope is `{ data, message?, errors? }`, clients and tests that read `data` (for example asserting `body.data === null`) must stop expecting it.
 
 Validation errors cover input that fails the declared schema **before** the handler runs. For errors thrown **inside** the handler — typed HTTP errors like `NotFoundError`, third-party errors you map yourself, escaped Mongoose validation — see [Error handling](04-error-handling.md).
 
@@ -780,7 +781,7 @@ class ControllerName extends AbstractController {
     }
   }
   // Send a request with data {count: "5000"}.
-  // Will produce an error with status 400 and {errors: {count:['Text error']}}.
+  // Will produce an error with status 400 and {message: 'Validation failed', errors: {count:['Text error']}}.
 
   postSample(req, res) {
     // On success validation, we pass here.
