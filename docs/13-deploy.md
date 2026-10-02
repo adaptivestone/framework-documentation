@@ -107,6 +107,54 @@ events to an observability provider before the application itself exists.
 | PM2 fork or cluster mode | `src/server.ts` | PM2 |
 | Standalone multi-core host | `src/index.ts` with `runCluster()` | Framework cluster primary |
 
+## Health checks
+
+The framework ships two probe endpoints:
+
+| Endpoint | Checks | Answers |
+|---|---|---|
+| `GET /health/live` | Nothing beyond the process serving requests | `200 {"status": "ok"}` |
+| `GET /health/ready` | Also pings MongoDB (1 s timeout) | `200 {"status": "ok", "checks": {"mongo": "ok"}}`, or `503` with `"error"` |
+
+Use `/health/live` for **liveness** probes and `/health/ready` for **readiness** probes and post-deploy checks. Keep dependencies out of liveness: if a liveness probe pinged the database, a short database outage would make the orchestrator restart every instance at once. A failed `ready` check returns no error details (the endpoint may be public) and is logged at `warn`.
+
+```yaml
+# Kubernetes
+livenessProbe:
+  httpGet: { path: /health/live, port: 3300 }
+readinessProbe:
+  httpGet: { path: /health/ready, port: 3300 }
+```
+
+```sh
+# Post-deploy check
+curl -fsS http://127.0.0.1:3300/health/ready
+```
+
+### Protecting the endpoints
+
+By default the endpoints are open. To limit them to your own systems, set a token:
+
+```sh
+HEALTH_TOKEN=some-long-random-string
+```
+
+Probes then send it as the `X-Health-Token` header, or as `?token=` for load balancers that cannot send custom headers (for example, AWS ALB health checks). A missing or wrong token gets `401`. Prefer the header: query strings can end up in proxy logs.
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: 3300
+    httpHeaders: [{ name: X-Health-Token, value: some-long-random-string }]
+```
+
+Successful probe requests are not written to the request log, so frequent probes don't flood it; failed ones are logged at `warn`.
+
+### Custom checks
+
+The endpoints come from a built-in `Health` controller. To add checks (Redis, an external API), middleware, or a different mount path, add your own `controllers/Health.ts`: it replaces the built-in one, and can extend it. `GET /health` itself is left free, so an existing app route there keeps working.
+
 ## Nginx
 
 The Node process listens on localhost port 3300 in the default configuration.
