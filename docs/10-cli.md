@@ -243,6 +243,26 @@ node src/cli.ts createuser --email=somemail@gmail.com --password=somePassword --
 
 The token is printed to standard output only — never to the logger, so it does not reach log files or Sentry. The database keeps only its hash, so this line is the only copy. Without `--token`, no session is created.
 
+### Create .env
+
+Creates a `.env` for a fresh clone: it copies `.env.example` and replaces its `AUTH_SALT` line with a newly generated secret (32 random bytes, hex). Without `.env.example`, the new `.env` contains only `AUTH_SALT`. If `.env` already exists, the command changes nothing, so it never overwrites your secrets. The secret is written to the file only, never printed or logged.
+
+```bash
+npm run cli createEnv
+```
+
+The command is safe to run every time, so a project can call it before starting in development:
+
+```json
+{
+  "scripts": {
+    "dev": "npm run cli createEnv && node --watch src/index.ts"
+  }
+}
+```
+
+Keep `AUTH_SALT` stable once real data exists: password and code hashes depend on it.
+
 ### Generate Random Bytes
 
 In some cases, you need a random byte string. This command helps you to generate a random byte string.
