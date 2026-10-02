@@ -35,7 +35,7 @@ Everything comes from the route definitions you already have — there is nothin
 | path `parameters` | `:name` path segments; typed by the route [`params:`](06-Controllers/02-routes.md#params) schema when declared, otherwise `string` |
 | query `parameters` | route [`query:`](06-Controllers/02-routes.md#query) schema (+ middleware query schemas) |
 | `requestBody` | route [`request:`](06-Controllers/02-routes.md#request) schema or [content-type map](06-Controllers/02-routes.md#different-schemas-per-content-type) (+ middleware request schemas) |
-| `security` | middleware [`static get usedAuthParameters()`](#documenting-auth-security-schemes) (schemes) and `static get requiresAuth()` (required vs optional) |
+| `security` | middleware [`static get authSchemes()`](#documenting-auth-security-schemes) (schemes) and `static get requiresAuth()` (required vs optional) |
 | `info` / `servers` | your `package.json` + the `http` config (`port`, `myDomain`) |
 
 Output is **OpenAPI 3.1** (JSON Schema 2020-12) only.
@@ -88,13 +88,13 @@ This is why the generator must load your controllers at runtime rather than read
 
 ## Documenting auth (security schemes)
 
-A middleware advertises the security scheme(s) it reads credentials from with a `static get usedAuthParameters()` getter. The generator reads it **off the class — no instantiation** — adds each entry to `components.securitySchemes`, and attaches a `security` entry to every operation whose middleware chain includes that middleware.
+A middleware advertises the security scheme(s) it reads credentials from with a `static get authSchemes()` getter. The generator reads it **off the class — no instantiation** — adds each entry to `components.securitySchemes`, and attaches a `security` entry to every operation whose middleware chain includes that middleware.
 
 ```ts
 import AbstractMiddleware from "@adaptivestone/framework/services/http/middleware/AbstractMiddleware.js";
 
 class TokenAuth extends AbstractMiddleware {
-  static get usedAuthParameters() {
+  static get authSchemes() {
     return [
       // http bearer scheme
       { name: "bearerAuth", type: "http", scheme: "bearer", description: "Bearer token" },
@@ -116,6 +116,10 @@ class TokenAuth extends AbstractMiddleware {
 | `in` | for `apiKey`: `'header'` (default) / `'query'` / `'cookie'` |
 | `scheme` | for `http`: `'bearer'`, `'basic'`, … |
 | `description` | shown in the docs UI |
+
+:::note Renamed in 5.5.0
+`authSchemes` was called `usedAuthParameters` before. The old name still works until v6, with a one-time deprecation warning; rename it in your middleware.
+:::
 
 ### Required or optional
 

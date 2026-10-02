@@ -549,9 +549,9 @@ class CustomMiddleware extends AbstractMiddleware {
   }
 
   // optional
-  static get usedAuthParameters() {
-    // Security scheme(s) this middleware enforces — read by the OpenAPI
-    // generator into `components.securitySchemes` (see the OpenAPI chapter).
+  static get authSchemes() {
+    // How requests send the credentials this middleware reads — read by the
+    // OpenAPI generator into `components.securitySchemes` (see the OpenAPI chapter).
     return [
       {
         name: "Authorization", // name of the parameter
@@ -601,7 +601,7 @@ class CustomMiddleware extends AbstractMiddleware {
 export default CustomMiddleware;
 ```
 
-`static get usedAuthParameters()` declares the security scheme(s) the middleware reads credentials from. The OpenAPI generator reads it off the class (no instantiation) to populate `components.securitySchemes` and documents auth on every route in the middleware's chain as optional. A middleware that rejects requests without a user also sets `static get requiresAuth()` to `true`, which makes auth required for the whole chain — see [OpenAPI › Documenting auth](../17-openapi.md#documenting-auth-security-schemes) for the field reference and an `http`/`bearer` example.
+`static get authSchemes()` declares the security scheme(s) the middleware reads credentials from. The OpenAPI generator reads it off the class (no instantiation) to populate `components.securitySchemes` and documents auth on every route in the middleware's chain as optional. A middleware that rejects requests without a user also sets `static get requiresAuth()` to `true`, which makes auth required for the whole chain — see [OpenAPI › Documenting auth](../17-openapi.md#documenting-auth-security-schemes) for the field reference and an `http`/`bearer` example.
 
 :::warning Deprecated: instance schema getters
 The non-static form — `get relatedQueryParameters()` / `get relatedRequestParameters()` (and `get relatedReqParameters()`) — is **deprecated and will be removed in v6**. It forces the framework to instantiate the middleware (running its constructor) just to read the schema, so use `static get` instead. The instance form still works through v5: when it's detected, the framework instantiates the middleware as a fallback and emits a one-per-class `DeprecationWarning` (`ASF_DEP_MW_INSTANCE_SCHEMA`).
