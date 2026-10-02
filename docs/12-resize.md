@@ -449,9 +449,8 @@ Hook functions run in the order they were registered, and each one is awaited. A
 | `storage` (required) | `LocalFsStorage`, `S3Storage` | `…/drivers/fs.js`, `…/drivers/s3.js` |
 | `transport` (queue only) | Mongo via `createFrameworkMongoTransport()`, `SqsTransport` | `…/framework.js`, `…/drivers/sqs.js` |
 | `mediaStore` | `FrameworkMediaStore`, added by `createFrameworkResizer` | `…/framework.js` |
-| `lockProvider` | `FrameworkLockStore` (the framework's `Lock` model), added when there is a transport | `…/framework.js` |
 
-The framework drivers are thin wrappers over framework-free ones in `…/drivers/mongo.js`: `FrameworkMediaStore` is `MongoMediaStore` with the model taken from the app.
+The transport owns its **locks** (`locks`, a `LockStore`), because locks exist only for queued work. `createFrameworkMongoTransport()` uses `FrameworkLockStore`, which wraps the framework's own `Lock` model. The framework drivers are thin wrappers over framework-free ones in `…/drivers/mongo.js`: `FrameworkMediaStore` is `MongoMediaStore` with the model taken from the app.
 
 **S3** needs `npm i @aws-sdk/client-s3 @aws-sdk/s3-request-presigner`:
 
@@ -471,13 +470,14 @@ You create the buckets and their access policies; `publicBaseUrl` only builds UR
 **SQS** needs `npm i @aws-sdk/client-sqs sqs-consumer`:
 
 ```ts
-import { appLogger } from '@adaptivestone/framework-module-resize/framework.js';
+import { appLogger, FrameworkLockStore } from '@adaptivestone/framework-module-resize/framework.js';
 import { SqsTransport } from '@adaptivestone/framework-module-resize/drivers/sqs.js';
 
 const transport = new SqsTransport({
   queueUrl: 'https://sqs.eu-west-1.amazonaws.com/123456789012/resize',              // queue 'default'
   queues: { bulk: 'https://sqs.eu-west-1.amazonaws.com/123456789012/resize-bulk' }, // optional
   region: 'eu-west-1',
+  locks: new FrameworkLockStore(), // SQS has no locks of its own
   logger: appLogger,
 });
 ```
@@ -521,8 +521,10 @@ const resizer = new Resizer({
   config: { ...defaultResizeConfig, formats: ['webp'] },
   storage: new LocalFsStorage({ rootDir: './var/media', publicBaseUrl: '/media' }),
   mediaStore: new MongoMediaStore({ model: File }), // File spreads resizeMediaSchemaFragment
-  transport: new MongoTransport({ model: ResizeTask }), // optional: queued workflows only
-  lockProvider: new MongoLockStore({ model: ResizeLock }), // required with a transport
+  transport: new MongoTransport({ // optional: queued workflows only
+    model: ResizeTask,
+    locks: new MongoLockStore({ model: ResizeLock }),
+  }),
 });
 
 // In the worker process:
@@ -530,12 +532,12 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 ```
 
 - `createResizeModels(connection)` registers `ResizeTask` (the queue) and `ResizeLock` with the package's schemas and indexes. Create the indexes through your migration process.
-- The `worker.*` config keys are read only by the framework's worker command. Pass Sharp tuning to `runWorker({ sharp: { concurrency, cache } })` instead.
+- `config` is optional and holds image settings only. Queue timing (`leaseMs`, `lockTtlMs`, `maxAttempts`, …) is a `MongoTransport` option, and Sharp tuning is `runWorker({ sharp: { concurrency, cache } })`.
 - The framework adapter (`…/framework.js`) does exactly this wiring for you.
 
 ## Configuration
 
-`src/config/resize.ts` spreads the package defaults and adds `mediaModelName` plus your changes. The framework merges `resize.<NODE_ENV>.ts` over it: objects merge field by field, and arrays are replaced. The module validates the result when the Resizer is created.
+`src/config/resize.ts` spreads `defaultFrameworkResizeConfig` and adds `mediaModelName` plus your changes. The framework merges `resize.<NODE_ENV>.ts` over it: objects merge field by field, and arrays are replaced. The image settings go to the Resizer; the adapter reads `mediaModelName`, `queue` (the Mongo transport's timing and lock TTLs) and `worker` (the worker command). `queue` and `worker` may be omitted, and then the defaults apply.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -545,9 +547,10 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 | `upload.formats` | `jpeg`, `png`, `webp`, `avif`, `gif`, `svg` | Original formats `uploadOriginal()` accepts |
 | `maxSize` | `{ width: 2000, height: 1200 }` | The box for `fit` |
 | `encode.formats` | JPEG quality 80, WebP 82, AVIF 64 | Sharp encoder options per format; `{}` keeps Sharp's defaults |
+| `concurrency` | `4` | Variants processed in parallel per task or `generate()` call |
 | `worker.enabled` | `false` | Allows the worker command to run |
-| `worker.concurrency` | `4` | Variants processed in parallel per task or `generate()` call |
 | `queue.maxAttempts` | `5` | Attempts before a Mongo task is dead-lettered |
+| `queue.leaseMs`, `queue.lockTtlMs` | `60000`, `{ dispatch: 60000, worker: 60000 }` | The task lease and lock TTLs; the worker lock must not outlive the lease |
 
 To change one encoder setting, spread the nested defaults:
 
@@ -601,7 +604,7 @@ If two copies of the package are installed, `instanceof` can fail across them. `
 - **Task states.** Mongo tasks go `pending → processing → completed`. A failed attempt returns to `pending` with a growing delay. After `queue.maxAttempts`, the task becomes `dead`.
 - **Partial attempts.** A task completes only when every requested variant is stored. When an attempt is only partly successful, its previews are saved and the next attempt makes only the missing ones.
 - **Cleanup and retries.** Completed tasks are removed after about 24 hours and dead tasks after about 30 days. To retry a dead task after fixing its cause, call `prewarm()` again for that media.
-- **Throughput.** A Mongo worker processes one task at a time, and `worker.concurrency` parallelizes the variants within it. For more throughput, run more worker processes.
+- **Throughput.** A Mongo worker processes one task at a time, and `concurrency` parallelizes the variants within it. For more throughput, run more worker processes.
 
 | Symptom | Check |
 |---|---|
