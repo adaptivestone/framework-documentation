@@ -85,6 +85,26 @@ The **transportOptions** field contains the transport options - you can pass any
 
 And finally, the **enable** field will enable/disable modules for the logger. You can check [“NODE_ENV” in the config documentation](02-configs.md#node_env) to learn more about how you can use it depending on your environment.
 
+## Redacting sensitive fields
+
+The values of log fields named in the `redact` list of `config/log.ts` are replaced with `[REDACTED]` before any transport sees them: console, Sentry and your own transports. Names match in any letter case and at any depth, including inside arrays. The default list is:
+
+```js
+redact: ["authorization", "cookie", "password", "secret", "token"],
+```
+
+```js
+logger.info("Login code sent", { email, token: "abc123", user: { Password: "p" } });
+// → email is logged; token and user.Password are logged as "[REDACTED]"
+```
+
+- **Only fields are redacted, never the message text.** Write `logger.info("Code sent", { code })`, not ``logger.info(`Code sent: ${code}`)``.
+- **Your list replaces the default one.** To add names, keep the defaults: `redact: ["authorization", "cookie", "password", "secret", "token", "code"]`. An empty list (`redact: []`) turns redaction off.
+- **Your objects are not changed.** The logger redacts a copy, so the object you pass to `logger.info` keeps its values.
+- **Plain objects and arrays are inspected.** Error objects, dates and class instances are logged as they are.
+
+This replaces filtering log lines yourself. Filtering in Sentry's `beforeSend` still applies to errors Sentry captures on its own, outside the logger.
+
 ## Sentry transport 
 
 For Sentry, we assume it is already configured in the project and we will reuse the existing setup. If Sentry is not present in the system, the framework will display a message indicating that this feature is only available when Sentry is configured.
