@@ -99,17 +99,16 @@ export const resizer = createFrameworkResizer({
 });
 ```
 
+`createFrameworkResizer` takes its config from `src/config/resize.ts`, and adds the app logger and the media store for `mediaModelName`. You pass the storage. Import `src/resizer.ts` wherever you need the Resizer; a normal static import is fine, because nothing is read from the framework until first use. Elsewhere in your code, `getResizer()` returns the same instance.
+
+A config mistake then shows up at the first upload or read. To catch it at startup instead, verify after initialization:
+
 ```ts
 // src/server.ts
-const server = new Server(folderConfig);
 await server.init();
-await import('./resizer.ts'); // after init(): config and models are loaded
-await server.startServer();   // init() runs only once, so this does not repeat it
+await resizer.verify(); // checks the config, the transport's timing and the media model
+await server.startServer();
 ```
-
-`createFrameworkResizer` reads `src/config/resize.ts`, then adds the app logger and the media store for `mediaModelName`. You pass the storage. Elsewhere in your code, `getResizer()` returns this instance.
-
-Load `resizer.ts` with a dynamic import after `init()`. A static `import './resizer.ts'` runs before the framework has loaded its config.
 
 `LocalFsStorage` writes:
 - previews under `rootDir`;
@@ -271,18 +270,13 @@ for (const file of files) {
    npm run cli ResizeWorker
    ```
 
-The scaffolded command first loads `src/resizer.ts`, so the worker has the same Resizers as the API:
+The scaffolded command imports `src/resizer.ts`, so the worker has the same Resizers as the API:
 
 ```ts
 // src/commands/ResizeWorker.ts (scaffolded)
-import ModuleResizeWorker from '@adaptivestone/framework-module-resize/commands/ResizeWorker.js';
+import '../resizer.ts';
 
-export default class ResizeWorker extends ModuleResizeWorker {
-  async run(): Promise<boolean> {
-    await import('../resizer.ts'); // config and models are loaded by now
-    return super.run();
-  }
-}
+export { ResizeWorker as default } from '@adaptivestone/framework-module-resize/framework.js';
 ```
 
 Keep that import if you edit the command; `resize-scaffold --check` reports a command without it. The API and the worker must use the same database and the same storage. With `LocalFsStorage` that means the same filesystem; for workers on other machines, use S3 or other shared storage.
@@ -369,7 +363,7 @@ export const resizer = createFrameworkResizer({ transport, storage: avatarStorag
 export const listings = createFrameworkResizer({
   name: 'listings',
   configName: 'resizeListings', // src/config/resizeListings.ts, a complete config like resize.ts
-  transport,                    // one shared transport instance
+  transport,                    // may share the transport, or have its own
   storage: listingStorage,
 });
 
@@ -378,7 +372,7 @@ export const listings = createFrameworkResizer({
 
 - **One construction per name:** each name can be created only once per process.
 - **Create them all in `src/resizer.ts`:** every task records which Resizer created it, and the worker gives the task to the Resizer with that name, so the worker needs all of them. Creating them in `src/resizer.ts` gives both the API and the worker the same set.
-- **One shared transport:** Resizers served by one worker must use the same transport instance.
+- **Transports:** Resizers may share a transport or each have their own. The worker runs one loop per transport for its queue.
 - **No mixing:** previews from different Resizers never mix.
 - **Worker settings:** the worker reads its own settings (`worker.enabled` and the Sharp tuning) from `src/config/resize.ts`.
 
@@ -594,9 +588,8 @@ If two copies of the package are installed, `instanceof` can fail across them. `
 | Symptom | Check |
 |---|---|
 | Worker exits with "disabled" | `worker.enabled: true` in `src/config/resize.ts` |
-| Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` must load `../resizer.ts`; delete the old file and run `resize-scaffold` again |
+| Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` must import `../resizer.ts`; delete the old file and run `resize-scaffold` again |
 | Worker logs `RESIZE_NO_RESIZER` for a task | That Resizer must be created in `src/resizer.ts` |
-| Worker stops with `RESIZE_WORKER_TRANSPORTS_DIFFER` | Resizers in one worker must share one transport instance |
 | Worker stops with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a registered model |
 | Tasks stay `pending` | Is a worker running for that queue (`--queue`), on the same database? |
 | Variants are missing but there are no tasks | `enqueueMissing`, the original's `storageRef`, the indexes, hooks and logs; `prewarm()` reports the reason per variant |
