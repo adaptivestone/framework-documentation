@@ -126,3 +126,16 @@ const valid = verifySecret(submittedCode, loginCode.codeHash, LOGIN_CODE);
 - The protection is `AUTH_SALT` staying out of the database. Anyone holding both finds a 6-digit code instantly, so keep codes short-lived and limit attempts.
 - Rotating `AUTH_SALT` invalidates every stored code hash. That suits codes that expire in minutes; reissue them after a rotation.
 - Hash exactly what you compare: normalize input (for example, strip spaces) before both calls.
+
+### Comparing secrets
+
+To check a secret you hold in configuration — an API key, a webhook secret, a probe token — never use `===`: its timing reveals how much of the guess matched. Use `timingSafeEqualStrings`, which also hides the secret's length:
+
+```ts
+import { timingSafeEqualStrings } from "@adaptivestone/framework/helpers/crypto.js";
+
+const apiKey = process.env.API_KEY;
+const sent = req.headers["x-api-key"];
+// Require a configured key: two empty strings are equal too.
+const valid = !!apiKey && typeof sent === "string" && timingSafeEqualStrings(sent, apiKey);
+```
