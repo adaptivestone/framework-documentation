@@ -130,6 +130,19 @@ if (!apiKey) {
 }
 ```
 
+The same holds when your config **overrides a framework config** by spreading it. The env reads stay in the framework file, and the generated type still includes them:
+
+```ts title="/src/config/auth.ts"
+import originalAuth from "@adaptivestone/framework/config/auth.js";
+
+export default {
+  ...originalAuth, // saltSecret: process.env.AUTH_SALT → typed: string | undefined
+  isAuthWithVerificationFlow: false,
+};
+```
+
+No `?? ''` fallback is needed to keep such a key in the type when the variable is unset at generation time (for example, in CI). A key you set to a value in your own file keeps that value's type.
+
 :::tip
 
 If a value is guaranteed present (you assert it at boot), add a non-null
