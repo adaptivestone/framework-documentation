@@ -38,7 +38,7 @@ Every workflow reads URLs with `resolve()` and writes the same `previews[]`. You
 
 ### 1. Install and scaffold
 
-You need Node `>=24`, `@adaptivestone/framework` `^5.0.1`, and `mongoose`. From your app's root:
+You need Node `>=24`, `@adaptivestone/framework` `^5.1.0`, and `mongoose` 9 (already in a framework app). From your app's root:
 
 ```bash
 npm i @adaptivestone/framework-module-resize
@@ -435,7 +435,7 @@ In a framework app you choose drivers in the config file; pass a driver object t
 
 The module itself runs the queue: the worker loop, the lease, retries with backoff, dead-lettering and the task events. A task queue driver only stores tasks, so Mongo and SQS behave the same. `FrameworkDatabase` is a thin wrapper over the framework-free `MongoDatabase`: it takes your media model from the app, keeps locks in the framework's own `Lock` model, and uses the `ResizeTask` model as its task queue (`queue: { driver: 'database' }`).
 
-**S3** needs `npm i @aws-sdk/client-s3 @aws-sdk/s3-request-presigner`:
+**S3** needs `npm i @aws-sdk/client-s3 @aws-sdk/s3-request-presigner` (3.572 or newer):
 
 ```ts
 // src/config/resize.ts (or resize.production.ts)
@@ -450,7 +450,7 @@ storage: {
 
 Credentials come from the AWS SDK's default chain, never from the config. To use an existing `S3Client`, pass `storage: new S3Storage({ …, client })` from `…/drivers/s3.js` in code instead. When an environment file switches `storage` from `local` to `s3`, set `publicBaseUrl` there too: the framework merges the section field by field. You create the buckets and their access policies; `publicBaseUrl` only builds URLs. The driver reads only from these two buckets, so a tampered `storageRef` cannot reach another bucket.
 
-**SQS** needs `npm i @aws-sdk/client-sqs`:
+**SQS** needs `npm i @aws-sdk/client-sqs`, version 3.572 or newer: older clients don't return receive counts, so failing tasks would never be dead-lettered.
 
 ```ts
 // src/config/resize.ts (or resize.production.ts)
