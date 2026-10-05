@@ -106,7 +106,7 @@ A config mistake then shows up at the first upload or read. To catch it at start
 ```ts
 // src/server.ts
 await server.init();
-await resizer.verify(); // checks the config, the transport's timing and the media model
+await resizer.verify(); // config, transport (incl. the ResizeTask model and queue) and media model
 await server.startServer();
 ```
 
@@ -590,6 +590,7 @@ If two copies of the package are installed, `instanceof` can fail across them. `
 | Worker exits with "disabled" | `worker.enabled: true` in `src/config/resize.ts` |
 | Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` must import `../resizer.ts`; delete the old file and run `resize-scaffold` again |
 | Worker logs `RESIZE_NO_RESIZER` for a task | That Resizer must be created in `src/resizer.ts` |
+| `verify()` or the worker fails with `RESIZE_MONGO_MODEL_MISSING` | The `ResizeTask` model is not registered: scaffold `src/models/ResizeTask.ts` |
 | Worker stops with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a registered model |
 | Tasks stay `pending` | Is a worker running for that queue (`--queue`), on the same database? |
 | Variants are missing but there are no tasks | `enqueueMissing`, the original's `storageRef`, the indexes, hooks and logs; `prewarm()` reports the reason per variant |
