@@ -68,7 +68,7 @@ export default class File extends BaseModel {
 
 The fragment adds:
 - `original`: where the original is stored, plus its format, size and dimensions.
-- `previews[]`: one entry per generated file.
+- `previews[]`: one entry per generated file. Its `identity` field lets the database keep one entry per preview, so a hand-written schema that declares preview entries as sub-documents needs `identity: { type: String }` in them.
 
 Keep Mongoose's `minimize: false`, which is the `BaseModel` default, because storage locators can contain empty objects. Save the media document before you generate previews; the module never creates it.
 
@@ -165,7 +165,7 @@ export const previewFormats: PreviewFormat[] = ['webp']; // the examples use one
 | `{ height: 400 }` | `400h` | `600×400`, aspect ratio kept |
 | `{ fit: true }` | `fit` | `1800×1200`: the whole image inside `maxSize` (`2000×1200`), never enlarged |
 
-Fractional dimensions are rounded to whole pixels. No side of a preview other than `fit` exceeds `limits.resultDimension` (5000): when the side derived from the aspect ratio of a width-only or height-only size would, the preview is cropped to it.
+For a pipeline without `variantSteps`, a raster original no larger than the requested width and height is never enlarged or cropped: its preview keeps the original's size (scaled down only to fit `limits.resultDimension`), without metadata such as EXIF or GPS. A pipeline with `variantSteps`, such as a watermark, always gets the full box its steps were written for. Fractional dimensions are rounded to whole pixels. No side of a preview other than `fit` exceeds `limits.resultDimension` (5000): when the side derived from the aspect ratio of a width-only or height-only size would, the preview is cropped to it.
 
 :::warning
 
@@ -178,7 +178,7 @@ Formats are Sharp output format IDs.
 - Each format is a separate file, so three sizes in three formats make nine files per image.
 - Use `'jpeg'`, not `'jpg'`. JPEG previews put transparent areas on a white background.
 - Other Sharp formats, such as `'png'` or `'tiff'`, work once you add them to both `formats` and `encode.formats`. A per-call format without an `encode.formats` entry, or one a `beforeEnqueue` hook adds, is never generated: `resolve()` skips it, `prewarm()` reports `RESIZE_FORMAT_NOT_CONFIGURED`, and `generate()` throws.
-- SVG is accepted only as an original, and its previews are always raster images.
+- SVG is accepted only as an original, and its previews are always raster images: the worker renders the SVG once per task, in a separate process and before any pipeline step, and makes every format from that render. `beforeSteps` receive the rendered PNG, never SVG markup.
 
 ## Generate now (eager)
 
@@ -222,7 +222,7 @@ const picture = formatPictureUrls(decision, { id: String(fileDoc.id) });
 
 | Field | Meaning |
 |---|---|
-| `decision.ready` | Variants that can be served now, each with `sizeKey`, `format`, `url` and `contentType` |
+| `decision.ready` | Stored previews that can be served now, each with `sizeKey`, `format`, `url`, `contentType` and the `preview` row; never the original |
 | `decision.missing` | Variants that cannot be served yet; they have no URL |
 | `output` | The return value of your `formatPublicUrls` hook, or `undefined` if you have none |
 
@@ -269,7 +269,7 @@ for (const file of files) {
 
 3. Check the queue timing if your images are large: `queue` also takes `leaseMs`, `maxAttempts` and the other [timing options](#configuration).
 
-4. Create the indexes. `ResizeTask` and the framework's `Lock` model declare their indexes. Create them through your normal migration or deployment process before you deploy the API and the worker. The module never creates indexes at runtime. Mongo's duplicate detection depends on the partial unique index on active tasks.
+4. Create the indexes. `ResizeTask` and the framework's `Lock` model declare their indexes. Create them through your normal migration or deployment process before you deploy the API and the worker. The module never creates indexes at runtime. Mongo's duplicate detection depends on the partial unique index on active tasks. When you upgrade from an earlier version, create the claim index `{ queue: 1, status: 1, availableAt: 1 }` before or together with the new workers, then drop the old `{ status: 1, createdAt: 1 }` (or `{ queue: 1, status: 1, createdAt: 1 }`) index.
 
 5. Start the worker as a separate long-running process, kept running by your process manager:
 
@@ -375,7 +375,7 @@ export const listings = new FrameworkResizer({
 
 - **One construction per name:** each name can be created only once per process.
 - **Create them all in `src/resizer.ts`:** every task records which Resizer created it, and the worker gives the task to the Resizer with that name, so the worker needs all of them. Creating them in `src/resizer.ts` gives both the API and the worker the same set.
-- **Own config files:** each file has its own media model, storage, queue and image settings. With `queue: { driver: 'database' }` the Resizers share the `ResizeTask` collection; one of them may use SQS instead. The worker runs one loop per Resizer's task queue, and on a shared collection each loop claims any task of the queue it consumes and applies its own timing to it. Give Resizers that share the collection the same queue timing (`leaseMs`, `maxAttempts`, `lockTtlMs` and the rest).
+- **Own config files:** each file has its own media model, storage, queue and image settings. Resizers on the same backend share one task queue: every Resizer with `queue: { driver: 'database' }`, and Resizers whose SQS settings are identical. The worker runs one loop per task queue, one task at a time, and processes each task with its own Resizer. A task queue has one timing, so files that share one must set the same timing options (and, for SQS, the same `waitTimeSeconds`, where unset means the default 10); otherwise the first use, `verify()` and the worker fail with `RESIZE_CONFIG_QUEUE_TIMING_CONFLICT`.
 - **No mixing:** previews from different Resizers never mix.
 - **Worker settings:** the worker reads its own settings (`worker.enabled` and the Sharp tuning) from `src/config/resize.ts`. To read them from another file, for example when your app has only `resizeListings.ts`, start it with `npm run cli ResizeWorker -- --config=resizeListings`.
 
@@ -475,16 +475,16 @@ Previews are public. Store originals privately (`visibility: 'private'`). Your a
 
 - **SVG is untrusted.** An SVG file can contain scripts and external references, so the module never serves SVG markup, not even to its owner.
   - `uploadOriginal()` accepts SVG only with `visibility: 'private'`.
-  - The generator renders it into your raster formats and never loads anything the file references.
+  - The generator renders it into your raster formats and never loads anything the file references. The render runs in a separate Node process and is killed after `limits.processingTimeoutSeconds` or when the task stops. Your app must allow child processes (`--allow-child-process` under Node's permission model), and a bundle must keep `svgRasterChild.js` next to `svgRaster.js`.
   - The stored file is not cleaned, so never serve it yourself.
-- **Small raster originals can be served directly.** This happens only when all of these are true:
-  - no preview exists yet;
-  - the request has both `width` and `height` and no filters;
-  - the original already fits inside that box;
-  - the pipeline has no `beforeSteps` and no `variantSteps`.
+- **The module never serves an original.** `resolve()` returns stored previews only, whoever reads; `ctx` reaches your hooks but does not change the result. A small raster original gets a preview at its own size instead, unless the pipeline has `variantSteps` (see [sizes](#sizes-and-formats)).
+- **To give an owner the private original,** check access in your app and call the storage driver yourself. `S3Storage` signs URLs; `LocalFsStorage` has no `signedUrl`.
 
-  Width-only, height-only and `fit` sizes never use this shortcut. Entries served this way have `isOriginal: true`. Use their `contentType`, which is the original's type, rather than `format`.
-- **A private original is returned only as a signed URL.** For the shortcut above, the module signs a URL that is valid for five minutes, and only when your server sets `ctx.isOwner` or `ctx.isAdmin` on the read. Never take these flags from client input. If signing fails, there is no fallback to a public URL. Custom storage drivers can implement `canServeOriginalPublicly` to report public originals.
+  ```ts
+  const resizer = getResizer();
+  await resizer.ready(); // loads the drivers built from the config
+  const url = await resizer.storage.signedUrl?.(fileDoc.original.storageRef, 300); // valid for 5 minutes
+  ```
 
 ## Without the framework
 
@@ -497,7 +497,8 @@ import defaultResizeConfig from '@adaptivestone/framework-module-resize/config/r
 import { LocalFsStorage } from '@adaptivestone/framework-module-resize/drivers/fs.js';
 import { mongoDatabase } from '@adaptivestone/framework-module-resize/drivers/mongo.js';
 
-// Media, locks and the task queue, with the package's ResizeTask / ResizeLock models
+// Media, locks and the task queue, with the package's ResizeTask / ResizeLock models.
+// Call it once: each call makes its own task queue, so pass this db.tasks to every Resizer.
 const db = mongoDatabase(mongoose.connection, { mediaModel: File }); // File spreads resizeMediaSchemaFragment
 
 const resizer = new Resizer({
@@ -529,12 +530,12 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 | `upload.maxBytes` | 25 MiB | Largest original `uploadOriginal()` accepts |
 | `upload.formats` | `jpeg`, `png`, `webp`, `avif`, `gif`, `svg` | Original formats `uploadOriginal()` accepts |
 | `maxSize` | `{ width: 2000, height: 1200 }` | The box for `fit` |
-| `encode.formats` | JPEG quality 80, WebP 82, AVIF 64 | Sharp encoder options per format; `{}` keeps Sharp's defaults |
+| `encode.formats` | JPEG quality 88, WebP 82, AVIF 64 | Sharp encoder options per format; `{}` keeps Sharp's defaults |
 | `animated` | `false` | `true`: WebP and GIF previews of an animated original keep its frames (up to `limits.animationFrames`, 64), unless the pipeline has `variantSteps`; other formats and pipelines with variant steps use the first frame |
 | `concurrency` | `4` | Variants processed in parallel per task or `generate()` call |
 | `worker.enabled` | `false` | Allows the worker command to run |
 | `queue.maxAttempts` | `5` | Attempts before a task is dead-lettered |
-| `queue.leaseMs`, `queue.lockTtlMs` | `60000`, `{ dispatch: 60000, worker: 60000 }` | The task lease and lock TTLs; the worker lock must not outlive the lease |
+| `queue.leaseMs`, `queue.lockTtlMs` | `60000`, `{ dispatch: 60000, worker: 60000, failed: 600000 }` | The task lease and lock TTLs; the worker lock must not outlive the lease. After a task is dead-lettered, reads do not queue its previews again for `failed` milliseconds |
 | `queue.retryBackoffMs`, `queue.idlePollMs`, `queue.taskTimeoutMs` | `{ base: 5000, max: 300000 }`, `1000`, `600000` | Retry delay, how often an idle worker polls for new tasks (one indexed query per worker on Mongo), and the task time limit |
 
 To change one encoder setting, spread the nested defaults:
@@ -588,7 +589,8 @@ If two copies of the package are installed, `instanceof` can fail across them. `
 
 - **Task states.** Mongo tasks go `pending → processing → completed`. A failed attempt returns to `pending` with a growing delay. After `queue.maxAttempts`, the task becomes `dead`.
 - **Partial attempts.** A task completes only when every requested variant is stored. When an attempt is only partly successful, its previews are saved and the next attempt makes only the missing ones.
-- **Cleanup and retries.** Completed tasks are removed after about 24 hours and dead tasks after about 30 days. To retry a dead task after fixing its cause, call `prewarm()` again for that media.
+- **Cleanup and retries.** Completed tasks are removed after about 24 hours and dead tasks after about 30 days. To retry a dead task after fixing its cause, call `prewarm()` again for that media once `queue.lockTtlMs.failed` (10 minutes by default) has passed since the task died.
+- **One row per preview.** The database stores each preview identity once. When two workers render the same preview, the second upload is logged as a warning with its storage location and is not recorded; delete such files if you need to.
 - **Throughput.** A worker processes one task at a time from each task queue, and `concurrency` parallelizes the variants within it. For more throughput, run more worker processes.
 - **Shutdown.** On SIGTERM or SIGINT the worker stops claiming tasks, lets the variants in progress finish and saves them, and puts the task back in the queue without an `onTaskFailed` event or a retry delay; the next worker makes the rest. A task whose original is missing or unusable is still dead-lettered. With the database queue this does not count as an attempt; with SQS it does. Custom queues: see the `release` method in the [package reference](https://github.com/adaptivestone/framework-module-resizer#drivers).
 
@@ -598,7 +600,11 @@ If two copies of the package are installed, `instanceof` can fail across them. `
 | Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` must import `../resizer.ts`; delete the old file and run `resize-scaffold` again |
 | Worker logs `RESIZE_NO_RESIZER` for a task | That Resizer must be created in `src/resizer.ts` |
 | `verify()` or the worker fails with `RESIZE_MONGO_MODEL_MISSING` | The `ResizeTask` model is not registered (scaffold `src/models/ResizeTask.ts`), or the framework's `Lock` model is missing |
-| `verify()` or the worker fails with `RESIZE_MONGO_MODEL_OUTDATED` | Your ejected or hand-written `ResizeTask` model lacks the `resizer`, `queue` or `requestKey` field: add them, or delete the file and run `resize-scaffold --eject` again |
+| `verify()` or the worker fails with `RESIZE_MONGO_MODEL_OUTDATED` | Your ejected or hand-written `ResizeTask` model lacks the `resizer`, `queue`, `requestKey` or `availableAt` field: add them (and the `{ queue, status, availableAt }` index), or delete the file and run `resize-scaffold --eject` again |
+| `verify()` or the worker fails with `RESIZE_MONGO_MEDIA_MODEL_OUTDATED` | Your media schema declares preview entries as sub-documents without `identity`: spread the current `resizeMediaSchemaFragment`, or add `identity: { type: String }` to the entry |
+| `RESIZE_CONFIG_QUEUE_TIMING_CONFLICT` | Two config files share a task queue but set different timing; the message names both files and the keys |
+| Worker logs `RESIZE_SVG_RENDER_TIMEOUT` or `RESIZE_SVG_RENDER_FAILED` | An SVG took longer than `limits.processingTimeoutSeconds` to render (dead-lettered at once), or its render process crashed (retried) |
+| `RESIZE_SVG_RENDER_UNAVAILABLE` from the worker or `generate()` | The SVG render process cannot start: allow child processes (`--allow-child-process` under Node's permission model), and keep `svgRasterChild.js` next to `svgRaster.js` when bundling |
 | `verify()` or the worker fails with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a registered model |
 | `verify()` or the first call fails with `RESIZE_PEER_MISSING` | The S3 or SQS driver selected in the config needs its AWS SDK packages: install the ones named in the message |
 | `RESIZE_PIPELINE_UNKNOWN` in `prewarm()` issues, from `generate()` or in worker logs | That process has no pipeline with this name: register it in `src/resizer.ts`, and deploy the worker before the API |
