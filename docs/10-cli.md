@@ -289,7 +289,7 @@ Generates two kinds of TS source from the framework's introspection:
 #### Run Generate TypeScript Types
 
 :::note Requires `oxc-parser`
-Framework 5.4.2 requires the optional peer range `^0.152.0` (5.4.1 required `^0.149.0`). Existing projects can update it with `npm i -D oxc-parser@^0.152.0`.
+Framework 5.5.1 requires the optional peer range `^0.153.0` (5.4.2 to 5.5.0 required `^0.152.0`). Existing projects can update it with `npm i -D oxc-parser@^0.153.0`.
 
 Code generation parses your controller sources with [`oxc-parser`](https://www.npmjs.com/package/oxc-parser), an **optional peer dependency**. Install it as a devDependency — `npm i -D oxc-parser`. It is never loaded at runtime, so it stays out of production installs; the command fails with that instruction if it is missing.
 :::
