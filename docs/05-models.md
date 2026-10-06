@@ -865,7 +865,8 @@ The authentication controller depends on this model.
 const UserModel = this.app.getModel("User");
 const user = await UserModel.getUserByEmailAndPassword("email", "password");
 // Stores a new 30-day session (its hash only) and returns { token, valid }.
-// Rejects if the password changed after `user` was loaded.
+// Since 5.5.1, if the password changed after `user` was loaded, it rejects with
+// the same 400 `BadRequestError` as a wrong password: a custom login needs no catch.
 const userToken = await user.generateToken();
 const userPublic = await user.getPublic();
 // `hashPassword` is a standalone helper, not a model static:

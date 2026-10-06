@@ -153,7 +153,7 @@ Successful probe requests are not written to the request log, so frequent probes
 
 ### Custom checks
 
-The endpoints come from a built-in `Health` controller. To add checks (Redis, an external API), middleware, or a different mount path, add your own `controllers/Health.ts`: it replaces the built-in one, and can extend it. `GET /health` itself is left free, so an existing app route there keeps working.
+The endpoints come from a built-in `Health` controller. To add checks (Redis, an external API), middleware, or a different mount path, add your own `controllers/Health.ts`: it replaces the built-in one, and can extend it. `GET /health` itself is left free, so an existing app route there keeps working. If your app already has a `controllers/Health.ts` from before 5.5.0, it replaces the built-in controller too: `/health/live` and `/health/ready` are not served until that class extends the built-in `Health` and declares those routes.
 
 ## Nginx
 
