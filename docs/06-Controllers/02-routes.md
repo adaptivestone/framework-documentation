@@ -710,7 +710,7 @@ const myJoiDriver: ValidatorDriver = {
 ValidateService.register(myJoiDriver);
 ```
 
-Drivers are matched in registration order; user-registered drivers take priority over the built-ins.
+Drivers are matched in registration order; user-registered drivers take priority over the built-ins. Register them before `startServer()` (module scope, as above): routes resolve their driver once at boot, and a schema no driver matches fails the boot with a migration message instead of answering a 500 later.
 
 ### ValidationError
 
