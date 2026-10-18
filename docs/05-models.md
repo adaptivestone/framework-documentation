@@ -880,6 +880,9 @@ const recoveryToken = await userHelpers.generateUserPasswordRecoveryToken(user);
 const sameUserAgain2 = await UserModel.getUserByPasswordRecoveryToken(
   recoveryToken
 );
+// Both token lookups consume the token and save. Pass `{ save: false }` to
+// only remove it from the returned document and persist it with your own
+// changes in one `save()` (what the built-in reset and verify routes do).
 const isSuccess = await user.sendPasswordRecoveryEmail(i18n);
 const verificationToken = await userHelpers.generateUserVerificationToken(user);
 const sameUserAgain3 = await UserModel.getUserByVerificationToken(
