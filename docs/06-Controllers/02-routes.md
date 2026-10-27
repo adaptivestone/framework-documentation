@@ -46,7 +46,7 @@ Inside the methods (second level), we have a path. The framework's tree-based ro
 | `:name` | exactly one segment | `req.params.name` |
 | `{*name}` | zero or more segments to end of path | `req.params.name` (joined with `/`) |
 
-**Specificity** (when patterns overlap): static segments win, then `:param`, then `{*splat}`. So `/users/me` registered alongside `/users/:id` always matches the literal first.
+**Specificity** (when patterns overlap): static segments win, then `:param`, then `{*splat}`. So `/users/me` registered alongside `/users/:id` matches the literal first. Precedence is per method: with `GET /users/me` and `DELETE /users/:id`, `DELETE /users/me` reaches `/users/:id` (`id = 'me'`). A `405` is answered only when no matching route has the method, and its `Allow` header lists the methods of all of them.
 
 **URL decoding** is per-segment (Spring `PathPatternParser` model). `%2F` inside a `:param` value stays as `/`; the matcher does not split on it. For `{*splat}` captures, segments are decoded individually then re-joined — encoded-slash distinction is lost (documented trade-off; use raw-body mode for the rare encoded-slash case).
 
