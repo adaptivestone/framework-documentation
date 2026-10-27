@@ -514,10 +514,11 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 ```
 
 - `mongoParts()` registers `ResizeTask` (the queue) and `ResizeLock` (the locks) on that connection with the package's schemas and indexes, and turns `autoIndex` off: create the indexes of both through your migration process (for example `await mongoose.connection.models.ResizeTask.createIndexes()`, and the same for `ResizeLock`). For other setups, `new MongoMediaStore(…)`, `new MongoLockStore(…)` and `new MongoTaskQueue(…)` take your models directly.
-- `storage` and `media` are required; `locks` is required when the Resizer has `tasks` (`RESIZE_LOCKS_REQUIRED`). To swap one part, set it after the spread, for example `tasks: new SqsTaskQueue({ queueUrl })`.
+- `storage` and `media` are required; `locks` is required when the Resizer has `tasks`. To swap one part, set it after the spread, for example `tasks: new SqsTaskQueue({ queueUrl })`.
 - `config` is optional and holds image settings only. Queue timing (`leaseMs`, `lockTtlMs`, `maxAttempts`, …) belongs to the task queue (`mongoParts(…, { timing })`, `new SqsTaskQueue({ timing })`), and Sharp tuning is `runWorker({ sharp: { concurrency, cache } })`.
+- A task queue without `locks`, or with invalid timing, does not break your app: the Resizer logs the error once, `resolve()` still serves the stored previews (it just queues nothing), uploads and `generate()` work, and `prewarm()` reports the error. Only `await resizer.verify()` and the worker reject with it (`RESIZE_LOCKS_REQUIRED`, or the timing error), so call `verify()` at startup to stop such a deploy.
 - `storage`, `media`, `locks` and `tasks` may also be functions, sync or async, called once on first use; `await resizer.ready()` loads them, and the Resizer's own methods do it for you.
-- `runWorker()` serves the Resizers constructed in its process when it starts, or the ones you pass as `resizers`. Construct every Resizer before you start it: one constructed later is not served.
+- `runWorker()` serves the Resizers constructed in its process when it starts, or the ones you pass as `resizers`. Construct every Resizer before you start it: one constructed later is not served. If you pass a list, it must include every Resizer of the process that uses a task queue the worker consumes; otherwise the worker would take their tasks and dead-letter them, so it stops at start with `RESIZE_QUEUE_SHARED_RESIZER_UNLISTED`. Two Resizers in the list need two names.
 - The framework adapter (`…/framework.js`) does exactly this wiring for you, from the config file.
 
 ## Configuration
@@ -588,7 +589,7 @@ try {
 
 If two copies of the package are installed, `instanceof` can fail across them. `ResizeError.isResizeError(err)` still works in that case.
 
-Each error also has `retryable`. The worker reads it on the error that fails a queued task, on any thrown object, not only a `ResizeError`: with `retryable: false` it dead-letters the task at once instead of retrying, for example when the media has no original or the image exceeds the pixel limits. That covers errors from loading the media, downloading the original, the source checks and the SVG render, `beforeSteps`, and saving the previews, so your own errors there can stop the retries the same way. An error inside one variant (`variantSteps`, encoding, uploading the preview) fails only that variant; the task then fails with the retryable `RESIZE_WORKER_INCOMPLETE` and is retried for the missing variants. The [operations reference](https://github.com/adaptivestone/framework-module-resizer#operations) lists the codes that set `retryable: false`.
+Each error also has `retryable`. The worker reads it on the error that fails a queued task, when that error is a `ResizeError` (also one from a second copy of the package): with `retryable: false` it dead-letters the task at once instead of retrying, for example when the media has no original or the image exceeds the pixel limits. Errors from other libraries are always retried, even if they carry a `retryable` field of their own. That covers errors from loading the media, downloading the original, the source checks and the SVG render, `beforeSteps`, and saving the previews, so your own errors there can stop the retries the same way: throw a `ResizeError` subclass with `retryable: false`, for example `new ResizeMediaError('…', { retryable: false })`. An error inside one variant (`variantSteps`, encoding, uploading the preview) fails only that variant; the task then fails with the retryable `RESIZE_WORKER_INCOMPLETE` and is retried for the missing variants. The [operations reference](https://github.com/adaptivestone/framework-module-resizer#operations) lists the codes that set `retryable: false`.
 
 ## Operations and troubleshooting {/* #operations */}
 
@@ -617,6 +618,8 @@ Each error also has `retryable`. The worker reads it on the error that fails a q
 | Tasks stay `pending` | Is a worker running for that queue (`--queue`), on the same database? |
 | `verify()` or the first upload fails with `RESIZE_CONFIG_STORAGE_MISSING` | Add `storage: { driver: 'local', … }` (or `'s3'`) to the config file named in the message |
 | Worker stops with `RESIZE_QUEUE_NOT_SERVED` | No task queue serves that queue, for example an `SqsTaskQueue` without it in `queues`: add the queue URL, or start the worker for another queue |
+| Worker stops with `RESIZE_QUEUE_SHARED_RESIZER_UNLISTED` | The `resizers` list leaves out a Resizer that uses the same task queue: add it to the list, or give it its own task queue |
+| `verify()` or the worker fails with `RESIZE_LOCKS_REQUIRED`, while reads still work | A Resizer without the framework has `tasks` but no `locks`: spread the parts of `mongoParts()`, or pass a lock store |
 | Variants are missing but there are no tasks | `enqueueMissing`, the original's `storageRef`, the indexes, hooks and logs; `prewarm()` reports the reason per variant |
 | Tasks fail repeatedly | Original access, image limits, pipeline code and worker logs; `RESIZE_WORKER_INCOMPLETE` lists the missing variants |
 | `previews[]` has entries but the response is empty | The query projection (`resizeMediaPaths`), stale caches, or how you map `decision` |
