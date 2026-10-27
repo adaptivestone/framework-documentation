@@ -68,7 +68,7 @@ export default class File extends BaseModel {
 
 The fragment adds:
 - `original`: where the original is stored, plus its format, size and dimensions.
-- `previews[]`: one entry per generated file. Its `identity` field lets the database keep one entry per preview, so a hand-written schema that declares preview entries as sub-documents needs `identity: { type: String }` in them.
+- `previews[]`: one entry per generated file. Its `identity` field lets the media store keep one entry per preview, so a hand-written schema that declares preview entries as sub-documents needs `identity: { type: String }` in them.
 
 Keep Mongoose's `minimize: false`, which is the `BaseModel` default, because storage locators can contain empty objects. Save the media document before you generate previews; the module never creates it.
 
@@ -506,7 +506,7 @@ const parts = mongoParts(mongoose.connection, { mediaModel: File }); // File spr
 const resizer = new Resizer({
   config: { ...defaultResizeConfig, formats: ['webp'] },
   storage: new LocalFsStorage({ rootDir: './var/media', publicBaseUrl: '/media' }),
-  ...parts, // eager only: media: parts.media instead
+  ...parts, // eager only: media: new MongoMediaStore({ model: File }) instead (no queue or lock models)
 });
 
 // In the worker process:
@@ -588,14 +588,14 @@ try {
 
 If two copies of the package are installed, `instanceof` can fail across them. `ResizeError.isResizeError(err)` still works in that case.
 
-Each error also has `retryable`. When a queued task fails with `retryable: false`, the worker dead-letters it at once instead of retrying, for example when the media has no original or the image exceeds the pixel limits. The worker reads the field on any thrown object, so your own errors, from a custom driver or a `beforeSteps` step, can stop the retries the same way. The [operations reference](https://github.com/adaptivestone/framework-module-resizer#operations) lists the codes that set it.
+Each error also has `retryable`. The worker reads it on the error that fails a queued task, on any thrown object, not only a `ResizeError`: with `retryable: false` it dead-letters the task at once instead of retrying, for example when the media has no original or the image exceeds the pixel limits. That covers errors from loading the media, downloading the original, the source checks and the SVG render, `beforeSteps`, and saving the previews, so your own errors there can stop the retries the same way. An error inside one variant (`variantSteps`, encoding, uploading the preview) fails only that variant; the task then fails with the retryable `RESIZE_WORKER_INCOMPLETE` and is retried for the missing variants. The [operations reference](https://github.com/adaptivestone/framework-module-resizer#operations) lists the codes that set `retryable: false`.
 
 ## Operations and troubleshooting {/* #operations */}
 
 - **Task states.** Mongo tasks go `pending → processing → completed`. A failed attempt returns to `pending` with a growing delay. After `queue.maxAttempts`, the task becomes `dead`.
 - **Partial attempts.** A task completes only when every requested variant is stored. When an attempt is only partly successful, its previews are saved and the next attempt makes only the missing ones.
 - **Cleanup and retries.** Completed tasks are removed after about 24 hours and dead tasks after about 30 days. To retry a dead task after fixing its cause, call `prewarm()` again for that media once `queue.lockTtlMs.failed` (10 minutes by default) has passed since the task died.
-- **One row per preview.** The database stores each preview identity once. When two workers render the same preview, the second upload is logged as a warning with its storage location and is not recorded; delete such files if you need to.
+- **One row per preview.** The media store keeps each preview identity once. When two workers render the same preview, the second upload is logged as a warning with its storage location and is not recorded; delete such files if you need to.
 - **Throughput.** A worker processes one task at a time from each task queue, and `concurrency` parallelizes the variants within it. For more throughput, run more worker processes.
 - **Shutdown.** On SIGTERM or SIGINT the worker stops claiming tasks, lets the variants in progress finish and saves them, and puts the task back in the queue without an `onTaskFailed` event or a retry delay; the next worker makes the rest. A task that failed with a non-retryable error, such as a missing original, is still dead-lettered. With the database queue this does not count as an attempt; with SQS it does. Custom queues: see the `release` method in the [package reference](https://github.com/adaptivestone/framework-module-resizer#drivers).
 
