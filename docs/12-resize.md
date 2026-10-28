@@ -111,7 +111,7 @@ import { FrameworkResizer } from '@adaptivestone/framework-module-resize/framewo
 export const resizer = new FrameworkResizer({ pipelines: { default: {} } });
 ```
 
-`FrameworkResizer` builds everything else from `src/config/resize.ts`: the image settings, the storage, the task queue, the media store (`FrameworkMediaStore`, over your media model `mediaModelName`), for an SQS queue the lock store (`FrameworkLockStore`, the framework's `Lock` model; the database queue needs none), and the app logger. So `src/resizer.ts` holds only behaviour: pipelines and hooks. Options win over the config; for example, `new FrameworkResizer({ storage: new S3Storage({ …, client }) })` reuses your own S3 client. Import `src/resizer.ts` wherever you need the Resizer; a normal static import is fine, because nothing is read from the framework until first use. Elsewhere in your code, `getResizer()` returns the same instance.
+`FrameworkResizer` builds everything else from `src/config/resize.ts`: the image settings, the storage, the task queue, the media store (`FrameworkMediaStore`, over your media model `mediaModelName`), for a queue that cannot gate by itself, such as SQS, the lock store (`FrameworkLockStore`, the framework's `Lock` model; the database queue needs none), and the app logger. So `src/resizer.ts` holds only behaviour: pipelines and hooks. Options win over the config; for example, `new FrameworkResizer({ storage: new S3Storage({ …, client }) })` reuses your own S3 client. Import `src/resizer.ts` wherever you need the Resizer; a normal static import is fine, because nothing is read from the framework until first use. Elsewhere in your code, `getResizer()` returns the same instance.
 
 A config mistake then shows up at the first upload or read. To catch it at startup instead, verify after initialization:
 
@@ -269,7 +269,7 @@ for (const file of files) {
 
 3. Check the queue timing if your images are large: `queue` also takes `leaseMs`, `maxAttempts` and the other [timing options](#configuration). A `leaseMs` above 600000 also needs `coordination.gateTtlMs` at least as large.
 
-4. Create the indexes. `ResizeTask` declares its indexes (and so does the framework's `Lock` model, which only an SQS queue uses). Create them through your normal migration or deployment process before you deploy the API and the worker. The module never creates indexes at runtime. One task per media and pipeline depends on the gate index: unique on `{ resizer: 1, fileId: 1, pipeline: 1 }` and partial on `active: true`. When you upgrade from an earlier version, create the gate index and the claim index `{ queue: 1, status: 1, availableAt: 1 }` before or together with the new API and workers, then drop the old `{ status: 1, createdAt: 1 }` (or `{ queue: 1, status: 1, createdAt: 1 }`) index, and, when convenient, the `{ fileId, pipeline, requestKey }` index.
+4. Create the indexes. `ResizeTask` declares its indexes (and so does the framework's `Lock` model, which only a queue that cannot gate by itself, such as SQS, uses). Create them through your normal migration or deployment process before you deploy the API and the worker. The module never creates indexes at runtime. One task per media and pipeline depends on the gate index. When you upgrade from an earlier version, do it in this order. Create the gate index `{ resizer: 1, fileId: 1, pipeline: 1 }` (unique, partial on `active: true`) BEFORE the new API and workers start: without it every new task is stored, duplicate active tasks build up, and building the unique index then fails (E11000) until those tasks complete. Create the claim index `{ queue: 1, status: 1, availableAt: 1 }` before or together with the new workers, then drop the old `{ status: 1, createdAt: 1 }` (or `{ queue: 1, status: 1, createdAt: 1 }`) index. Then drop the `requestKey` index (`{ fileId, pipeline, requestKey }`) when convenient.
 
 5. Start the worker as a separate long-running process, kept running by your process manager:
 
@@ -341,7 +341,7 @@ if (result.status === 'incomplete') {
 | `'not-required'` | Nothing to do: the request was empty, or the `beforeEnqueue` hook removed everything |
 | `'incomplete'` | At least one variant has no confirmed task, for example because there is no task queue or no original |
 
-The arrays `ready`, `accepted`, `notRequired` and `unconfirmed` split the requested catalog, and `result.tasks` holds the task receipts. When a task for the same media and pipeline is already active, the database queue looks it up: `prewarm()` accepts the variants that task holds, and returns the others as `unconfirmed` with the retryable `RESIZE_TASK_IN_FLIGHT` issue; call `prewarm()` again after the task ends. A queue that cannot look tasks up, such as SQS, returns every variant as `unconfirmed` with the retryable `RESIZE_ENQUEUE_LOCK_CONTENDED` issue. An unexpected error, for example a media document without an ID, is `incomplete` with a `RESIZE_ENQUEUE_INTERNAL_ERROR` issue.
+The arrays `ready`, `accepted`, `notRequired` and `unconfirmed` split the requested catalog, and `result.tasks` holds the task receipts. When a task for the same media and pipeline is already active, the database queue looks it up: `prewarm()` accepts the variants that task holds, and returns the others as `unconfirmed` with the retryable `RESIZE_TASK_IN_FLIGHT` issue; call `prewarm()` again after the task ends. SQS, which gates with a lock, reports every variant as `unconfirmed` with the retryable `RESIZE_ENQUEUE_LOCK_CONTENDED` issue while the lock is held. An unexpected error, for example a media document without an ID, is `incomplete` with a `RESIZE_ENQUEUE_INTERNAL_ERROR` issue.
 
 ### Queues and workers {/* #named-queues */}
 
@@ -430,7 +430,7 @@ Hook functions run in the order they were registered, and each one is awaited. A
 |---|---|---|---|
 | storage (required) | `storage: { driver: 'local' \| 's3', … }` | `LocalFsStorage`, `S3Storage` | `…/drivers/fs.js`, `…/drivers/s3.js` |
 | media: your media documents (required) | always `FrameworkMediaStore` | `FrameworkMediaStore`, `MongoMediaStore` | `…/framework.js`, `…/drivers/mongo.js` |
-| locks (an SQS queue only) | `FrameworkLockStore` when `queue` is SQS | `FrameworkLockStore`, `MongoLockStore` | `…/framework.js`, `…/drivers/mongo.js` |
+| locks (SQS, or a custom queue that cannot gate) | `FrameworkLockStore` when `queue` is SQS, or beside a custom `tasks` without `gatesByTask` | `FrameworkLockStore`, `MongoLockStore` | `…/framework.js`, `…/drivers/mongo.js` |
 | task queue (queued work only) | `queue: { driver: 'database' \| 'sqs', … }` | `MongoTaskQueue`, `SqsTaskQueue` | `…/drivers/mongo.js`, `…/drivers/sqs.js` |
 
 In a framework app you choose drivers in the config file; pass a driver object to `new FrameworkResizer({ storage, media, locks, tasks })` only when the config can't express it, for example your own S3 client. The S3 and SQS drivers are loaded only when selected.
@@ -540,7 +540,7 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 | `worker.enabled` | `false` | Allows the worker command to run |
 | `queue.maxAttempts` | `5` | Attempts before a task is dead-lettered |
 | `queue.leaseMs` | `60000` | The task lease: how long a worker holds a task between heartbeats |
-| `coordination.gateTtlMs`, `coordination.cooldownMs` | `600000`, `600000` | How long the lock of a newly queued task holds its media and pipeline until a worker extends it (SQS only; at least `queue.leaseMs`, so raise it with a longer lease), and how long reads queue nothing for a media and pipeline after its task was dead-lettered |
+| `coordination.gateTtlMs`, `coordination.cooldownMs` | `600000`, `600000` | How long the lock of a newly queued task holds its media and pipeline until a worker extends it, and how long reads queue nothing for a media and pipeline after its task was dead-lettered. The lock exists only with a queue that cannot gate (SQS); the ≥ `queue.leaseMs` check on `gateTtlMs` applies to every queue, so raise it with a lease above 600000 |
 | `queue.retryBackoffMs`, `queue.idlePollMs`, `queue.taskTimeoutMs` | `{ base: 5000, max: 300000 }`, `1000`, `600000` | Retry delay, how often an idle worker polls for new tasks (one indexed query per worker on Mongo), and the task time limit |
 
 To change one encoder setting, spread the nested defaults:
@@ -595,7 +595,7 @@ Each error also has `retryable`. The worker reads it on the error that fails a q
 
 ## Operations and troubleshooting {/* #operations */}
 
-- **Task states.** Mongo tasks go `pending → processing → completed`. A failed attempt returns to `pending` with a growing delay. After `queue.maxAttempts`, the task becomes `dead`. A media and pipeline have at most one active task (`active: true` on its row) from the moment it is queued until it completes, or, after a dead-letter, until `coordination.cooldownMs` has passed.
+- **Task states.** Mongo tasks go `pending → processing → completed`. A failed attempt returns to `pending` with a growing delay. After `queue.maxAttempts`, the task becomes `dead`. A media and pipeline have at most one active task (`active: true` on its row) from the moment it is queued until it completes, or, after a dead-letter, until `coordination.cooldownMs` has passed; the next `add()` then takes the gate over (it retires the dead row and stores a new task).
 - **Partial attempts.** A task completes only when every requested variant is stored. When an attempt is only partly successful, its previews are saved and the next attempt makes only the missing ones.
 - **Cleanup and retries.** Completed tasks are removed after about 24 hours and dead tasks after about 30 days. To retry a dead task after fixing its cause, call `prewarm()` again for that media once `coordination.cooldownMs` (10 minutes by default) has passed since the task died; until then it reports a retryable issue.
 - **One row per preview.** The media store keeps each preview identity once. When two workers render the same preview, the second upload is logged as a warning with its storage location and is not recorded; delete such files if you need to.
