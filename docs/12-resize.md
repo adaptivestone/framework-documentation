@@ -270,7 +270,7 @@ for (const file of files) {
    worker: { enabled: true }, // every worker key is optional; defaultWorkerOptions holds the rest
    ```
 
-   `queues`, `worker` and `coordination` are process-wide: they are read only from `src/config/resize.ts`, for every Resizer of the process and for the worker. Without `queues` (or with `queue: false`) the Resizer is eager only; a `queue` name that `queues` does not define is `RESIZE_CONFIG_QUEUE_UNKNOWN`. `worker.enabled` only permits the worker command; the API never starts a worker. `src/resizer.ts` does not change.
+   `queues`, `worker` and `coordination` are process-wide: they are read only from `src/config/resize.ts`, for every Resizer of the process and for the worker. `queue: false`, or no `queue` key while `queues` is empty, is eager only. A `queue` name that `queues` does not define is `RESIZE_CONFIG_QUEUE_UNKNOWN`, so with `queue: 'default'` kept in the file, a missing `queues` is that error too. `worker.enabled` only permits the worker command; the API never starts a worker. `src/resizer.ts` does not change.
 
 3. Check the queue timing if your images are large: each `queues` entry also takes `leaseMs`, `maxAttempts` and the other [timing options](#configuration), for that queue only.
 
@@ -547,7 +547,7 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 | `mediaModelName` | required | Your media model's name |
 | `storage` | required (unless passed in code) | `{ driver: 'local', rootDir, publicBaseUrl, privateRootDir? }` or `{ driver: 's3', bucketPublic, bucketPrivate?, publicBaseUrl?, region?, endpoint?, forcePathStyle? }` |
 | `queue` | `'default'` when `queues` has entries, else eager only | The name of this Resizer's queue (a key of `queues`), or `false` = eager only |
-| `queues` | none: eager only | Process-wide. Every queue by name: `{ driver: 'database' }` or `{ driver: 'sqs', queueUrl, deadLetterQueueUrl?, waitTimeSeconds?, region?, endpoint? }`, plus that queue's timing options below |
+| `queues` | none (a Resizer with no `queue` key is then eager only) | Process-wide. Every queue by name: `{ driver: 'database' }` or `{ driver: 'sqs', queueUrl, deadLetterQueueUrl?, waitTimeSeconds?, region?, endpoint? }`, plus that queue's timing options below |
 | `formats` | `['jpeg', 'webp', 'avif']` | Formats generated when a call doesn't pass `formats`; each needs an `encode.formats` entry |
 | `upload.maxBytes` | 25 MiB | Largest original `uploadOriginal()` accepts |
 | `upload.formats` | `jpeg`, `png`, `webp`, `avif`, `gif`, `svg` | Original formats `uploadOriginal()` accepts |
@@ -639,7 +639,7 @@ Each error also has `retryable`. The worker reads it on the error that fails a q
 |---|---|
 | Worker exits with "disabled" | `worker.enabled: true` in `src/config/resize.ts` (the worker reads no other file) |
 | `resize-scaffold --check` reports `src/config/resize.ts` or `src/models/ResizeTask.ts` right after the upgrade | Intended for a config or an ejected model written for an earlier version: see the [old keys](#configuration) |
-| `RESIZE_CONFIG_QUEUE_UNKNOWN` at the first call or from `verify()` | The Resizer's queue (its `queue`, its `queueName` option, or the implied `'default'`) is not an entry of `queues` in `src/config/resize.ts`: add it, or set `queue: false` for eager only |
+| `RESIZE_CONFIG_QUEUE_UNKNOWN` at the first call or from `verify()` | The Resizer's queue (its `queue`, its `queueName` option, or the implied `'default'`) is not an entry of `queues` in `src/config/resize.ts`: add it, or, for eager only, set `queue: false` in the file, or `tasks: false` in code when the name came from the `queueName` option (the option wins over the file) |
 | `RESIZE_CONFIG_INVALID` saying a section "is process-wide" | `queues`, `worker` or `coordination` is in another config file (or in the `config` option): move it to `src/config/resize.ts` |
 | `RESIZE_CONFIG_REMOVED_KEY` naming `queue`, `queues.<name>.queues` or `--config` | The earlier queue shape: see the [old keys](#configuration) |
 | `RESIZE_QUEUE_NOT_SERVED` in `prewarm()` issues, or a warning from `resolve()` that the Resizer "cannot queue to" a queue | The call's `queue` is not defined in `queues`, or is on another backend than the Resizer's own queue: one Resizer uses one backend. Move all of a Resizer's queues together when an environment file moves some to another backend |
