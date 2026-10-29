@@ -68,7 +68,7 @@ export default class File extends BaseModel {
 
 The fragment adds:
 - `original`: where the original is stored, plus its format, size and dimensions.
-- `previews[]`: one entry per generated file. Besides its URL fields, each entry records `bytes`, `createdAt`, `origin` (which original it was made from) and `encodeSig` (what it was encoded with: its format's encode settings, the sharpen setting of its fit mode, its animation settings (for animated formats: `animated`, `limits.animationFrames` and the pixel budget `min(limits.sourcePixels, limits.inputPixels)`, which also caps the frames), the result-dimension cap, the fit box (for fit rows) and the pipeline `version`). Its `identity` field lets the media store keep one entry per preview. A hand-written schema that declares preview entries as strict sub-documents needs `identity`, `origin` and `encodeSig` in them, each `{ type: String }`; `verify()` reports `RESIZE_MONGO_MEDIA_MODEL_OUTDATED` without them.
+- `previews[]`: one entry per generated file. Besides its URL fields, each entry records `bytes`, `createdAt`, `origin` (which original it was made from) and `encodeSig` (what it was encoded with: its format's encode settings, the sharpen setting of its fit mode, its animation settings (for animated formats: `animated`, `limits.animationFrames` and the pixel budget `min(limits.sourcePixels, limits.inputPixels)`, which also caps the frames at the larger of the source's and the preview's size), the result-dimension cap, the fit box (for fit rows) and the pipeline `version`). Its `identity` field lets the media store keep one entry per preview. A hand-written schema that declares preview entries as strict sub-documents needs `identity`, `origin` and `encodeSig` in them, each `{ type: String }`; `verify()` reports `RESIZE_MONGO_MEDIA_MODEL_OUTDATED` without them.
 
 Keep Mongoose's `minimize: false`, which is the `BaseModel` default, because storage locators can contain empty objects. Save the media document before you generate previews; the module never creates it.
 
@@ -397,8 +397,8 @@ import { rasterToSharp, sharpToRaster } from '@adaptivestone/framework-module-re
 export const resizer = new FrameworkResizer({
   pipelines: {
     photo: {
-      beforeSteps: [    // run once per task on the decoded source, e.g. blur faces or plates
-        async (r) => sharpToRaster(rasterToSharp(r).blur(5)),
+      beforeSteps: [    // run once per task on the decoded source
+        // async (r) => sharpToRaster(rasterToSharp(r).blur(5)), // e.g. blur plates: a Raster in, a Raster out
       ],
       variantSteps: [   // run per variant, after resize and before encode
         (img, { variant }) => (variant.filters?.blur ? img.blur(Number(variant.filters.blur)) : img),
