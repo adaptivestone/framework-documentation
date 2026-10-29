@@ -661,11 +661,11 @@ Each error also has `retryable`. The worker reads it on the error that fails a q
 | Worker logs `RESIZE_SVG_RENDER_TIMEOUT` or `RESIZE_SVG_RENDER_FAILED` | An SVG took longer than `limits.processingTimeoutSeconds` to render (dead-lettered at once), or its render process crashed (retried) |
 | `RESIZE_SVG_RENDER_UNAVAILABLE` from the worker or `generate()` | The SVG render process cannot start: allow child processes (`--allow-child-process` under Node's permission model), and keep `svgRasterChild.js` next to `svgRaster.js` when bundling |
 | `RESIZE_DECODER_MISSING` from the worker or `generate()` (retried) | No decoder in that process lists the stored `original.format`, and none reads the bytes: pass the decoder in `decoders` in every process, or fix an `original.format` that holds an alias |
-| `RESIZE_SOURCE_FORMAT_UNSUPPORTED` (dead-lettered at once) | Every decoder refused the bytes: no decoder reads that format |
+| `RESIZE_SOURCE_FORMAT_UNSUPPORTED` (dead-lettered at once), or `RESIZE_ORIGINAL_FORMAT_UNSUPPORTED` from `uploadOriginal()` | Every decoder refused the bytes: no decoder reads that format. Add a decoder for it, or reject the file |
 | Worker warns that a media "is stored as '…' but its bytes are '…'" | `original.format` holds an alias such as `jpg`, a MIME type or a wrong format. The preview renders; fix the record to the decoder's ID |
 | `RESIZE_SOURCE_DECODE_FAILED` | Sharp (or your decoder) could not decode the original; the error's cause says why. Retried, then dead-lettered |
 | `RESIZE_DECODER_INVALID` | A `decoders` entry is not a decoder, or a decoder broke the contract (what its `inspect` reported, or the raster it returned) |
-| `RESIZE_PIPELINE_STEP_INVALID` | A `beforeStep` resolved with something that is not a one-frame `Raster`, such as a `Buffer` or a Sharp object: return `sharpToRaster(…)` |
+| `RESIZE_PIPELINE_STEP_INVALID` | A `beforeStep` resolved with something that is not a one-frame `Raster`, such as a `Buffer` or a Sharp object, or `sharpToRaster` got a multi-page image: return `sharpToRaster(…)` |
 | Sharp's "Input file is missing" from a `beforeStep` | An old step still calls `sharp(buf)` on its first argument, which is now a `Raster`: rewrite it as `async (r) => sharpToRaster(rasterToSharp(r)…)` |
 | `verify()` or the worker fails with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a registered model |
 | `verify()` or the first call fails with `RESIZE_PEER_MISSING` | The S3 or SQS driver selected in the config needs its AWS SDK packages: install the ones named in the message |
