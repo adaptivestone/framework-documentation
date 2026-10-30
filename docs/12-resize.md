@@ -130,7 +130,7 @@ await server.startServer();
 - previews under `rootDir`;
 - private originals under `privateRootDir`, which defaults to `./var/media-private`.
 
-Serve only `rootDir`, at `/media`, with a long-lived cache (preview file names are never reused); never serve the private folder. For S3, see [drivers](#drivers).
+Serve only `rootDir`, at `/media`, with a long-lived cache: every file name the module writes there is new (previews and public raster originals), so a file never changes under its URL; if you write your own files under `rootDir`, give each a new name. Never serve the private folder. For S3, see [drivers](#drivers).
 
 ### 5. Store the original at upload
 
@@ -222,6 +222,8 @@ const { decision } = await getResizer().resolve({
 const picture = formatPictureUrls(decision, { id: String(fileDoc.id) });
 // { id: '65f0…', sizes: { '320x320': { webp: { url: '/media/previews/8d0e2b7c.webp', contentType: 'image/webp' } } } }
 ```
+
+With strict types, a loaded Mongoose document is not a `MediaLike` (Mongoose types the nested fields as nullable): pass it as `media: doc as MediaLike` (`import type { MediaLike }` from the main entry), or type the model's `original` and `previews` paths with `Original` and `Preview`.
 
 `resolve()` never resizes and never throws. It returns:
 
@@ -469,7 +471,7 @@ storage: {
 
 Credentials come from the AWS SDK's default chain, never from the config. To use an existing `S3Client`, pass `storage: new S3Storage({ …, client })` from `…/drivers/s3.js` in code instead. When an environment file switches `storage` from `local` to `s3`, set `publicBaseUrl` there too: the framework merges the section field by field. You create the buckets and their access policies; `publicBaseUrl` only builds URLs. The driver reads only from these two buckets, so a tampered `storageRef` cannot reach another bucket.
 
-Every public object `S3Storage` uploads (previews and public raster originals, and a host's own direct uploads) carries `Cache-Control: public, max-age=31536000, immutable`. Every key the module writes is new, so an object never changes under its URL; if you call `S3Storage.upload` yourself, give every upload a new key, as the `ResizeStorage.upload` contract requires (the driver does not check). CDNs and browsers keep these objects up to a year, so purge your CDN when you delete one that must disappear sooner. Private objects get no cache header.
+Every public object `S3Storage` uploads (previews and public raster originals, and a host's own direct uploads) carries `Cache-Control: public, max-age=31536000, immutable`. Every key the module writes is new, so an object never changes under its URL; if you call `S3Storage.upload` yourself, give every upload a new key, as the `ResizeStorage.upload` contract requires (the driver does not check). CDNs and browsers keep these objects up to a year, so purge your CDN when you delete one that must disappear sooner (browsers that already have it may keep it until it expires). Private objects get no cache header.
 
 **SQS** needs `npm i @aws-sdk/client-sqs`, version 3.572 or newer: older clients don't return receive counts, so failing tasks would never be dead-lettered.
 
@@ -767,4 +769,4 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 | `previews[]` has entries but the response is empty | The query projection (`resizeMediaPaths`), stale caches, or how you map `decision` |
 | A returned URL gives 404 or 403 | Static-file, CDN or bucket access; the module doesn't check whether the file exists |
 
-Your app owns replacing and deleting media and their storage files (the module only adds preview rows, and `invalidate()` only removes rows and returns their refs), access checks, and refreshing cached responses (public S3 objects are cached for a year: purge your CDN when you delete one).
+Your app owns replacing and deleting media and their storage files (the module only adds preview rows, and `invalidate()` only removes rows and returns their refs), access checks, and refreshing cached responses (public S3 objects are cached for a year: purge your CDN when you delete one that must disappear sooner; browsers that already have it may keep it until it expires).
