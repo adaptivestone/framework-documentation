@@ -672,11 +672,11 @@ Each error also has `retryable`. The worker reads it on the error that fails a q
 
 ## Metrics {/* #metrics */}
 
-Every Resizer reports its reads, uploads, rendered variants, task outcomes and the worker's waits to a metrics sink. By default it is `LogMetrics` on the app logger:
+Every Resizer reports its reads, uploads, rendered variants, task outcomes and the worker's waits to a metrics sink. By default it is `LogMetrics` on the Resizer's `logger` option, else the app logger:
 
 - **One summary line per minute** per Resizer, at `info`, when something happened: `resize: Resizer 'default' over 60 s: reads 1200 (ready 1150, enqueued 12, in-flight 38), stale previews served 40, uploads 25 (31457280 bytes), variants 75 (5242880 bytes), claims 12 (average wait 840 ms)`.
 - **One line per task outcome** (`completed`, `failed`, `dead`) and per failed variant, at once.
-- **One `debug` line per event**, which your app logger may drop.
+- **One `debug` line per event**, which that logger may drop.
 
 A read no longer writes a log line per request: a media without an original is only counted, and an unknown pipeline, a format without encoder settings or a missing queue is logged once. Every read is counted, with its outcome.
 
