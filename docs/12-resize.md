@@ -201,8 +201,9 @@ const { created, failed } = await getResizer().generate({
 
 | Field | Meaning |
 |---|---|
-| `created` | `Preview[]`: the files this call made. Previews that already existed are skipped and not listed. |
+| `created` | `Preview[]`: the files this call made. Up-to-date previews that already existed are skipped and not listed; [outdated](#operations) ones are made again. |
 | `failed` | The number of variants that failed. `failed > 0` is a partial success: the successful previews are saved. |
+| `replaced` | The storage refs of the outdated previews this call replaced, only when there were some. Their files are not deleted. |
 
 `generate()` throws `ResizeGenerateError` if every variant fails, and `ResizeNoOriginalError` if the media has no original. So `{ created: [], failed: 0 }` means nothing new was needed. `failed` is only a count; the logs say which variant failed and why.
 
@@ -226,12 +227,13 @@ const picture = formatPictureUrls(decision, { id: String(fileDoc.id) });
 
 | Field | Meaning |
 |---|---|
-| `decision.ready` | Stored previews that can be served now, each with `sizeKey`, `format`, `url`, `contentType` and the `preview` row; never the original |
+| `decision.ready` | Stored previews that can be served now, each with `sizeKey`, `format`, `url`, `contentType` and the `preview` row; never the original. An outdated preview is served too, with `stale: true` |
 | `decision.missing` | Variants that cannot be served yet; they have no URL |
+| `decision.stale` | Variants queued to replace an outdated preview that is still served; set only when there is one |
 | `output` | The return value of your `formatPublicUrls` hook, or `undefined` if you have none |
 
 `formatPictureUrls()` leaves missing sizes out of its map, so show your own placeholder for them.
-- **With a queue configured:** `resolve()` also queues the missing variants. Pass `enqueueMissing: false` to only read.
+- **With a queue configured:** `resolve()` also queues the missing variants, and the replacements of outdated ones. Pass `enqueueMissing: false` to only read.
 - **Without a queue:** it only reads.
 - **New previews:** `resolve()` never waits for the worker. To see new previews, load the media again on a later request.
 
@@ -421,7 +423,7 @@ await getResizer().resolve({
 - **`beforeSteps` work on pixels.** A step receives the decoded first frame as a `Raster` (raw 8-bit sRGB pixels with their size) and resolves with one; anything else, such as a `Buffer` or a Sharp object, fails with `RESIZE_PIPELINE_STEP_INVALID`. The image engine is replaceable, so a step sees pixels, not a library object; `rasterToSharp` and `sharpToRaster` wrap Sharp work, as above. For a raster source the step sees the upright original at its own size; for a vector source (SVG) the pixels can be larger, so multiply coordinates stored in the source's units by `meta.scale`. `variantSteps` receive a Sharp instance over each preview's pixels. A pipeline with steps renders only the first frame of an animation.
 - **A filter such as `{ blur: 40 }` does nothing by itself.** Your `variantSteps` give it meaning.
 - **`ctx` does not reach the worker.** Queued tasks carry only the pipeline name and the variants, and steps in the worker receive `ctx === {}`. Keep any data a step needs on the media document. Only eager `generate()` passes your `ctx` to the steps.
-- **Each pipeline keeps its own previews.** A preview is identified by Resizer, pipeline, size, format and filters. Changing a pipeline's code does not regenerate existing previews; give the pipeline a new name, such as `photo-v2`, to do that, or remove its stored previews with [`invalidate()`](#operations). A pipeline may also set `version`, a string that is part of each preview's `encodeSig`: bump it when a step's output changes. Its stored previews are not regenerated yet; a later release's freshness check will regenerate them.
+- **Each pipeline keeps its own previews.** A preview is identified by Resizer, pipeline, size, format and filters. Changing a pipeline's code does not regenerate existing previews; give the pipeline a new name, such as `photo-v2`, to do that, or remove its stored previews with [`invalidate()`](#operations). A pipeline may also set `version`, a string that is part of each preview's `encodeSig`: bump it when a step's output changes, and the pipeline's stored previews are regenerated on their next read (see [outdated previews](#operations)). Deploy the change to every worker at once.
 - **Register a pipeline before you request it, in every process.** A name the Resizer doesn't know (any name but `default`) is never rendered: `resolve()` serves only previews already stored for it and queues nothing, `prewarm()` reports `RESIZE_PIPELINE_UNKNOWN`, and `generate()` and the worker throw it. When you add or rename a pipeline, deploy the worker before the API starts requesting it: a worker without the pipeline fails its tasks, retries them with backoff, and dead-letters them after the queue's `maxAttempts`. The worker itself needs the indexes first ([step 4](#add-the-queue-and-the-worker)), so create them through a migration that runs before both.
 - **Pipelines are fixed at construction.** Pass every pipeline in `pipelines`; `getResizer().hasPipeline(name)` tells whether one is registered.
 
@@ -668,13 +670,34 @@ If two copies of the package are installed, `instanceof` can fail across them. `
 
 Each error also has `retryable`. The worker reads it on the error that fails a queued task, when that error is a `ResizeError` (also one from a second copy of the package): with `retryable: false` it dead-letters the task at once instead of retrying, for example when the media has no original or the image exceeds the pixel limits. Errors from other libraries are always retried, even if they carry a `retryable` field of their own. That covers errors from loading the media, downloading the original, the decoder's checks and render, `beforeSteps`, and saving the previews, so your own errors there can stop the retries the same way: throw a `ResizeError` subclass with `retryable: false`, for example `new ResizeMediaError('…', { retryable: false })`. An error inside one variant (`variantSteps`, encoding, uploading the preview) fails only that variant; the task then fails with the retryable `RESIZE_WORKER_INCOMPLETE` and is retried for the missing variants. The [operations reference](https://github.com/adaptivestone/framework-module-resizer#operations) lists the codes that set `retryable: false`.
 
+## Metrics {/* #metrics */}
+
+Every Resizer reports its reads, uploads, rendered variants, task outcomes and the worker's waits to a metrics sink. By default it is `LogMetrics` on the app logger:
+
+- **One summary line per minute** per Resizer, at `info`, when something happened: `resize: Resizer 'default' over 60 s: reads 1200 (ready 1150, enqueued 12, in-flight 38), stale previews served 40, uploads 25 (31457280 bytes), variants 75 (5242880 bytes), claims 12 (average wait 840 ms)`.
+- **One line per task outcome** (`completed`, `failed`, `dead`) and per failed variant, at once.
+- **One `debug` line per event**, which your app logger may drop.
+
+A read no longer writes a log line per request: a media without an original is only counted, and an unknown pipeline, a format without encoder settings or a missing queue is logged once. Every read is counted, with its outcome.
+
+Pass `metrics` to change this:
+
+```ts
+import { NoopMetrics } from '@adaptivestone/framework-module-resize';
+
+new FrameworkResizer({ pipelines, metrics: new NoopMetrics() }); // off
+```
+
+A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)` and `timing(name, ms, labels, context)`; group by `labels` only, since `context` holds ids for logs. The worker writes the open summary when it stops; in the API, call `await getResizer().metrics.flush?.()` at shutdown. The [metrics reference](https://github.com/adaptivestone/framework-module-resizer#metrics) lists every event, its labels, the line formats and a Prometheus example.
+
 ## Operations and troubleshooting {/* #operations */}
 
 - **Task states.** Mongo tasks go `pending → processing → completed`. A failed attempt returns to `pending` with a growing delay. After the queue's `maxAttempts`, the task becomes `dead`. `startedAt` records when the latest attempt started and `finishedAt` when the task completed or died, for inspection only. A media and pipeline have at most one active task per queue (`active: true` on its row) from the moment it is queued until it completes, or, after a dead-letter, until `coordination.cooldownMs` has passed; the next `add()` then takes the gate over (it retires the dead row and stores a new task).
 - **Partial attempts.** A task completes only when every requested variant is stored. When an attempt is only partly successful, its previews are saved and the next attempt makes only the missing ones.
 - **Cleanup and retries.** Completed tasks are removed after about 24 hours and dead tasks after about 30 days. A dead task's cooldown holds only its own queue: a read or pre-warm on another queue queues the work again, so a task that always fails gets one `maxAttempts` cycle on each queue it is sent to. To retry a dead task after fixing its cause, call `prewarm()` again for that media once `coordination.cooldownMs` (10 minutes by default) has passed since the task died; until then it reports a retryable issue.
 - **One row per preview.** The media store keeps each preview identity once. When two workers render the same preview, the second upload is logged as a warning with its storage location and is not recorded; delete such files if you need to.
-- **Preview fields.** Each preview row records `bytes`, `createdAt`, `origin` and `encodeSig`. The read path does not check them yet. Rows written before `0.3.0-rc.1` have no `origin` or `encodeSig`: they are served for now, and a later release's freshness check will regenerate them, so plan the storage cost of rendering them again.
+- **Outdated previews.** Each preview row records `bytes`, `createdAt`, `origin` (the original it was made from) and `encodeSig` (the settings it was encoded with). A row whose signatures differ from what the current settings would record is outdated (stale): made from another original, with other encode settings or limits, with another pipeline `version`, or before `0.3.0-rc.1`. It is still served, and it is made again on its next read, `prewarm()` or `generate()`; the new row replaces it in one write. Each replacement costs a render and an upload, and the old file stays in storage: clean up from the log line "resize: replaced … outdated preview(s) of media …; their files are not deleted: storage refs …", or sweep preview objects that no row references. After a settings change the regeneration wave shares the queue with new uploads, so plan worker capacity. An app without a queue serves outdated previews until it calls `generate()`. Pass `resolve()` the media's `original` as stored: a projection without `original.width` and `original.height` makes every preview look outdated. The [freshness reference](https://github.com/adaptivestone/framework-module-resizer#freshness) lists every rule.
+- **Rolling out a settings change.** The API and the workers must run the same image settings and pipeline versions. Deploy every worker at once, or change the settings only after the old workers have stopped. While two worker versions with different settings run side by side, each makes the other's previews again: one render, one upload and one orphaned file per read after a task ends.
 - **Removing previews.** `invalidate()` removes a media's stored previews, of one pipeline or of all, in one write, and returns their storage refs. It never deletes files and never queues; delete the files yourself, and the next read or `prewarm()` queues new previews:
 
   ```ts
@@ -701,7 +724,13 @@ Each error also has `retryable`. The worker reads it on the error that fails a q
 | `RESIZE_QUEUE_ROUTES_INVALID` from `new RoutingTaskQueue()` | A route is neither a task queue that serves its own name nor a function that builds one |
 | `RESIZE_CONFIG_INVALID` saying a section "needs driver …" | The config names a driver the Resizer does not have: fix the name, or register the driver with `drivers`. It is reported when the Resizer first reads that section, on first use or by `verify()` (the `storage` of a config object passed in code, at construction) |
 | `RESIZE_CONFIG_QUEUE_INVALID` or `RESIZE_CONFIG_QUEUE_LEASE_INVALID` | A queue's timing is invalid: fix the key the message names. `verify()` rejects for the Resizer's own queue and the worker for the queues it consumes; a call on that queue reports it (`prewarm()`) or logs it once (`resolve()`) |
-| `verify()` or the worker fails with `RESIZE_MEDIA_REPLACE_MISSING` | A custom `MediaStore` lacks `replacePreviews(mediaId, identities, rows)`, which 0.3.0 requires: see the `MediaStore` contract in the [package reference](https://github.com/adaptivestone/framework-module-resizer#drivers) |
+| `verify()` or the worker fails with `RESIZE_MEDIA_REPLACE_MISSING`, or `generate()` and the worker fail with it when an outdated preview is replaced | A custom `MediaStore` lacks `replacePreviews(mediaId, identities, rows)`, which 0.3.0 requires: see the `MediaStore` contract in the [package reference](https://github.com/adaptivestone/framework-module-resizer#drivers) |
+| `RESIZE_METRICS_INVALID` when the Resizer is created | `metrics` is not a sink (`null`, or no `count()` and `timing()`), or `LogMetrics` got a `summaryIntervalMs` that is not a positive whole number: pass `new LogMetrics(logger)`, `new NoopMetrics()` or your own `ResizeMetrics`, or leave `metrics` out |
+| Previews are made again after a config change or an upgrade | Expected: they are [outdated](#operations). It costs a render and an upload per preview, and the old files stay: clean them up from the "replaced … outdated preview(s)" log line, or sweep files no row references |
+| One task per read that makes nothing, and the warning "found every requested preview … already fresh" | The API and the worker run different image settings or pipeline versions (deploy them together), or `resolve()` got the media without its stored `original` (a projection that drops `original.width` and `original.height`) |
+| Previews made again and again during a deploy | Two worker versions with different settings run side by side and each makes the other's previews again: deploy every worker at once, or change settings after the old workers have stopped |
+| Worker warns "the media store did not record the original's dimensions" | A custom `MediaStore` drops `backfillDims` in `appendPreviews` (also with `previews: []`), so every read of such a media queues a task that downloads the original: save the dimensions on the original |
+| Previews written before `0.3.0-rc.1` are made again | They have no `origin` or `encodeSig`, so they are outdated: each is replaced on its next read, and its old file stays. Rows without an `identity` (before 0.3.0) are never removed, and a sweep never finds their files: delete those yourself |
 | Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` must import `../resizer.ts`; delete the old file and run `resize-scaffold` again |
 | Worker logs that a Resizer "is not served by this worker", or `RESIZE_NO_RESIZER` for a task | An SQS (or custom) queue handed the worker a task of a Resizer it doesn't have. That Resizer must be created in `src/resizer.ts`. Until then its tasks go back to the queue, or, on a queue that cannot give tasks back, are retried and then dead-lettered. On the database queue such tasks wait for a worker that has the Resizer |
 | `verify()` or the worker fails with `RESIZE_MONGO_MODEL_MISSING` | The `ResizeTask` model is not registered (scaffold `src/models/ResizeTask.ts`), or the framework's `Lock` model is missing while the Resizer's own queue (for `verify()`) or a queue the worker consumes is on SQS |
