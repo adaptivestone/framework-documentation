@@ -4,7 +4,7 @@ What happens when a route handler or a middleware throws? The framework resolves
 
 1. **Your registered handlers** — checked first, in registration order.
 2. **Built-ins** — the `HttpError` mapper, the Mongoose validation safety net, then the Mongoose cast safety net.
-3. **Fallback** — nothing matched: the error is logged at `error` level and the client gets `500 {"message": "Something went wrong. Please try again later."}`. Every framework 500 uses this one text, translatable through the `http.serverError` key.
+3. **Fallback** — nothing matched: the error is logged at `error` level and the client gets `500 {"error": "SERVER_ERROR", "message": "Something went wrong. Please try again later."}`. Every framework 500 uses this one text, translatable through the `http.serverError` key.
 
 The first entry whose error class matches (`instanceof`) and whose handler returns a response wins. That gives you two tools: **throw** typed HTTP errors from your own code, and **register** handlers for error types you don't own.
 
@@ -181,10 +181,11 @@ your test setup.
 
 The handler contract:
 
-- **Signature**: `(err, req) => { status, body, headers? } | null` — async is fine, the result is awaited.
+- **Signature**: `(err, req) => { status, body, headers? } | HttpResponse | null` — async is fine, the result is awaited.
 - `err` is typed as an instance of the class you registered — `err.code` autocompletes, no casts.
 - `req` is the same request the route handler had — `req.appInfo.request`, `req.appInfo.i18n`, etc.
-- Return `{ status, body }` to produce the response, with optional `headers` (the framework sends it — handlers never touch `res`, so double-send protection and logging stay in one place).
+- Return `{ status, body }` to produce a JSON response, with optional `headers` (the framework sends it — handlers never touch `res`, so double-send protection and logging stay in one place). Since 5.7 a handler may instead return any [`HttpResponse`](05-responses.md), for example `HttpResponse.json(409, problem, { contentType: "application/problem+json" })`.
+- The result must be a valid response: a status a JSON response cannot carry (206, or anything outside 200–599) counts as a failed handler and ends in the 500. A `body` of `undefined`, or status 204, 205 or 304, is sent without a body.
 - Return `null`/`undefined` to pass the error to the next entry.
 - `registerErrorHandler` returns an **unregister function** — handy in tests.
 - Third argument `{ logLevel }` controls how the handled error is logged (default `warn`):
@@ -197,7 +198,7 @@ app.httpServer.registerErrorHandler(
 );
 ```
 
-If a handler itself throws, the framework logs it (with the stack) and falls back to the 500 — a broken error handler can never crash the request pipeline.
+If a handler itself throws, the framework logs it (with the stack) and falls back to the 500 — a broken error handler can never crash the request pipeline. If the response a handler returns cannot be written (for example a body `JSON.stringify` rejects), the client gets the plain 500 as well.
 
 Handler-side types, if you want to extract the function:
 
@@ -278,6 +279,50 @@ app.httpServer.registerErrorHandler(UnauthorizedError, (err, req) => ({
 
 Your own middleware can reject the same way; see [Middleware › Rejecting a request](./03-middleware.md#rejecting-a-request).
 
+## Request validation errors
+
+Since 5.7, the 400 answered when a route's `params:`, `request:` or `query:` schema rejects the input also goes through the registry. With no handler for it, the response is unchanged. To reshape it, register a handler for `ValidationError`:
+
+```js
+import { HttpResponse } from "@adaptivestone/framework/services/http/responses.js";
+import { ValidationError } from "@adaptivestone/framework/services/validate/ValidationError.js";
+
+app.httpServer.registerErrorHandler(ValidationError, (err) =>
+  HttpResponse.json(
+    422,
+    { title: "Invalid input", errors: err.message }, // err.message is the per-field payload
+    { contentType: "application/problem+json" },
+  ),
+);
+```
+
+A handler registered for `Error` (a catch-all) now receives validation errors too. Return `null` for a `ValidationError` to keep the default 400:
+
+```js
+app.httpServer.registerErrorHandler(Error, (err) =>
+  err instanceof ValidationError ? null : { status: 500, body: { message: "Oops" } },
+);
+```
+
+The body parser's errors go through the registry the same way: an oversized body is an `HttpError` 413 (`PAYLOAD_TOO_LARGE`) and a body that cannot be parsed an `HttpError` 400 (`MALFORMED_BODY`), so a handler for `HttpError` sees them.
+
+## Error codes of framework responses
+
+Every error response the framework builds itself carries an `error` code, so a client can branch on it instead of the translated `message`:
+
+| Status | `error` | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_FAILED` | a `params:`/`request:`/`query:` schema rejected the input, or a Mongoose safety net matched |
+| 400 | `MALFORMED_URL` | the URL path could not be decoded |
+| 400 | `MALFORMED_BODY` | the request body could not be parsed |
+| 404 | `NOT_FOUND` | no route matches the path |
+| 405 | `METHOD_NOT_ALLOWED` | a route matches the path but not the method |
+| 413 | `PAYLOAD_TOO_LARGE` | the body exceeds the configured limits |
+| 415 | `UNSUPPORTED_CONTENT_TYPE` | the route accepts none of the request's content types |
+| 500 | `SERVER_ERROR` | nothing in the registry resolved the error |
+
+The codes are exported as `FRAMEWORK_ERROR_CODES` from `@adaptivestone/framework/services/http/httpErrors.js`. The built-in middleware codes (`AUTH001`, `NO_ACCESS`, `TOO_MANY_REQUESTS`) are listed under [Errors from middleware](#errors-from-middleware).
+
 ## Matching order
 
 Entries are matched by `instanceof` in **registration order — not by class specificity**. Your handlers always run before the built-ins, so you can intercept or override anything, including the built-ins themselves.
@@ -292,7 +337,7 @@ The recommended practice is to mirror model constraints in your route schema —
 
 But when a constraint slips through, `doc.save()` throws a Mongoose `ValidationError`, and a built-in registry entry catches it:
 
-- If **every** failing model path is a field the client actually sent (a key of the validated `request:`/`query:` input), the client gets `400 {"message": "Validation failed", "errors": {"name": ["..."]}}` — the same shape as route validation errors — and the framework logs a `warn`: your route schema is missing a constraint worth mirroring.
+- If **every** failing model path is a field the client actually sent (a key of the validated `request:`/`query:` input), the client gets `400 {"error": "VALIDATION_FAILED", "message": "Validation failed", "errors": {"name": ["..."]}}` — the same shape as route validation errors — and the framework logs a `warn`: your route schema is missing a constraint worth mirroring.
 - If **any** failing path is internal or renamed (the client sent `name`, the model field is `userName`), it stays an honest **500**. Model field names are never leaked to the client, and a server-side data bug is never blamed on the client.
 
 Each message is **rebuilt from the validation kind and the schema constraint** — `maxlength` → `"Must be at most 255 characters"`, a `Number` cast failure → `"Must be a number"`, `enum` → `"Must be one of: …"` — and **never includes the value the client submitted**. Mongoose's own default messages interpolate that value (a phone number, a password pasted into the wrong field), which would otherwise leak it into the response and the log. For the same reason a *custom* message set on the model (`maxLength: [50, 'Name too long']`) is **not** passed through — it's rebuilt generically, since a custom string can't be told apart from a templated default that embedded the value. The `warn` log line for a handled error is sanitized the same way; a failure that stays a 500 logs the original error in full. These fallback messages are plain English and not translated; put user-facing, i18n wording on the route schema.
@@ -317,7 +362,7 @@ async getPerson(req, res) {
 
 `GET /person/abc` cannot be cast to an ObjectId, so Mongoose throws a `CastError`. A `CastError` is **not** a `ValidationError` — they are siblings — so the validation safety net above structurally cannot see it. A built-in entry handles it separately:
 
-- If the rejected value is one the **client actually supplied** — matched by value against the path params and the validated `request:`/`query:` input — the client gets `400 {"message": "Validation failed", "errors": {"id": ["Must be a valid id"]}}`, keyed by the public input name, logged at `warn`.
+- If the rejected value is one the **client actually supplied** — matched by value against the path params and the validated `request:`/`query:` input — the client gets `400 {"error": "VALIDATION_FAILED", "message": "Validation failed", "errors": {"id": ["Must be a valid id"]}}`, keyed by the public input name, logged at `warn`.
 - If the value was **computed server-side**, nothing matches and it stays an honest **500** at `error` level. A bug in your own code is never blamed on the caller.
 
 The message is rebuilt from the cast *kind* (`Must be a valid id`, `Must be a number`, `Must be a valid date`), so neither the rejected value nor the internal model path (`_id`) reaches the response — and the `warn` log line is sanitized the same way.
@@ -329,7 +374,7 @@ This is a floor, not a design. Declaring a [`params:` schema](02-routes.md#param
 ## What still becomes a 500
 
 - Any error no registry entry claims (including `null` returns all the way down).
-- A registry handler that throws while handling.
+- A registry handler that throws while handling, or returns a result that is not a valid response.
 - Mongoose validation failures on internal/renamed fields (see above).
 - Mongoose cast failures on server-computed values (see above).
 

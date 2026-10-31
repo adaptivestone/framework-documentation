@@ -68,6 +68,8 @@ import bootHttp from '../bootHttp.ts';
 configureTestServer({ bootHttp });
 ```
 
+Pass a [`transformResponse`](06-Controllers/05-responses.md#reshaping-every-response-transformresponse) the same way (`configureTestServer({ bootHttp, transformResponse })`), or your tests see different bodies from production.
+
 Point it at the **same** function production uses, rather than re-registering
 the wiring from a test hook: two copies drift, and the copy that drifts is the
 one the tests trust. Without this, tests run against a server that never ran
