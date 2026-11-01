@@ -34,6 +34,21 @@ The framework internally uses a few middlewares. These middlewares are not adjus
 
 [RequestParser](#requestparser)
 
+### Your own app-wide middleware
+
+Since 5.7, pass `middleware` to the `Server` constructor to run your own [`Middleware`](06-context.md) on every request:
+
+```js
+const server = new Server({
+  ...folderConfig,
+  middleware: [RequestId, [Tenant, { header: "x-tenant" }]],
+});
+```
+
+They run in order, after the framework middleware above, and around routing: each route's own middleware and handler, the 404, the 405 and the malformed-URL 400. `await next()` returns the response, an error from the route reaches them before the [error handlers](04-error-handling.md) answer it, and headers and cookies they add are sent with every response. Pass the same option to [`configureTestServer`](../09-testsing.md#production-http-wiring-boothttp) so tests run them too.
+
+Only `Middleware` (`ctx, next`) classes are accepted; the server refuses a 5.x `AbstractMiddleware` when it starts. Routes whose middleware and handlers are still 5.x keep working.
+
 ## Including Middlewares into Controllers
 
 Controller-level middleware is adjusted based on the “middleware” getter.

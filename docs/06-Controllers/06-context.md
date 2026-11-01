@@ -85,7 +85,7 @@ Rules for `next`:
 - Call it **once**, while your middleware runs. A second call fails the request; a call after your middleware has finished is refused.
 - It always returns a Promise, so `return next()` works in sync and async middleware alike.
 
-Everything else is as for 5.x middleware: `static get description()`, `authSchemes`, `requiresAuth`, `relatedQueryParameters`, `relatedRequestParameters` and `provides` work the same; parameters come from the [same registration forms](03-middleware.md#middleware-parameters) and are read from `this.params`; `this.translate(ctx, key, defaultValue)` replaces `this.translate(req, …)`. Register a `Middleware` wherever you register a 5.x one: a controller's `static get middleware()` map or a route's `middleware:` list.
+Everything else is as for 5.x middleware: `static get description()`, `authSchemes`, `requiresAuth`, `relatedQueryParameters`, `relatedRequestParameters` and `provides` work the same; parameters come from the [same registration forms](03-middleware.md#middleware-parameters) and are read from `this.params`; `this.translate(ctx, key, defaultValue)` replaces `this.translate(req, …)`. Register a `Middleware` wherever you register a 5.x one — a controller's `static get middleware()` map or a route's `middleware:` list — or for every request with the [`Server` option `middleware`](03-middleware.md#your-own-app-wide-middleware).
 
 ## The request context
 
