@@ -114,6 +114,12 @@ To pass parameters, wrap the middleware in an array. The first element will be t
 
 The framework has a few middlewares that you can use.
 
+:::info `(ctx, next)` since 5.7
+
+`Auth`, `GetUserByToken`, `Role` and `Pagination` are [`Middleware`](06-context.md) classes. Using them in route and controller middleware lists is unchanged, and so are their parameters, responses and the `appInfo` fields they set. If you subclassed one and overrode `middleware(req, res, next)`, rewrite the override as `middleware(ctx, next)` — the server refuses the old form when the route is registered and names the class. In unit tests, call them with [`createTestContext()`](06-context.md#testing-a-middleware).
+
+:::
+
 :::info Translatable since 5.4
 
 Every user-facing message the built-in middleware return (the auth 401, both role rejections, the rate-limit 429 and the two request-parser failures) is emitted as an i18n key with its English text as the in-code default. They read as English out of the box; define the key in your own locale files to reword or translate one. The key table lives in [i18n › Middleware keys](../08-i18n.md#middleware-keys).
