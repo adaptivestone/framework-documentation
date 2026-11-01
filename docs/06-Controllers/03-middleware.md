@@ -116,7 +116,7 @@ The framework has a few middlewares that you can use.
 
 :::info `(ctx, next)` since 5.7
 
-`Auth`, `GetUserByToken`, `Role`, `Pagination` and `RateLimiter` are [`Middleware`](06-context.md) classes. Using them in route and controller middleware lists is unchanged, and so are their parameters, responses and the `appInfo` fields they set. If you subclassed one and overrode `middleware(req, res, next)`, rewrite the override as `middleware(ctx, next)` — the server refuses the old form when the route is registered and names the class. In unit tests, call them with [`createTestContext()`](06-context.md#testing-a-middleware).
+`Auth`, `GetUserByToken`, `Role`, `Pagination` and `RateLimiter`, and the global `RequestLogger`, `PrepareAppInfo`, `IpDetector`, `I18n` and `Cors`, are [`Middleware`](06-context.md) classes. Using them in route and controller middleware lists is unchanged, and so are their parameters, responses and the `appInfo` fields they set. If you subclassed one and overrode `middleware(req, res, next)`, rewrite the override as `middleware(ctx, next)` — the server refuses the old form when the route is registered and names the class. In unit tests, call them with [`createTestContext()`](06-context.md#testing-a-middleware).
 
 :::
 

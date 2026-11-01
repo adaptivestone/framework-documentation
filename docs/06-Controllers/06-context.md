@@ -117,7 +117,7 @@ export function currentTenant() {
 }
 ```
 
-It returns `undefined` outside a request. In 5.x the request scope is opened on routes that use a `Middleware` or a `ctx` handler; on a route with only 5.x code it is `undefined` too.
+It returns `undefined` outside a request. Inside one it works everywhere, on routes with 5.x code too.
 
 ## Headers and cookies
 
