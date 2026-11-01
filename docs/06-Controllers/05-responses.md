@@ -20,7 +20,7 @@ class Users extends AbstractController {
 }
 ```
 
-Writing to `res` (`res.status(201).json(...)`) keeps working through all of 5.x. Version 6 removes `res` from ordinary handlers, so new code should return responses.
+Writing to `res` (`res.status(201).json(...)`) keeps working through all of 5.x. Version 6 removes `res` from ordinary handlers, so new code should return responses. A controller can also opt in to handlers that take the request context instead of `req` — see [Handlers with `ctx`](06-context.md#handlers-with-ctx).
 
 Errors are still **thrown** (`throw new NotFoundError(...)`), not returned; see [Error handling](04-error-handling.md).
 
