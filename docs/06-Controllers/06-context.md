@@ -117,7 +117,7 @@ export function currentTenant() {
 }
 ```
 
-It returns `undefined` outside a request. In 5.x a context exists on routes that use a `Middleware` or a `ctx` handler; on a route with only 5.x code it is `undefined` too.
+It returns `undefined` outside a request. In 5.x the request scope is opened on routes that use a `Middleware` or a `ctx` handler; on a route with only 5.x code it is `undefined` too.
 
 ## Headers and cookies
 
@@ -229,6 +229,15 @@ A route can have 5.x middleware, `Middleware` and either kind of handler in any 
 - A 5.x middleware keeps `(req, res, next)`: `next()` continues the route, `next(err)` or a throw fails it with the original error.
 - An error from 5.x code reaches the `Middleware` around it first, so the transaction above rolls back.
 - When 5.x code writes the response through `res`, `await next()` returns a response of kind `sent`. It has the status that was sent; pass it on unchanged — it cannot be replaced. Headers and cookies staged on `ctx.response` before that are still added to it.
+
+## In `transformResponse` and error handlers
+
+Both hooks can work with the same `ctx`, so code written for them now keeps working in v6:
+
+- [`transformResponse`](05-responses.md#reshaping-every-response-transformresponse) receives `{ req, ctx }`; read `ctx`.
+- An [error handler](04-error-handling.md#handlers-that-take-ctx) registered with `{ contractVersion: 2 }` receives `(err, ctx)`.
+
+On a route with only 5.x code the context is created the first time one of them reads it.
 
 ## Testing a middleware
 

@@ -145,7 +145,7 @@ import { HttpResponse } from "@adaptivestone/framework/services/http/responses.j
 
 const server = new Server({
   ...folderConfig,
-  transformResponse: (response, { req }) =>
+  transformResponse: (response) =>
     response.kind === "json"
       ? HttpResponse.json(
           response.status,
@@ -163,6 +163,7 @@ const server = new Server({
 
 - It covers responses handlers return, validation and other error responses, the 404 and 405 pages, and error-handler results. A handler that writes to `res` itself is **not** transformed.
 - It must be synchronous and return an `HttpResponse`: match on `response.kind` and return the kinds you don't reshape unchanged.
+- The second argument is `{ req, ctx }`. `ctx` is the [request context](06-context.md) — the one middleware saw, with `route`, `header()`, `appInfo` and `onFinish`. Prefer it: v6 removes `req`. Its staged headers and cookies are already applied, so change the returned response instead of calling `ctx.response.setHeader()`.
 - If it throws or returns anything else, the error is logged and the original response is sent; a broken transform never takes the API down.
 - Pass the same option to [`configureTestServer`](../09-testsing.md#production-http-wiring-boothttp) so your tests see the same bodies.
 - The generated [OpenAPI document](../17-openapi.md) describes untransformed bodies.

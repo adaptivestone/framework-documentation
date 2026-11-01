@@ -255,6 +255,32 @@ What's available on `req`:
 | `req.appInfo.user` | Authenticated user document | Only on routes running the auth middleware (`GetUserByToken`) |
 | `req.method`, `req.path`, `req.headers`, … | Anything Express exposes | — |
 
+### Handlers that take `ctx`
+
+Since 5.7, register with `{ contractVersion: 2 }` and the handler gets the [request context](06-context.md) instead of `req` — the same `ctx` middleware and `ctx` handlers see. It is the only form in v6, so a handler written this way needs no change then:
+
+```js
+import { HttpResponse } from "@adaptivestone/framework/services/http/responses.js";
+
+app.httpServer?.registerErrorHandler(
+  MongoServerError,
+  (err, ctx) => {
+    if (err.code !== 11000) {
+      return null;
+    }
+    ctx.response.setHeader("cache-control", "no-store");
+    return HttpResponse.json(409, {
+      message: "Task already exists",
+      projectId: ctx.params.projectId, // raw path param (string)
+      attempted: ctx.appInfo.request?.title, // validated body value
+    });
+  },
+  { contractVersion: 2 },
+);
+```
+
+Everything in the table above is on `ctx.appInfo` too; `ctx.params`, `ctx.path`, `ctx.header(name)` and `ctx.method` replace their `req` counterparts. Headers and cookies the handler stages on `ctx.response` are sent with the error response. In TypeScript the handler type is `ContextErrorHandlerFn` from the same module. Handlers registered without the option keep receiving `req`.
+
 One design boundary to keep in mind: the handler decides the **response**; the framework does the sending and the logging. If you find a handler reaching for `res` or a logger, that logic probably belongs in the route handler's own `try/catch` instead.
 
 ## Errors from middleware
