@@ -98,6 +98,7 @@ Everything else is as for 5.x middleware: `static get description()`, `authSchem
 | `header(name)`         | A request header, case-insensitive; repeated values joined with `, `. `headers` has them all. |
 | `params`, `query`      | Raw path params and query. Validated values are on `appInfo.params` / `appInfo.query`.        |
 | `body`                 | The parsed body. The validated body is on `appInfo.request`.                                  |
+| `rawBody`, `bodyStream` | The exact bytes on a [`bodyParsing: "raw"`](02-routes.md#body-parsing) route; the unread body stream on a `"none"` route. |
 | `cookies.get(name)`    | A request cookie, URL-decoded; `undefined` when absent.                                       |
 | `ip`                   | The client address from [IpDetector](03-middleware.md#ipdetector).                            |
 | `id`                   | The client's `X-Request-Id`, or a generated one.                                              |

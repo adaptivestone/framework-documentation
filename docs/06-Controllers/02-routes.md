@@ -144,6 +144,8 @@ async webhook(req) {
 }
 ```
 
+Code written against the [request context](06-context.md) reads the same through `ctx.rawBody` (a `Buffer` on every `"raw"` route, empty when there is no body) and `ctx.bodyStream` (the unread body as a standard `ReadableStream` on a `"none"` route — read it once; `await new Response(ctx.bodyStream).text()` gives you the Fetch helpers). On a `"none"` route the framework puts no size limit on the body: the handler owns it.
+
 A `request:` schema on a `"raw"` or `"none"` route sees no parsed body. Requests no route matches (404, 405) are not parsed at all.
 
 ## Request
