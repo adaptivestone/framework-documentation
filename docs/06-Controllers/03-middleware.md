@@ -116,7 +116,7 @@ The framework has a few middlewares that you can use.
 
 :::info `(ctx, next)` since 5.7
 
-`Auth`, `GetUserByToken`, `Role` and `Pagination` are [`Middleware`](06-context.md) classes. Using them in route and controller middleware lists is unchanged, and so are their parameters, responses and the `appInfo` fields they set. If you subclassed one and overrode `middleware(req, res, next)`, rewrite the override as `middleware(ctx, next)` — the server refuses the old form when the route is registered and names the class. In unit tests, call them with [`createTestContext()`](06-context.md#testing-a-middleware).
+`Auth`, `GetUserByToken`, `Role`, `Pagination` and `RateLimiter` are [`Middleware`](06-context.md) classes. Using them in route and controller middleware lists is unchanged, and so are their parameters, responses and the `appInfo` fields they set. If you subclassed one and overrode `middleware(req, res, next)`, rewrite the override as `middleware(ctx, next)` — the server refuses the old form when the route is registered and names the class. In unit tests, call them with [`createTestContext()`](06-context.md#testing-a-middleware).
 
 :::
 
@@ -383,7 +383,23 @@ Request-keyed limiters re-key on upgrade, which resets their counters. If you ad
 }
 ```
 
-The key must treat as equal every spelling your user lookup treats as equal. If your lookup normalizes further (for example, ignores dots or `+tags` in Gmail addresses), extend `RateLimiter` and override `generateConsumeKey` to build the key from the same canonical form.
+The key must treat as equal every spelling your user lookup treats as equal. If your lookup normalizes further (for example, ignores dots or `+tags` in Gmail addresses), extend `RateLimiter` and override `generateConsumeKey` to build the key from the same canonical form. Since 5.7 it receives the [request context](06-context.md):
+
+```js
+import RateLimiter from "@adaptivestone/framework/services/http/middleware/RateLimiter.js";
+
+class LoginLimiter extends RateLimiter {
+  generateConsumeKey(ctx) {
+    const email = String(ctx.body?.email ?? "").toLowerCase();
+    const [local, domain] = email.split("@");
+    const canonical =
+      domain === "gmail.com" ? `${local.split("+")[0].replaceAll(".", "")}@${domain}` : email;
+    return `${ctx.route}:${canonical}`;
+  }
+}
+```
+
+An override written for 5.6 or earlier keeps working if it reads `appInfo`, `body` or `method`; replace `req.route.path` with `ctx.route` and `req.get(name)` with `ctx.header(name)`.
 
 #### Typed named policies from config
 
