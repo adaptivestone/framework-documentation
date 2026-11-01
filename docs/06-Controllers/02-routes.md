@@ -96,6 +96,7 @@ On the third level, we have a "route object," a special object that will describ
     id: yup.string().required(),
   }),
   middleware: [RateLimiter], // optional
+  bodyParsing: "parsed", // optional — "parsed" (default), "raw" or "none"; see Body parsing
   description: "Create a sample" // optional — a plain string; becomes the OpenAPI operation summary
 }
 
@@ -113,6 +114,37 @@ Description; // A description of this route — becomes the OpenAPI operation su
 ```
 
 The route `description` together with the `request:` / `query:` / `params:` schemas and the middleware chain are what the framework reads to generate an [OpenAPI 3.1 document](../17-openapi.md).
+
+### Body parsing
+
+The request body is parsed after routing, as the first step of the matched route — before app-wide and route middleware — so each route can choose how (since 5.7):
+
+| `bodyParsing`        | What the route gets                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `"parsed"` (default) | JSON, urlencoded and multipart bodies parsed into `req.body` / `ctx.body`, validated by `request:`.                        |
+| `"raw"`              | The exact bytes in `req.rawBody` (a `Buffer`), the body left unparsed — for verifying a signed webhook. Same size limit as a parsed body. |
+| `"none"`             | Nothing read: the handler reads the request stream itself.                                                                |
+
+```js
+get routes() {
+  return {
+    post: {
+      "/webhook": { handler: this.webhook, bodyParsing: "raw" },
+    },
+  };
+}
+
+async webhook(req) {
+  const signature = req.get("x-signature");
+  if (!verifySignature(req.rawBody, signature)) {
+    throw new HttpError(401, "Bad signature");
+  }
+  const event = JSON.parse(req.rawBody.toString("utf8"));
+  // …
+}
+```
+
+A `request:` schema on a `"raw"` or `"none"` route sees no parsed body. Requests no route matches (404, 405) are not parsed at all.
 
 ## Request
 

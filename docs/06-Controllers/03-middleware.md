@@ -32,7 +32,7 @@ The framework internally uses a few middlewares. These middlewares are not adjus
 
 [Cors](#cors)
 
-[RequestParser](#requestparser)
+Since 5.7, [RequestParser](#requestparser) is not in this list: request bodies are parsed after routing, as the first step of each matched route (see [Body parsing](02-routes.md#body-parsing)). Express middleware you add in `bootHttp` therefore run before the body is parsed.
 
 ### Your own app-wide middleware
 
@@ -509,7 +509,9 @@ import RequestParser from "@adaptivestone/framework/services/http/middleware/Req
 
 This is the main middleware to parse requests (`application/json`, `multipart/form-data`, `application/octet-stream`, `application/x-www-form-urlencoded`).
 It is based on the [formidable](https://www.npmjs.com/package/formidable) package.
-After parsing, the data is available in `req.body`.
+After parsing, the data is available in `req.body` (and `ctx.body`).
+
+The framework runs it for you: since 5.7, after routing, as the first step of each matched route and before app-wide and route middleware. A route's [`bodyParsing`](02-routes.md#body-parsing) option decides what it does. Requests no route matches are not parsed.
 
 A body over the size or count limits (`requestParser` in `config/http.ts`) gets a `413` response. For a non-multipart body over `maxFieldsSize` — declared or streamed — the connection is closed after the `413` instead of reading the rest of the body.
 
