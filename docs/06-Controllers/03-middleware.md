@@ -577,8 +577,8 @@ server {
 
 ## Creating Your Own Middlewares (or Integrating External Ones)
 
-:::tip Since 5.7: `middleware(ctx, next)`
-New middleware can extend `Middleware` and take a request context instead of `(req, res, next)`: return `next()`, return a response, or throw. It is the only form in v6. See [Middleware and handlers with `ctx`](06-context.md). The `AbstractMiddleware` form below keeps working through 5.x.
+:::warning Deprecated since 5.7: `AbstractMiddleware`
+New middleware extend `Middleware` and take a request context instead of `(req, res, next)`: return `next()`, return a response, or throw. It is the only form in v6, which removes `AbstractMiddleware`. The `AbstractMiddleware` form below keeps working through 5.x. See [Middleware and handlers with `ctx`](06-context.md), and the [migration table](06-context.md#migrating-a-5x-middleware) for moving an existing class.
 :::
 
 You can create your own middleware. To do that, you should extend `AbstractMiddleware` and provide at least two of your own functions: `description` and `middleware`. Please check the code below.

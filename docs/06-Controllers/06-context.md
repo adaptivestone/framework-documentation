@@ -269,9 +269,32 @@ it("rejects a request without a tenant", async () => {
 
 ## Migrating a 5.x middleware
 
-1. Extend `Middleware` instead of `AbstractMiddleware`.
-2. Replace `middleware(req, res, next)` with `middleware(ctx, next)` and read the request from `ctx` (`req.appInfo` → `ctx.appInfo`, `req.get(name)` → `ctx.header(name)`, `req.cookies` → `ctx.cookies.get(name)`).
-3. Keep `return next()`.
-4. Replace `next(err)` with `throw err`.
-5. Replace `res.status(…).json(…)` with a returned `HttpResponse`, and `res.set(…)` / `res.cookie(…)` with `ctx.response.setHeader(…)` / `setCookie(…)` (cookie `maxAge` is in seconds).
-6. Move `res.on("finish")` work to `ctx.onFinish`.
+`AbstractMiddleware` — the `(req, res, next)` form — is **deprecated since 5.7** and removed in v6. It keeps working through 5.x, also on the same route as `Middleware`, so you can move one class at a time. The change is mechanical:
+
+| 5.x (`AbstractMiddleware`)                          | `Middleware`                                                        |
+| --------------------------------------------------- | ------------------------------------------------------------------- |
+| `class X extends AbstractMiddleware`                | `class X extends Middleware` (`services/http/middleware/Middleware.js`) |
+| `async middleware(req, res, next)`                  | `async middleware(ctx, next)`                                       |
+| `next()`                                            | `return next()`                                                     |
+| `next(err)`                                         | `throw err`                                                         |
+| `res.status(403).json(body)`                        | `return HttpResponse.json(403, body)`                               |
+| `res.status(204).end()`                             | `return HttpResponse.empty(204)`                                    |
+| `res.redirect(302, url)`                            | `return HttpResponse.redirect(302, url)`                            |
+| `req.appInfo`                                       | `ctx.appInfo` (the same object)                                     |
+| `req.get(name)`, `req.headers`                      | `ctx.header(name)`, `ctx.headers`                                   |
+| `req.method`, `req.path`, `req.originalUrl`         | `ctx.method`, `ctx.path` (decoded), `ctx.url` (a `URL`)             |
+| `req.params`, `req.query`, `req.body`               | `ctx.params`, `ctx.query`, `ctx.body`                               |
+| `req.route.path`                                    | `ctx.route`                                                         |
+| `req.appInfo.ip`                                    | `ctx.ip`                                                            |
+| `req.cookies.name` (cookie-parser)                  | `ctx.cookies.get("name")`                                           |
+| `req.rawBody` (`bodyParsing: "raw"`)                | `ctx.rawBody`                                                       |
+| `res.set(name, value)`                              | `ctx.response.setHeader(name, value)`                               |
+| `res.append(name, value)`, `res.vary(field)`        | `ctx.response.appendHeader(name, value)`                            |
+| `res.cookie(name, value, { maxAge: ms })`           | `ctx.response.setCookie(name, value, { maxAge: seconds })`          |
+| `res.clearCookie(name)`                             | `ctx.response.deleteCookie(name)`                                   |
+| `res.on("finish", fn)`                              | `ctx.onFinish(fn)`                                                  |
+| `req.on("close", fn)` (client went away)            | `ctx.signal` (an `AbortSignal`)                                     |
+| `this.translate(req, key, defaultValue)`            | `this.translate(ctx, key, defaultValue)`                            |
+| In tests: `mw.middleware(fakeReq, fakeRes, next)`   | `mw.middleware(createTestContext({ … }), async () => HttpResponse.empty(204))` |
+
+Statics (`description`, `authSchemes`, `requiresAuth`, `relatedQueryParameters`, `relatedRequestParameters`, `provides`), constructor parameters and `this.params` stay as they are. A middleware that must answer before anything else (an early stop) returns its response instead of calling `next()`.
