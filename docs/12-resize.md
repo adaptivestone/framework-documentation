@@ -693,11 +693,14 @@ import { NoopMetrics } from '@adaptivestone/framework-module-resize';
 new FrameworkResizer({ pipelines, metrics: new NoopMetrics() }); // off
 ```
 
+`NoopMetrics` turns metrics off, not the lines the worker writes when a task fails (see [Failures in the log](#operations)).
+
 A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)` and `timing(name, ms, labels, context)`; group by `labels` only, since `context` holds ids for logs. The worker writes the open summary when it stops; in the API, call `await getResizer().metrics.flush?.()` at shutdown. The [metrics reference](https://github.com/adaptivestone/framework-module-resizer#metrics) lists every event, its labels, the line formats and a Prometheus example.
 
 ## Operations and troubleshooting {/* #operations */}
 
 - **Task states.** Mongo tasks go `pending → processing → completed`. A failed attempt returns to `pending` with a growing delay. After the queue's `maxAttempts`, the task becomes `dead`. `startedAt` records when the latest attempt started and `finishedAt` when the task completed or died, for inspection only. A media and pipeline have at most one active task per queue (`active: true` on its row) from the moment it is queued until it completes, or, after a dead-letter, until `coordination.cooldownMs` has passed; the next `add()` then takes the gate over (it retires the dead row and stores a new task).
+- **Failures in the log.** The worker writes a `warn` line for each failed attempt that will be retried and an `error` line for each dead task, with the task and media ids, the attempt, the error code, why it is dead (last attempt, not retryable, or delivered more often than `maxAttempts`) and the cause. The lines do not depend on the metrics sink, so `NoopMetrics` does not silence them, and an alert on `error` fires once per dead task.
 - **Partial attempts.** A task completes only when every requested variant is stored. When an attempt is only partly successful, its previews are saved and the next attempt makes only the missing ones.
 - **Cleanup and retries.** Completed tasks are removed after about 24 hours and dead tasks after about 30 days. A dead task's cooldown holds only its own queue: a read or pre-warm on another queue queues the work again, so a task that always fails gets one `maxAttempts` cycle on each queue it is sent to. To retry a dead task after fixing its cause, call `prewarm()` again for that media once `coordination.cooldownMs` (10 minutes by default) has passed since the task died; until then it reports a retryable issue.
 - **One row per preview.** The media store keeps each preview identity once. When two workers render the same preview, the second upload is logged as a warning with its storage location and is not recorded; delete such files if you need to.
