@@ -585,7 +585,7 @@ await file.save();
 await getResizer().prewarm({ media: file, sizes: AVATAR_SIZES });
 ```
 
-At attach time a client chose the file, so pass `maxBytes` and check the type your own record holds, or run the adoption from a job. `limits.sourceBytes` is the cap every adoption shares, and `upload.maxBytes` does not apply, so without `maxBytes` a client who attaches a 250 MiB video costs the API that memory for a refusal. Each call holds the object in memory: about one object on local storage, and on S3 about 2.3 times it with a current AWS SDK and about 3.3 times with SDK 3.572, per concurrent call. `maxBytes` lowers the cap for one call and cannot raise it. Over it, the call throws `RESIZE_ORIGINAL_TOO_LARGE` and the shipped drivers read nothing.
+At attach time a client chose the file, so pass `maxBytes` and check the type your own record holds, or run the adoption from a job. `limits.sourceBytes` is the cap every adoption shares, and `upload.maxBytes` does not apply, so without `maxBytes` a client who attaches a 250 MiB video costs the API that memory for a refusal. Each call holds the object in memory: about one object on local storage, and on S3 about 2.3 times it with a current AWS SDK and about 3.3 times with SDK 3.572, per concurrent call. `maxBytes` lowers the cap for one call and cannot raise it. Over it, the call throws `RESIZE_ORIGINAL_TOO_LARGE` and the shipped drivers read nothing, except on an S3 response with no length, where the object is read whole and then refused with the same code. Real S3 sends a length.
 
 **Adopt an object in place.** The two ref shapes are stable: `{ bucket, key, namespace? }` for S3, and `{ path, visibility, namespace? }` for local files.
 
@@ -595,11 +595,11 @@ At attach time a client chose the file, so pass `maxBytes` and check the type yo
 - Set `namespace` only if it prefixes the key.
 - An object in a third bucket throws `RESIZE_S3_BUCKET_NOT_ALLOWED`: copy it, or point `bucketPrivate` at that bucket.
 
-`adoptOriginal()` refuses what a worker could never render, and a public SVG, so it always decodes the object (about 0.1 s for a 24 MP JPEG). It does not apply `upload.formats`. Its download has no timeout of its own, so set one on your storage client: for S3, pass `new S3Storage({ …, client })` with `requestHandler: { socketTimeout }`, which ends a body that stalls. The check decodes the first frame. With `animated: true`, damage in a later frame shows up on the worker as a dead task, `RESIZE_SOURCE_DAMAGED`. Adopting does not make a public object private: its old URL works until you move it. A host decoder's public object needs `publicOriginals: true` on the decoder.
+`adoptOriginal()` refuses what a worker could never render, and a public SVG, so it always decodes the object (about 0.1 s for a 24 MP JPEG). It does not apply `upload.formats`. Its download has no timeout of its own, so set one on your storage client: for S3, pass `new S3Storage({ …, client })` with `requestHandler: { socketTimeout: 5000 }`. Use a value under 6000 ms, because on current SDKs a larger one does not end a body that stalls after its headers (measured against a local server, not real S3). The check decodes the first frame. With `animated: true`, damage in a later frame shows up on the worker as a dead task, `RESIZE_SOURCE_DAMAGED`. Adopting does not make a public object private: its old URL works until you move it. A host decoder's public object needs `publicOriginals: true` on the decoder.
 
 **Build the ref from your own records, never from a client's input:** adopting someone else's object would publish previews of it. The result holds the ref's JSON form, which is what a save stores, so a `namespace: undefined` in your ref is not in it.
 
-A bare `$set: { 'original.storageRef': ref }` is allowed for bulk work: the worker measures it and backfills its dimensions, and a refusal then shows up as a dead task instead of in your script.
+A bare `$set: { 'original.storageRef': ref }` is allowed for bulk work: the worker measures it and backfills its dimensions, and a refusal then shows up as a dead task instead of in your script. Leave out a key with no value, because this way a `namespace: undefined` is stored as `null` and the task goes dead.
 
 **Avoid a regeneration wave.** Freeze the ref at adoption: changing `bucket`, `key` or `namespace` later regenerates that media's previews. Keep `original.width` and `height` in every projection you pass to `resolve()`. Decide `limits.sourcePixels` before the rollout: raising it later makes every WebP and GIF row stale.
 
