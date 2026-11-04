@@ -140,14 +140,16 @@ import { getResizer } from '@adaptivestone/framework-module-resize';
 fileDoc.original = await getResizer().uploadOriginal({
   body: buffer, // the uploaded bytes
   visibility: 'private',
-  // namespace: `users/${user.id}`, // optional key prefix; not access control
+  // namespace: 'avatars', // optional key prefix; not access control
 });
 await fileDoc.save();
 ```
 
+Previews inherit the namespace, so it appears in their public URLs: do not put anything in it that you would not publish, such as a user id. Each `/`-separated part may hold letters, digits, `_`, `.` and `-`. Set it at upload and keep it: it is part of `storageRef`.
+
 `uploadOriginal()` detects the format and dimensions with its decoders (Sharp for raster images and SVG), then stores the bytes unchanged under a random name. It returns the value to save as `original`. It does not create the document or queue any work. Input larger than `upload.maxBytes` (25 MiB by default), or in a format not listed in `upload.formats`, throws `ResizeOriginalError`.
 
-Save `original` exactly as returned. Its `storageRef` is the storage driver's own locator: `{ path, visibility }` for local files, `{ bucket, key }` for S3. Never build it by hand.
+Save `original` exactly as returned, and do not change it later: every preview records a signature of its `storageRef` and size, so a changed ref regenerates that media's previews. Its `storageRef` is the storage driver's own locator: `{ path, visibility }` for local files, `{ bucket, key }` for S3. To put an object you already hold on the module, see [Adopting on an app with existing media](#adopting).
 
 ## Sizes and formats
 
@@ -529,6 +531,7 @@ Previews are public. Store originals privately (`visibility: 'private'`). Your a
   - `uploadOriginal()` accepts SVG only with `visibility: 'private'`.
   - The generator renders it into your raster formats and never loads anything the file references. The render runs in a separate Node process and is killed after `limits.processingTimeoutSeconds` or when the task stops. Your app must allow child processes (`--allow-child-process` under Node's permission model), and a bundle must keep `svgRasterChild.js` next to `svgRaster.js`.
   - The stored file is not cleaned, so never serve it yourself.
+- **A host decoder's originals are private unless it says otherwise.** A public upload, or the adoption of a public object, through a decoder without `publicOriginals: true` throws `RESIZE_ORIGINAL_PUBLIC_REFUSED`. The built-in raster decoder sets it, so a host decoder that takes over a built-in format adds one line. SVG is refused whatever the flag says.
 - **The module never serves an original.** `resolve()` returns stored previews only, whoever reads; `ctx` reaches your hooks but does not change the result. A small raster original gets a preview at its own size instead, unless the pipeline has `variantSteps` (see [sizes](#sizes-and-formats)).
 - **To give an owner the private original,** check access in your app and call the storage driver yourself. `S3Storage` signs URLs, with `@aws-sdk/s3-request-presigner` installed; `LocalFsStorage` has no `signedUrl`.
 
@@ -537,6 +540,83 @@ Previews are public. Store originals privately (`visibility: 'private'`). Your a
   await resizer.ready(); // loads the drivers built from the config
   const url = await resizer.storage.signedUrl?.(fileDoc.original.storageRef, 300); // valid for 5 minutes
   ```
+
+## Adopting on an app with existing media {/* #adopting */}
+
+The module can sit beside media it did not write. You move entities onto it when you choose, and it asks you for nothing until then.
+
+**What the module does with media it does not know.** `resolve()` returns ready 0 and missing N, and queues no task. A hydrated document logs nothing. A `.lean()` row with neither `original` nor `previews` logs one warning per Resizer, because it reads like a projection that dropped them. `prewarm()` reports `incomplete` with `RESIZE_ENQUEUE_NO_ORIGINAL`. `generate()` throws `ResizeNoOriginalError`. All of this is safe.
+
+Test with `hasOriginal(doc)`, never `if (doc.original)`: a hydrated document reads a never-set `original` as `{}`. Unloaded and not adopted look the same, so load `resizeMediaPaths` first.
+
+**Add the fields.** Spread the [fragment](#2-add-the-fields-to-your-media-model). A model that already has `original` or `previews` in another shape renames its own first; the module has no field mapping. List projections add `...resizeMediaPaths`.
+
+**Choose a route per entity:** new uploads only, at attach time, or a backfill. All three can run together.
+
+**Serve mixed state.** Fall back to your old path until a media has its previews:
+
+```ts
+async function pictureOf(file) {
+  if (!hasOriginal(file)) return legacyPicture(file);
+  const { decision, output } = await getResizer().resolve({ media: file, sizes: CATALOG });
+  if (decision.missing.length > 0) return legacyPicture(file); // previews on their way
+  return output ?? formatPictureUrls(decision, { id: String(file._id) });
+}
+```
+
+**One entity at a time with a shared upload endpoint.** When one endpoint stores files for every entity, you have three routes:
+
+| Route | What it takes |
+|---|---|
+| At attach time (recommended) | Endpoint and frontend unchanged; the object must be in one of the two buckets |
+| A client field such as `purpose=avatar` | The endpoint branches, and the frontend must send it |
+| A new endpoint per entity | The cleanest end state, and the most work |
+
+```ts
+// The shared upload endpoint stored the file as before. The location comes from your own record.
+const file = await File.findById(fileId);
+file.original = await getResizer().adoptOriginal({ storageRef: { bucket: PRIVATE_BUCKET, key: file.s3Key } });
+await file.save();
+await getResizer().prewarm({ media: file, sizes: AVATAR_SIZES });
+```
+
+**Adopt an object in place.** The two ref shapes are stable: `{ bucket, key, namespace? }` for S3, and `{ path, visibility, namespace? }` for local files.
+
+- On S3 the bucket is `bucketPublic` or `bucketPrivate`. The key may be anything except a control character, a `.` or `..` part, a leading `/` or an empty part, so a key that holds a client's file name is fine.
+- `uploads//cat.jpg`, `dir/` and a name holding a tab throw `RESIZE_STORAGE_KEY_INVALID`. Copy such an object to a new key and adopt that.
+- Local paths stay in `[A-Za-z0-9_.-]`, because they are filesystem paths.
+- Set `namespace` only if it prefixes the key.
+- An object in a third bucket throws `RESIZE_S3_BUCKET_NOT_ALLOWED`: copy it, or point `bucketPrivate` at that bucket.
+
+`adoptOriginal()` refuses what a worker could never render, and a public SVG, so it always decodes the object (about 0.1 s for a 24 MP JPEG). It does not apply `upload.maxBytes` or `upload.formats`. The check decodes the first frame. With `animated: true`, damage in a later frame shows up on the worker as a dead task, `RESIZE_SOURCE_DAMAGED`. Adopting does not make a public object private: its old URL works until you move it. A host decoder's public object needs `publicOriginals: true` on the decoder.
+
+**Build the ref from your own records, never from a client's input:** adopting someone else's object would publish previews of it.
+
+A bare `$set: { 'original.storageRef': ref }` is allowed for bulk work: the worker measures it and backfills its dimensions, and a refusal then shows up as a dead task instead of in your script.
+
+**Avoid a regeneration wave.** Freeze the ref at adoption: changing `bucket`, `key` or `namespace` later regenerates that media's previews. Keep `original.width` and `height` in every projection you pass to `resolve()`. Decide `limits.sourcePixels` before the rollout: raising it later makes every WebP and GIF row stale.
+
+**Backfill loop.**
+
+```ts
+for await (const doc of File.find({ 'original.storageRef': null }).cursor()) {
+  try {
+    const original = await getResizer().adoptOriginal({ storageRef: refFromYourRecord(doc) });
+    await File.updateOne({ _id: doc._id, 'original.storageRef': null }, { $set: { original } });
+  } catch (err) {
+    // A missing object is retryable for a store that is catching up; over old rows the file is gone.
+    if (ResizeError.isResizeError(err) && (!err.retryable || err.code === 'RESIZE_STORAGE_NOT_FOUND')) {
+      logAndSkip(doc, err.code); // final for this record: leave it on the old path, or move it
+    } else {
+      retryLater(doc); // with your own cap, say 3 attempts, then logAndSkip: a file this build cannot decode never clears
+    }
+  }
+}
+```
+
+Keep your own record of skipped rows and leave them out of the next run, so a lost file cannot loop for ever. `{ original: { $exists: false } }` is the wrong filter: saving a new document writes `original: {}`. Each call reads the whole object into memory, up to `limits.sourceBytes`, so run it in a script with bounded concurrency, not in the API. Then let reads queue lazily, or `prewarm({ queue: 'bulk' })` with its own worker. Plan capacity: each media costs a download and a render per variant.
+
+**What stays yours.** Old files, old fields, their removal, and the loop itself.
 
 ## Without the framework
 
@@ -610,8 +690,8 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 | `upload.maxBytes` | 25 MiB | Largest original `uploadOriginal()` accepts. `limits.sourceBytes` caps it too, so a larger value here accepts nothing more until that is raised as well; `verify()` logs a warning when it is above |
 | `upload.formats` | `jpeg`, `png`, `webp`, `avif`, `gif`, `svg` | Original formats `uploadOriginal()` accepts |
 | `upload.verify` | `'none'` | `'decode'`: `uploadOriginal()` also decodes a raster original to a 16 px raster, at `limits.failOn`, before storing it. A damaged one is `RESIZE_ORIGINAL_DAMAGED`. It decodes the first frame only, so an animation damaged in a later frame can be stored, and flipped bytes can pass, since a decode does not always find them. A vector source, such as SVG, is skipped. It costs about 0.1 s for a 24 MP JPEG and about 1 s for a 24 MP PNG on a Sharp thread, not on the event loop |
-| `limits.sourcePixels` | `50000000` | Largest source accepted, in pixels per frame on a worker and for all frames at upload. Sharp's own default is 268 MP, `limits.inputPixels`, so an app that used Sharp directly accepted more. Over it: `uploadOriginal()` throws `RESIZE_ORIGINAL_TOO_MANY_PIXELS`, and an adopted object's task is dead-lettered. Decide before rollout: raising it later makes every stored WebP and GIF preview stale |
-| `limits.sourceBytes` | 256 MiB | Largest original a worker, `generate()` or `adoptOriginal()` reads into memory, and largest body `uploadOriginal()` accepts whatever `upload.maxBytes` says. Over it: a task is dead-lettered at once with `RESIZE_SOURCE_TOO_LARGE`, `generate()` rejects with that code, and `uploadOriginal()` rejects with `RESIZE_ORIGINAL_TOO_LARGE` and stores nothing. Not signed into previews, so raising it regenerates nothing. It holds an uncompressed 8-bit TIFF at the default `limits.sourcePixels` (143 MiB), not a 16-bit one (286 MiB), which is refused. A host that holds those or long animated GIFs, or that raises `limits.sourcePixels`, raises this too |
+| `limits.sourcePixels` | `50000000` | Largest source accepted, in pixels per frame on a worker and at adoption, and for all frames at upload. Sharp's own default is 268 MP, `limits.inputPixels`, so an app that used Sharp directly accepted more. Over it: `uploadOriginal()` and `adoptOriginal()` throw `RESIZE_ORIGINAL_TOO_MANY_PIXELS`, and the task of a ref written by hand is dead-lettered. Decide before rollout: raising it later makes every stored WebP and GIF preview stale |
+| `limits.sourceBytes` | 256 MiB | Largest original a worker, `generate()` or `adoptOriginal()` reads into memory, and largest body `uploadOriginal()` accepts whatever `upload.maxBytes` says. Over it: a task is dead-lettered at once with `RESIZE_SOURCE_TOO_LARGE`, `generate()` and `adoptOriginal()` reject with that code, and `uploadOriginal()` rejects with `RESIZE_ORIGINAL_TOO_LARGE` and stores nothing. Not signed into previews, so raising it regenerates nothing. It holds an uncompressed 8-bit TIFF at the default `limits.sourcePixels` (143 MiB), not a 16-bit one (286 MiB), which is refused. A host that holds those or long animated GIFs, or that raises `limits.sourcePixels`, raises this too |
 | `maxSize` | `{ width: 2000, height: 1200 }` | The box for `fit` |
 | `encode.formats` | JPEG quality 88, WebP 82, AVIF 64 | Sharp encoder options per format; `{}` keeps Sharp's defaults |
 | `animated` | `false` | `true`: WebP and GIF previews of an animated original keep its frames (up to `limits.animationFrames`, 64), unless the pipeline has `beforeSteps` or `variantSteps`; other formats and pipelines with steps use the first frame |
@@ -658,7 +738,7 @@ After the upgrade, `resize-scaffold --check` reports every `src/config/resize.ts
 |---|---|---|
 | `ResizeSetupError` | The wiring is wrong, e.g. a duplicate Resizer name | Fix the code |
 | `ResizeConfigError` | The config is invalid or incomplete | Fix the config; `resizer.verify()` reports it at startup |
-| `ResizeOriginalError` | Uploaded bytes are invalid, unsupported or too large. Not retryable by default: the same bytes get the same refusal. `RESIZE_ORIGINAL_INSPECT_FAILED` is retryable: a decoder failed for a reason other than the bytes | Reject the upload; when `err.retryable` is `true`, answer with your own text |
+| `ResizeOriginalError` | Uploaded or adopted bytes are invalid, unsupported or too large. Not retryable by default: the same bytes get the same refusal. `RESIZE_ORIGINAL_INSPECT_FAILED` is retryable: a decoder failed for a reason other than the bytes | Reject the upload; when `err.retryable` is `true`, answer with your own text |
 | `ResizeNoOriginalError` | The media has no original | Upload the original first |
 | `ResizeMediaError` | The media can't be used; the two errors above extend it | Skip that media |
 | `ResizeGenerateError` | `generate()` made nothing, or a queued task left variants missing. `retryable` is `false` when every variant behind it failed with `false` (for a queued task, on an original the media still holds). Its `cause` is the first failure | Check `failed`, `requested`, `missing`, `cause` and the logs |
@@ -777,7 +857,10 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 | Worker logs `RESIZE_SVG_RENDER_TIMEOUT` or `RESIZE_SVG_RENDER_FAILED` | An SVG took longer than `limits.processingTimeoutSeconds` to render (dead-lettered at once), or its render process crashed (retried) |
 | `RESIZE_SVG_RENDER_UNAVAILABLE` from the worker or `generate()` | The SVG render process cannot start: allow child processes (`--allow-child-process` under Node's permission model), and keep `svgRasterChild.js` next to `svgRaster.js` when bundling |
 | `RESIZE_DECODER_MISSING` from the worker or `generate()` (retried) | No decoder in that process lists the stored `original.format`, and none reads the bytes: pass the decoder in `decoders` in every process, or fix an `original.format` that holds an alias |
-| `RESIZE_SOURCE_FORMAT_UNSUPPORTED` (dead-lettered at once), or `RESIZE_ORIGINAL_FORMAT_UNSUPPORTED` from `uploadOriginal()` | Every decoder refused the bytes: no decoder reads that format. Add a decoder for it, or reject the file |
+| `RESIZE_ORIGINAL_PUBLIC_REFUSED` from `uploadOriginal()` or `adoptOriginal()` | A public original through a host decoder that does not set `publicOriginals: true`. Store it privately, or set the flag on the decoder |
+| `RESIZE_ORIGINAL_DOWNLOAD_FAILED` from `adoptOriginal()` | The storage driver failed with its own error, such as a network error or an S3 403. `cause` says why, and a retry may help |
+| `RESIZE_STORAGE_KEY_INVALID` from `adoptOriginal()` | The driver refuses this key (see [Adopting](#adopting)). Copy the object to a new key and adopt that |
+| `RESIZE_SOURCE_FORMAT_UNSUPPORTED` (dead-lettered at once), or `RESIZE_ORIGINAL_FORMAT_UNSUPPORTED` from `uploadOriginal()` or `adoptOriginal()` | Every decoder refused the bytes: no decoder reads that format. Add a decoder for it, or reject the file |
 | The worker or `generate()` warns that a media "is stored as '…' but its bytes are '…'" | `original.format` holds an alias such as `jpg`, a MIME type or a wrong format. The preview renders; fix the record to the decoder's ID |
 | `RESIZE_STORAGE_NOT_FOUND` from the worker or `generate()` (retried, then dead-lettered) | The original's object is not in storage: restore it, or fix or delete the media. It stays retryable because an object can appear later, for example a row written before its upload finished. An S3 role without `s3:ListBucket` gets 403 for a missing key, which stays the raw SDK error |
 | `RESIZE_SOURCE_DAMAGED` | The original is cut or unreadable: the engine refused its header, or refused its pixels at `limits.failOn` (the worker's `error` line then names the level). Dead-lettered on its first delivery: replace the original. See **Damaged originals** above for previews made before 0.4.0 |
