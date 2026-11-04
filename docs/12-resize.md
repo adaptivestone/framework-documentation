@@ -609,7 +609,7 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 | `formats` | `['jpeg', 'webp', 'avif']` | Formats generated when a call doesn't pass `formats`; each needs an `encode.formats` entry |
 | `upload.maxBytes` | 25 MiB | Largest original `uploadOriginal()` accepts |
 | `upload.formats` | `jpeg`, `png`, `webp`, `avif`, `gif`, `svg` | Original formats `uploadOriginal()` accepts |
-| `upload.verify` | `'none'` | `'decode'`: `uploadOriginal()` also decodes a raster original to a 16 px raster, at `limits.failOn`, before storing it. A damaged one is `RESIZE_ORIGINAL_DAMAGED`. SVG is skipped. It costs about 0.1 s for a 24 MP JPEG and about 1 s for a 24 MP PNG on a Sharp thread, not on the event loop |
+| `upload.verify` | `'none'` | `'decode'`: `uploadOriginal()` also decodes a raster original to a 16 px raster, at `limits.failOn`, before storing it. A damaged one is `RESIZE_ORIGINAL_DAMAGED`. It decodes the first frame only, so an animation damaged in a later frame is stored. A vector source, such as SVG, is skipped. It costs about 0.1 s for a 24 MP JPEG and about 1 s for a 24 MP PNG on a Sharp thread, not on the event loop |
 | `maxSize` | `{ width: 2000, height: 1200 }` | The box for `fit` |
 | `encode.formats` | JPEG quality 88, WebP 82, AVIF 64 | Sharp encoder options per format; `{}` keeps Sharp's defaults |
 | `animated` | `false` | `true`: WebP and GIF previews of an animated original keep its frames (up to `limits.animationFrames`, 64), unless the pipeline has `beforeSteps` or `variantSteps`; other formats and pipelines with steps use the first frame |
@@ -654,7 +654,7 @@ After the upgrade, `resize-scaffold --check` reports every `src/config/resize.ts
 |---|---|---|
 | `ResizeSetupError` | The wiring is wrong, e.g. a duplicate Resizer name | Fix the code |
 | `ResizeConfigError` | The config is invalid or incomplete | Fix the config; `resizer.verify()` reports it at startup |
-| `ResizeOriginalError` | Uploaded bytes are invalid, unsupported or too large. Not retryable by default: the same bytes get the same refusal. `RESIZE_ORIGINAL_INSPECT_FAILED` is retryable: a decoder failed for a reason other than the bytes | Reject the upload |
+| `ResizeOriginalError` | Uploaded bytes are invalid, unsupported or too large. Not retryable by default: the same bytes get the same refusal. `RESIZE_ORIGINAL_INSPECT_FAILED` is retryable: a decoder failed for a reason other than the bytes | Reject the upload; when `err.retryable` is `true`, answer with your own text |
 | `ResizeNoOriginalError` | The media has no original | Upload the original first |
 | `ResizeMediaError` | The media can't be used; the two errors above extend it | Skip that media |
 | `ResizeGenerateError` | `generate()` made nothing, or a queued task left variants missing | Check `failed`, `requested`, `missing` and the logs |
@@ -673,7 +673,7 @@ try {
 }
 ```
 
-An upload rejection's message carries the engine's line, and `badRequest(err.message)` can show it to end users. The `code` is the stable part; the text may change.
+An upload rejection's message carries the engine's line, and `badRequest(err.message)` can show it to end users. The `code` is the stable part; the text may change. Check `err.retryable`: when it is `true`, the failure is not about the file, so answer with your own text.
 
 If two copies of the package are installed, `instanceof` can fail across them. `ResizeError.isResizeError(err)` still works in that case.
 
