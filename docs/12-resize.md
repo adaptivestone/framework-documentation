@@ -205,7 +205,7 @@ const { created, failed } = await getResizer().generate({
 | `failed` | The number of variants that failed. `failed > 0` is a partial success: the successful previews are saved. |
 | `replaced` | The storage refs of every row this call's write removed: the outdated previews it replaced, or a copy of the same preview another worker stored meanwhile. Set only when there were some. Their files are not deleted. |
 
-`generate()` throws `ResizeGenerateError` if every variant fails, and `ResizeNoOriginalError` if the media has no original. So `{ created: [], failed: 0 }` means nothing new was needed. `failed` is only a count; the logs say which variant failed and why.
+`generate()` throws `ResizeGenerateError` if every variant fails, and `ResizeNoOriginalError` if the media has no original. The `ResizeGenerateError` has `retryable: false` when every variant failed with `retryable: false`. So `{ created: [], failed: 0 }` means nothing new was needed. `failed` is only a count; the logs say which variant failed and why.
 
 With `persist: false`, the files are uploaded but their metadata is not saved, so store `created` yourself. Eager calls take no locks, so two concurrent calls for the same media can both generate the same variants.
 
@@ -657,7 +657,7 @@ After the upgrade, `resize-scaffold --check` reports every `src/config/resize.ts
 | `ResizeOriginalError` | Uploaded bytes are invalid, unsupported or too large. Not retryable by default: the same bytes get the same refusal. `RESIZE_ORIGINAL_INSPECT_FAILED` is retryable: a decoder failed for a reason other than the bytes | Reject the upload; when `err.retryable` is `true`, answer with your own text |
 | `ResizeNoOriginalError` | The media has no original | Upload the original first |
 | `ResizeMediaError` | The media can't be used; the two errors above extend it | Skip that media |
-| `ResizeGenerateError` | `generate()` made nothing, or a queued task left variants missing | Check `failed`, `requested`, `missing` and the logs |
+| `ResizeGenerateError` | `generate()` made nothing, or a queued task left variants missing. `retryable` is `false` when every variant behind it failed with `false` | Check `failed`, `requested`, `missing` and the logs |
 | `ResizeStorageError` | A storage operation failed | A retry may help |
 | `ResizeSecurityError` | A refused storage access, such as path traversal | Never retry; investigate |
 
