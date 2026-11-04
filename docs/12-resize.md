@@ -42,16 +42,16 @@ You need Node `>=24`, `@adaptivestone/framework` `^5.1.0`, and `mongoose` 9 (alr
 
 ```bash
 npm i @adaptivestone/framework-module-resize
-npx resize-scaffold --eager
+npx --no -- resize-scaffold --eager
 ```
 
-Run it after the install: the name resolves to this package's binary only once it is installed.
+Run it after the install. `--no` refuses to fetch a package of that name from the registry when this one is missing, and npm stops with an error. `--` hands the options to this command, not to npm.
 
 - `--eager` creates `src/resizer.ts` and `src/config/resize.ts`. Without it, the command also creates the queue model and the worker command (see [background generation](#background)). With a queue and a media model not named `File`, set `static fileRef = 'Media'` in `src/models/ResizeTask.ts`, as that file's comment says.
 - It never overwrites existing files; `--force` does.
-- It appends `/var/` to your `.gitignore` in the run that writes the config, because private originals must never reach version control. Files already tracked there stay tracked, and new ones are ignored.
+- It appends `/var/` to your `.gitignore` in the run that writes the config, because private originals must never reach version control. Files already tracked there stay tracked, and new ones are ignored. A `!` line for `var` beside your own rule stays, and gets a warning: check with `git check-ignore var/media-private/x`.
 - It adds a pointer to the package's agent guide to your `AGENTS.md`. Use `--agents claude|print|skip` to change that.
-- In CI, run `resize-scaffold --check` (`--check --eager` for eager apps). It fails when a generated file is missing or has been changed in a way that breaks it.
+- In CI, run `npx --no -- resize-scaffold --check` (`--check --eager` for eager apps). It fails when a generated file is missing or has been changed in a way that breaks it.
 
 ### 2. Add the fields to your media model
 
@@ -86,7 +86,7 @@ export default {
   ...defaultFrameworkResizeConfig,
   mediaModelName: 'File', // your media model
   storage: { driver: 'local', rootDir: './var/media', privateRootDir: './var/media-private',
-    publicBaseUrl: process.env.RESIZE_PUBLIC_BASE_URL || 'http://localhost:3300/media' },
+    publicBaseUrl: process.env['RESIZE_PUBLIC_BASE_URL'] || 'http://localhost:3300/media' },
 } satisfies FrameworkResizeConfig;
 ```
 
@@ -153,7 +153,7 @@ Save `original` exactly as returned, and do not change it later: every preview r
 
 ### Serve local files {/* #serve-local-files */}
 
-`LocalFsStorage` writes previews to `rootDir`, and private originals to `privateRootDir`, which defaults to `rootDir` + `-private` and so sits **beside** it. Serve exactly `rootDir`. Never serve a parent of it: the module cannot detect that, and it would expose every original, untrusted SVG included. An empty `rootDir` or `privateRootDir` is refused with `RESIZE_CONFIG_INVALID`.
+`LocalFsStorage` writes previews to `rootDir`, and private originals to `privateRootDir`, which defaults to `rootDir` + `-private` and so sits **beside** it. Serve exactly `rootDir`. Never serve a parent of it: the module cannot detect that, and it would expose every original, untrusted SVG included. An empty or whitespace-only `rootDir` or `privateRootDir` is refused with `RESIZE_CONFIG_INVALID`; `'.'` is the working directory. An override that moves `rootDir` must move the scaffold's `privateRootDir` too: it no longer follows.
 
 `publicBaseUrl` must be absolute for a frontend on another origin. The scaffold reads `RESIZE_PUBLIC_BASE_URL`; its default assumes the framework's port 3300. Changing it later regenerates nothing, because URLs are built at read time and are in no signature. An empty or missing `RESIZE_PUBLIC_BASE_URL` in production gives `localhost` URLs in API responses, with no warning: set it in every deployed environment.
 
@@ -164,7 +164,7 @@ Save `original` exactly as returned, and do not change it later: every preview r
 import type { BootHttpHook } from '@adaptivestone/framework/server.js';
 
 const bootHttp: BootHttpHook = async (app) => {
-  if (process.env.NODE_ENV === 'production') return; // a reverse proxy or a CDN serves these files
+  if (process.env['NODE_ENV'] === 'production') return; // a reverse proxy or a CDN serves these files
   const { default: express } = await import('express'); // npm i -D express
   app.httpServer?.express.use('/media', express.static('var/media', { dotfiles: 'ignore', index: false, immutable: true, maxAge: '1y' }));
 };
@@ -185,11 +185,13 @@ location /media/ {
 }
 ```
 
-With Caddy:
+With Caddy, inside your site block:
 
 ```
 handle_path /media/* {
   root * /srv/app/var/media
+  header Cache-Control "public, max-age=31536000, immutable"
+  header X-Content-Type-Options nosniff
   file_server
 }
 ```
@@ -310,7 +312,7 @@ for (const file of files) {
 1. Run the scaffold without `--eager`. It adds `src/models/ResizeTask.ts` (the queue's model) and `src/commands/ResizeWorker.ts` (the worker command), and keeps your existing files:
 
    ```bash
-   npx resize-scaffold
+   npx --no -- resize-scaffold
    ```
 
 2. Define the queue, where tasks wait for the worker, name it as the Resizer's queue, and allow the worker to run. In `src/config/resize.ts`:
@@ -342,7 +344,7 @@ import '../resizer.ts';
 export { ResizeWorker as default } from '@adaptivestone/framework-module-resize/framework.js';
 ```
 
-Keep that import if you edit the command; `resize-scaffold --check` reports a command without it. The API and the worker must use the same database and the same storage. With `LocalFsStorage` that means the same filesystem; for workers on other machines, use S3 or other shared storage.
+Keep that import if you edit the command; `npx --no -- resize-scaffold --check` reports a command without it. The API and the worker must use the same database and the same storage. With `LocalFsStorage` that means the same filesystem; for workers on other machines, use S3 or other shared storage.
 
 ### Lazy and pre-warm
 
@@ -781,7 +783,7 @@ The [full config reference](https://github.com/adaptivestone/framework-module-re
 | `storage.publicUrl`, or the `S3Storage` option `publicUrl` | `publicBaseUrl` |
 | The types `FrameworkStorageConfig`, `FrameworkLocalStorageConfig`, `FrameworkS3StorageConfig` (a compile error, `TS2305` or `TS2724`, not this code; TypeScript may suggest `FrameworkWorkerConfig`, which is another type) | `StorageConfig`, `LocalStorageConfig`, `S3StorageConfig` |
 
-After the upgrade, `resize-scaffold --check` reports every `src/config/resize.ts`, and every `resize.<NODE_ENV>.ts` override of it, written for an earlier version (a top-level `queue: { … }` object, or `defaultFrameworkResizeConfig` imported from `…/config/resize.js`; only full-line `//` comments are skipped, and a second Resizer's `configName` file is not checked), and every ejected `ResizeTask` model without `startedAt` and `finishedAt`. That is intended: rewrite the config to the shape above, and add both fields as `{ type: Date }` (or move `src/models/ResizeTask.ts` aside (or delete it), run `resize-scaffold --eject` again, then restore your customizations; the scaffold never overwrites a file, so running `--eject` again alone changes nothing). Such a model keeps working, without the two times.
+After the upgrade, `npx --no -- resize-scaffold --check` reports every `src/config/resize.ts`, and every `resize.<NODE_ENV>.ts` override of it, written for an earlier version (a top-level `queue: { … }` object, or `defaultFrameworkResizeConfig` imported from `…/config/resize.js`; only full-line `//` comments are skipped, and a second Resizer's `configName` file is not checked), and every ejected `ResizeTask` model without `startedAt` and `finishedAt`. That is intended: rewrite the config to the shape above, and add both fields as `{ type: Date }` (or move `src/models/ResizeTask.ts` aside (or delete it), run `npx --no -- resize-scaffold --eject` again, then restore your customizations; the scaffold never overwrites a file, so running `--eject` again alone changes nothing). Such a model keeps working, without the two times.
 
 ## Errors
 
@@ -881,7 +883,7 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 |---|---|
 | Worker logs `resize worker disabled` | Set `worker.enabled: true` in `src/config/resize.ts` (the worker reads no other file). The command resolves `false`, so a CLI entry that forwards the result, as the framework docs require, exits 1 |
 | Worker logs `resize worker: no Resizer has a task queue` | This process consumes nothing, with the same result: set `queue` and `queues`, or do not run a worker |
-| `resize-scaffold --check` reports `src/config/resize.ts`, a `resize.<NODE_ENV>.ts` override or `src/models/ResizeTask.ts` right after the upgrade | Intended for a config or an ejected model written for an earlier version: see the [old keys](#configuration) |
+| `npx --no -- resize-scaffold --check` reports `src/config/resize.ts`, a `resize.<NODE_ENV>.ts` override or `src/models/ResizeTask.ts` right after the upgrade | Intended for a config or an ejected model written for an earlier version: see the [old keys](#configuration) |
 | `RESIZE_CONFIG_QUEUE_UNKNOWN` at the first call or from `verify()` | The Resizer's queue (its `queue`, its `queueName` option, or the implied `'default'`) is not an entry of `queues` in `src/config/resize.ts`: add it, or, for eager only, set `queue: false` in the file, or `tasks: false` in code when the name came from the `queueName` option (the option wins over the file) |
 | `RESIZE_CONFIG_INVALID` saying a section "is process-wide" | `queues`, `worker` or `coordination` is in another config file (or in the `config` option): move it to `src/config/resize.ts` |
 | `RESIZE_CONFIG_REMOVED_KEY` naming `queue`, `queues.<name>.queues` or `--config` | The earlier queue shape: see the [old keys](#configuration) |
@@ -900,10 +902,10 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 | Previews made again and again during a deploy | Two worker versions with different settings run side by side and each makes the other's previews again: deploy every worker at once, or change settings after the old workers have stopped |
 | Worker warns "the media store did not record the original's dimensions", or tasks fail with a Mongoose `StrictModeError` or `CastError`, are retried and dead-lettered with no previews | A custom `MediaStore` drops `backfillDims` in `appendPreviews` (also with `previews: []`), so every read of such a media queues a task that downloads the original: save the dimensions on the original. The shipped `MongoMediaStore` drops them too when the media schema declares `original` strictly (nested paths, or a sub-schema without `strict: false`) without `width` and `height`, or stores them with the wrong type when they are declared as a type that does not read back as a number (not Number, Int32 or Mixed). Under `strict: 'throw'`, or with a type Mongoose cannot cast them to (`Boolean`, `ObjectId`), the backfill is rejected instead: the task fails, is retried and is dead-lettered after `maxAttempts`. In each case its `verify()` warns once, naming the cause: spread `resizeMediaSchemaFragment`, or declare `width` and `height` as `{ type: Number }` in `original` |
 | Previews written by 0.2.x or earlier are made again | They have no `origin` or `encodeSig`, so they are outdated: each is replaced on its next read, and its old file stays. Rows without an `identity` (before 0.3.0) are never removed, and a sweep never finds their files: delete those yourself |
-| Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` must import `../resizer.ts`; delete the old file and run `resize-scaffold` again |
+| Worker stops at start with `RESIZE_NO_RESIZER` | `src/commands/ResizeWorker.ts` must import `../resizer.ts`; delete the old file and run `npx --no -- resize-scaffold` again |
 | Worker logs that a Resizer "is not served by this worker", or `RESIZE_NO_RESIZER` for a task | An SQS (or custom) queue handed the worker a task of a Resizer it doesn't have. That Resizer must be created in `src/resizer.ts`. Until then its tasks go back to the queue, or, on a queue that cannot give tasks back, are retried and then dead-lettered. On the database queue such tasks wait for a worker that has the Resizer |
 | `verify()` or the worker fails with `RESIZE_MONGO_MODEL_MISSING` | The `ResizeTask` model is not registered (scaffold `src/models/ResizeTask.ts`), or the framework's `Lock` model is missing while the Resizer's own queue (for `verify()`) or a queue the worker consumes is on SQS |
-| `verify()` or the worker fails with `RESIZE_MONGO_MODEL_OUTDATED`, or your app logs it once and reads queue nothing | Your ejected or hand-written `ResizeTask` model lacks the `resizer`, `queue`, `availableAt`, `active` or `cooldownUntil` field: add them (and the `{ queue, status, availableAt }` index and the gate index), or delete the file and run `resize-scaffold --eject` again |
+| `verify()` or the worker fails with `RESIZE_MONGO_MODEL_OUTDATED`, or your app logs it once and reads queue nothing | Your ejected or hand-written `ResizeTask` model lacks the `resizer`, `queue`, `availableAt`, `active` or `cooldownUntil` field: add them (and the `{ queue, status, availableAt }` index and the gate index), or delete the file and run `npx --no -- resize-scaffold --eject` again |
 | `verify()` or the worker fails with `RESIZE_MONGO_INDEX_MISSING`, your app logs it once at the first added task, or your app logs "reported a task in flight without its id" | The `ResizeTask` collection has no gate index: unique on `{ resizer: 1, fileId: 1, pipeline: 1, queue: 1 }` with `partialFilterExpression: { active: true }` (the filter may also be written `{ active: { $eq: true } }`), or the collection does not exist yet, or an index on those keys lacks `unique` or the partial filter, or Mongoose's own index build failed (see the error's cause). Create it through your migration; the module never creates indexes |
 | `verify()` or the worker fails with `RESIZE_MONGO_NOT_CONNECTED` | The MongoDB connection is not open, or failed to open (reported once the driver gives up, after its `serverSelectionTimeoutMS`, 30 s by default; the message names the driver error): call `verify()` after the connection has opened (after `server.init()`); a connection that is still opening is awaited |
 | `verify()` or the worker fails with `RESIZE_MONGO_MEDIA_MODEL_OUTDATED` | Your media schema declares preview entries as strict sub-documents without `identity`, `origin` or `encodeSig`: spread the current `resizeMediaSchemaFragment`, or add each missing field to the entry as `{ type: String }` |
