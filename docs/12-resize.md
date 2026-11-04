@@ -42,13 +42,14 @@ You need Node `>=24`, `@adaptivestone/framework` `^5.1.0`, and `mongoose` 9 (alr
 
 ```bash
 npm i @adaptivestone/framework-module-resize
-npm exec --package=@adaptivestone/framework-module-resize -- resize-scaffold --eager
+npx resize-scaffold --eager
 ```
 
-`resize-scaffold` ships with the package.
+Run it after the install: the name resolves to this package's binary only once it is installed.
 
-- `--eager` creates `src/resizer.ts` and `src/config/resize.ts`. Without it, the command also creates the queue model and the worker command (see [background generation](#background)).
+- `--eager` creates `src/resizer.ts` and `src/config/resize.ts`. Without it, the command also creates the queue model and the worker command (see [background generation](#background)). With a queue and a media model not named `File`, set `static fileRef = 'Media'` in `src/models/ResizeTask.ts`, as that file's comment says.
 - It never overwrites existing files; `--force` does.
+- It appends `/var/` to your `.gitignore` in the run that writes the config, because private originals must never reach version control. Files already tracked there stay tracked, and new ones are ignored.
 - It adds a pointer to the package's agent guide to your `AGENTS.md`. Use `--agents claude|print|skip` to change that.
 - In CI, run `resize-scaffold --check` (`--check --eager` for eager apps). It fails when a generated file is missing or has been changed in a way that breaks it.
 
@@ -84,7 +85,8 @@ import {
 export default {
   ...defaultFrameworkResizeConfig,
   mediaModelName: 'File', // your media model
-  storage: { driver: 'local', rootDir: './var/media', publicBaseUrl: '/media' },
+  storage: { driver: 'local', rootDir: './var/media', privateRootDir: './var/media-private',
+    publicBaseUrl: process.env.RESIZE_PUBLIC_BASE_URL || 'http://localhost:3300/media' },
 } satisfies FrameworkResizeConfig;
 ```
 
@@ -117,6 +119,8 @@ export const resizer = new FrameworkResizer({ pipelines: { default: {} } });
 
 `FrameworkResizer` builds everything else from `src/config/resize.ts`: the image settings, the storage, the task queue, the media store (`FrameworkMediaStore`, over your media model `mediaModelName`), for a queue that cannot gate by itself, such as SQS, the lock store (`FrameworkLockStore`, the framework's `Lock` model; the database queue needs none), and the app logger. So `src/resizer.ts` holds only behaviour: pipelines and hooks. Options win over the config; for example, `new FrameworkResizer({ storage: new S3Storage({ …, client }) })` reuses your own S3 client. Import `src/resizer.ts` wherever you need the Resizer; a normal static import is fine, because nothing is read from the framework until first use. Elsewhere in your code, `getResizer()` returns the same instance.
 
+A dead-code tool may flag the `resizer` export of `src/resizer.ts` when you use `getResizer()`: import it by name, or ignore that export.
+
 A config mistake then shows up at the first upload or read. To catch it at startup instead, verify after initialization:
 
 ```ts
@@ -126,11 +130,7 @@ await resizer.verify(); // config, storage, the media model, the task queue (Res
 await server.startServer();
 ```
 
-`LocalFsStorage` writes:
-- previews under `rootDir`;
-- private originals under `privateRootDir`, which defaults to `./var/media-private`.
-
-Serve only `rootDir`, at `/media`, with a long-lived cache: every file name the module writes there is new (previews and public raster originals), so a file never changes under its URL; if you write your own files under `rootDir`, give each a new name. Never serve the private folder. For S3, see [drivers](#drivers).
+The module writes local files, and you serve them: see [Serve local files](#serve-local-files). For S3, see [drivers](#drivers).
 
 ### 5. Store the original at upload
 
@@ -150,6 +150,51 @@ Previews inherit the namespace, so it appears in their public URLs: do not put a
 `uploadOriginal()` detects the format and dimensions with its decoders (Sharp for raster images and SVG), then stores the bytes unchanged under a random name. It returns the value to save as `original`. It does not create the document or queue any work. Input larger than `upload.maxBytes` (25 MiB by default), or in a format not listed in `upload.formats`, throws `ResizeOriginalError`.
 
 Save `original` exactly as returned, and do not change it later: every preview records a signature of its `storageRef` and size, so a changed ref regenerates that media's previews. Its `storageRef` is the storage driver's own locator: `{ path, visibility }` for local files, `{ bucket, key }` for S3. To put an object you already hold on the module, see [Adopting on an app with existing media](#adopting).
+
+### Serve local files {/* #serve-local-files */}
+
+`LocalFsStorage` writes previews to `rootDir`, and private originals to `privateRootDir`, which defaults to `rootDir` + `-private` and so sits **beside** it. Serve exactly `rootDir`. Never serve a parent of it: the module cannot detect that, and it would expose every original, untrusted SVG included. An empty `rootDir` or `privateRootDir` is refused with `RESIZE_CONFIG_INVALID`.
+
+`publicBaseUrl` must be absolute for a frontend on another origin. The scaffold reads `RESIZE_PUBLIC_BASE_URL`; its default assumes the framework's port 3300. Changing it later regenerates nothing, because URLs are built at read time and are in no signature. An empty or missing `RESIZE_PUBLIC_BASE_URL` in production gives `localhost` URLs in API responses, with no warning: set it in every deployed environment.
+
+**Development**, on the API. Tested by this module on the framework's own server. The framework serves no static files, and `bootHttp` runs before its 404 page:
+
+```ts
+// src/bootHttp.ts
+import type { BootHttpHook } from '@adaptivestone/framework/server.js';
+
+const bootHttp: BootHttpHook = async (app) => {
+  if (process.env.NODE_ENV === 'production') return; // a reverse proxy or a CDN serves these files
+  const { default: express } = await import('express'); // npm i -D express
+  app.httpServer?.express.use('/media', express.static('var/media', { dotfiles: 'ignore', index: false, immutable: true, maxAge: '1y' }));
+};
+export default bootHttp;
+```
+
+Pass it as `new Server({ folders, bootHttp })`. A strict `tsc` also needs `npm i -D @types/express`; the recipe runs without it. Any other static server over `var/media` works too, with `RESIZE_PUBLIC_BASE_URL` pointing at it.
+
+**Production**, not run by this project: a reverse proxy or a CDN over the same folder, never the API.
+
+```nginx
+location /media/ {
+  alias /srv/app/var/media/;
+  expires 1y;
+  add_header Cache-Control "public, immutable";
+  add_header X-Content-Type-Options nosniff;
+  try_files $uri =404;
+}
+```
+
+With Caddy:
+
+```
+handle_path /media/* {
+  root * /srv/app/var/media
+  file_server
+}
+```
+
+File names are new per write, so the long cache is safe. If you write your own files under `rootDir`, give each a new name.
 
 ## Sizes and formats
 
@@ -265,7 +310,7 @@ for (const file of files) {
 1. Run the scaffold without `--eager`. It adds `src/models/ResizeTask.ts` (the queue's model) and `src/commands/ResizeWorker.ts` (the worker command), and keeps your existing files:
 
    ```bash
-   npm exec --package=@adaptivestone/framework-module-resize -- resize-scaffold
+   npx resize-scaffold
    ```
 
 2. Define the queue, where tasks wait for the worker, name it as the Resizer's queue, and allow the worker to run. In `src/config/resize.ts`:
