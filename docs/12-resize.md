@@ -205,7 +205,7 @@ const { created, failed } = await getResizer().generate({
 | `failed` | The number of variants that failed. `failed > 0` is a partial success: the successful previews are saved. |
 | `replaced` | The storage refs of every row this call's write removed: the outdated previews it replaced, or a copy of the same preview another worker stored meanwhile. Set only when there were some. Their files are not deleted. |
 
-`generate()` throws `ResizeGenerateError` if every variant fails, and `ResizeNoOriginalError` if the media has no original. The `ResizeGenerateError` has `retryable: false` when every variant failed with `retryable: false`. So `{ created: [], failed: 0 }` means nothing new was needed. `failed` is only a count; the logs say which variant failed and why.
+`generate()` throws `ResizeGenerateError` if every variant fails, and `ResizeNoOriginalError` if the media has no original. So `{ created: [], failed: 0 }` means nothing new was needed. The `ResizeGenerateError` has `retryable: false` when every variant failed with `retryable: false`. `failed` is only a count; the logs say which variant failed and why.
 
 With `persist: false`, the files are uploaded but their metadata is not saved, so store `created` yourself. Eager calls take no locks, so two concurrent calls for the same media can both generate the same variants.
 
@@ -685,7 +685,8 @@ Every Resizer reports its reads, uploads, rendered variants, task outcomes and t
 
 - **One summary line per minute** per Resizer, at `info`, when something happened: `resize: Resizer 'default' over 60 s: reads 1200 (ready 1150, enqueued 12, in-flight 38), stale previews found 40, uploads 25 (31457280 bytes), variants 75 (5242880 bytes), claims 12 (average wait 840 ms)`.
 - **One line per task outcome** (`completed`, `failed`, `dead`) and per failed variant, at once.
-- **One `debug` line per event**, which that logger may drop.
+
+`new LogMetrics(logger, { debug: true })` adds one `debug` line per event.
 
 A read no longer writes a log line per request: a media with no original yet is only counted, and an unknown pipeline, a format without encoder settings, a missing queue or a media loaded without the module's fields is logged once. Every read is counted, with its outcome.
 
@@ -699,12 +700,12 @@ new FrameworkResizer({ pipelines, metrics: new NoopMetrics() }); // off
 
 `NoopMetrics` turns metrics off, not the lines the worker writes when a task fails (see [Failures in the log](#operations)).
 
-A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)` and `timing(name, ms, labels, context)`; group by `labels` only, since `context` holds ids for logs. The worker writes the open summary when it stops; in the API, call `await getResizer().metrics.flush?.()` at shutdown. The [metrics reference](https://github.com/adaptivestone/framework-module-resizer#metrics) lists every event, its labels, the line formats and a Prometheus example.
+A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)` and `timing(name, ms, labels, context)`; group by `labels` only, since `context` holds ids for logs. The worker writes the open summary when it stops, and a framework app writes it at shutdown with no code of yours. The [metrics reference](https://github.com/adaptivestone/framework-module-resizer#metrics) lists every event, its labels, the line formats and a Prometheus example.
 
 ## Operations and troubleshooting {/* #operations */}
 
 - **Task states.** Mongo tasks go `pending → processing → completed`. A failed attempt returns to `pending` with a growing delay. After the queue's `maxAttempts`, the task becomes `dead`. `startedAt` records when the latest attempt started and `finishedAt` when the task completed or died, for inspection only. A media and pipeline have at most one active task per queue (`active: true` on its row) from the moment it is queued until it completes, or, after a dead-letter, until `coordination.cooldownMs` has passed; the next `add()` then takes the gate over (it retires the dead row and stores a new task).
-- **Failures in the log.** The worker writes a `warn` line for each failed attempt that will be retried and an `error` line for each dead task, with the task and media ids, the attempt, the error code, why it is dead (last attempt, not retryable, or delivered more often than `maxAttempts`) and the cause. The lines do not depend on the metrics sink, so `NoopMetrics` does not silence them, and an alert on `error` fires once per dead task. The module's line is always one line; the stack of an unexpected error follows it as your logger prints it, so do not treat later lines as the module's own.
+- **Failures in the log.** The worker writes a `warn` line for each failed attempt that will be retried and an `error` line for each dead task, with the task and media ids, the attempt, the error code, why it is dead (last attempt, not retryable, or delivered more often than `maxAttempts`) and the cause. The lines do not depend on the metrics sink, so `NoopMetrics` does not silence them, and an alert on `error` fires once per dead task. A thrown value cannot break the module's line; the stack of an unexpected error follows it as your logger prints it, so do not treat later lines as the module's own.
 - **Partial attempts.** A task completes only when every requested variant is stored. When an attempt is only partly successful, its previews are saved and the next attempt makes only the missing ones.
 - **Cleanup and retries.** Completed tasks are removed after about 24 hours and dead tasks after about 30 days. A dead task's cooldown holds only its own queue: a read or pre-warm on another queue queues the work again, so a task that always fails gets one `maxAttempts` cycle on each queue it is sent to. To retry a dead task after fixing its cause, call `prewarm()` again for that media once `coordination.cooldownMs` (10 minutes by default) has passed since the task died; until then it reports a retryable issue.
 - **One row per preview.** The media store keeps each preview identity once. When two workers render the same preview, the second upload is logged as a warning with its storage location and is not recorded; delete such files if you need to.
@@ -741,7 +742,8 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 
 | Symptom | Check |
 |---|---|
-| Worker exits with "disabled" | `worker.enabled: true` in `src/config/resize.ts` (the worker reads no other file) |
+| Worker logs `resize worker disabled` | Set `worker.enabled: true` in `src/config/resize.ts` (the worker reads no other file). The command resolves `false`, so a CLI entry that forwards the result, as the framework docs require, exits 1 |
+| Worker logs `resize worker: no Resizer has a task queue` | This process consumes nothing, with the same result: set `queue` and `queues`, or do not run a worker |
 | `resize-scaffold --check` reports `src/config/resize.ts`, a `resize.<NODE_ENV>.ts` override or `src/models/ResizeTask.ts` right after the upgrade | Intended for a config or an ejected model written for an earlier version: see the [old keys](#configuration) |
 | `RESIZE_CONFIG_QUEUE_UNKNOWN` at the first call or from `verify()` | The Resizer's queue (its `queue`, its `queueName` option, or the implied `'default'`) is not an entry of `queues` in `src/config/resize.ts`: add it, or, for eager only, set `queue: false` in the file, or `tasks: false` in code when the name came from the `queueName` option (the option wins over the file) |
 | `RESIZE_CONFIG_INVALID` saying a section "is process-wide" | `queues`, `worker` or `coordination` is in another config file (or in the `config` option): move it to `src/config/resize.ts` |
@@ -772,7 +774,7 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 | `RESIZE_SVG_RENDER_UNAVAILABLE` from the worker or `generate()` | The SVG render process cannot start: allow child processes (`--allow-child-process` under Node's permission model), and keep `svgRasterChild.js` next to `svgRaster.js` when bundling |
 | `RESIZE_DECODER_MISSING` from the worker or `generate()` (retried) | No decoder in that process lists the stored `original.format`, and none reads the bytes: pass the decoder in `decoders` in every process, or fix an `original.format` that holds an alias |
 | `RESIZE_SOURCE_FORMAT_UNSUPPORTED` (dead-lettered at once), or `RESIZE_ORIGINAL_FORMAT_UNSUPPORTED` from `uploadOriginal()` | Every decoder refused the bytes: no decoder reads that format. Add a decoder for it, or reject the file |
-| Worker warns that a media "is stored as '…' but its bytes are '…'" | `original.format` holds an alias such as `jpg`, a MIME type or a wrong format. The preview renders; fix the record to the decoder's ID |
+| The worker or `generate()` warns that a media "is stored as '…' but its bytes are '…'" | `original.format` holds an alias such as `jpg`, a MIME type or a wrong format. The preview renders; fix the record to the decoder's ID |
 | `RESIZE_STORAGE_NOT_FOUND` from the worker or `generate()` (retried, then dead-lettered) | The original's object is not in storage: restore it, or fix or delete the media. It stays retryable because an object can appear later, for example a row written before its upload finished. An S3 role without `s3:ListBucket` gets 403 for a missing key, which stays the raw SDK error |
 | `RESIZE_SOURCE_DAMAGED` | The original is cut or unreadable: the engine refused its header, or refused its pixels at `limits.failOn` (the worker's `error` line then names the level). Dead-lettered on its first delivery: replace the original. See **Damaged originals** above for previews made before 0.4.0 |
 | `RESIZE_SOURCE_DECODE_FAILED` | Sharp (or your decoder) could not decode the original, for a reason other than damage; the error's cause says why. Retried, then dead-lettered. A damaged original stays this code when its download length differs from `original.size`, or when it fails at render on a stored format no decoder of that process lists; at `inspect`, on such a format, it is the retryable `RESIZE_DECODER_MISSING` |
