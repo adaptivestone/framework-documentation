@@ -456,7 +456,7 @@ In a framework app you choose drivers in the config file; pass a driver object t
 
 The module itself runs the queue: the worker loop, the lease, retries with backoff, dead-lettering and the task events. A task queue driver only stores tasks, so Mongo and SQS behave the same. `FrameworkMediaStore` and `FrameworkLockStore` are thin wrappers over the framework-free `MongoMediaStore` and `MongoLockStore`: the first takes your media model from the app, and the second keeps locks, each with its owner, in the framework's own `Lock` model. The database task queue (every `queues` entry with `driver: 'database'`) is the `ResizeTask` model, and its rows also make sure that only one task per media, pipeline and queue is active, so it needs no locks.
 
-**S3** needs `npm i @aws-sdk/client-s3 @aws-sdk/s3-request-presigner` (3.572 or newer):
+**S3** needs `npm i @aws-sdk/client-s3` (3.572 or newer); add `@aws-sdk/s3-request-presigner` only if you call `signedUrl`:
 
 ```ts
 // src/config/resize.ts (or resize.production.ts)
@@ -530,7 +530,7 @@ Previews are public. Store originals privately (`visibility: 'private'`). Your a
   - The generator renders it into your raster formats and never loads anything the file references. The render runs in a separate Node process and is killed after `limits.processingTimeoutSeconds` or when the task stops. Your app must allow child processes (`--allow-child-process` under Node's permission model), and a bundle must keep `svgRasterChild.js` next to `svgRaster.js`.
   - The stored file is not cleaned, so never serve it yourself.
 - **The module never serves an original.** `resolve()` returns stored previews only, whoever reads; `ctx` reaches your hooks but does not change the result. A small raster original gets a preview at its own size instead, unless the pipeline has `variantSteps` (see [sizes](#sizes-and-formats)).
-- **To give an owner the private original,** check access in your app and call the storage driver yourself. `S3Storage` signs URLs; `LocalFsStorage` has no `signedUrl`.
+- **To give an owner the private original,** check access in your app and call the storage driver yourself. `S3Storage` signs URLs, with `@aws-sdk/s3-request-presigner` installed; `LocalFsStorage` has no `signedUrl`.
 
   ```ts
   const resizer = getResizer();
@@ -645,6 +645,7 @@ The [full config reference](https://github.com/adaptivestone/framework-module-re
 | `queue.queues: { bulk: url }` (SQS) | one `queues` entry per name: `bulk: { driver: 'sqs', queueUrl: url, … }` |
 | `queue.lockTtlMs` (or `queues.<name>.lockTtlMs`) | `coordination`: `dispatch` → `gateTtlMs` (a different lock: the old one held one variant for 60 s, the new one holds a queued task's media; set it to your worst queue wait), `failed` → `cooldownMs`; drop `worker` |
 | `npm run cli ResizeWorker -- --config=<name>` | nothing: the worker reads `worker` and `queues` from `src/config/resize.ts` |
+| `storage.publicUrl`, or the `S3Storage` option `publicUrl` | `publicBaseUrl` |
 
 After the upgrade, `resize-scaffold --check` reports every `src/config/resize.ts`, and every `resize.<NODE_ENV>.ts` override of it, written for an earlier version (a top-level `queue: { … }` object, or `defaultFrameworkResizeConfig` imported from `…/config/resize.js`; only full-line `//` comments are skipped, and a second Resizer's `configName` file is not checked), and every ejected `ResizeTask` model without `startedAt` and `finishedAt`. That is intended: rewrite the config to the shape above, and add both fields as `{ type: Date }` (or move `src/models/ResizeTask.ts` aside (or delete it), run `resize-scaffold --eject` again, then restore your customizations; the scaffold never overwrites a file, so running `--eject` again alone changes nothing). Such a model keeps working, without the two times.
 
@@ -784,7 +785,7 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 | `RESIZE_PIPELINE_STEP_INVALID` | A `beforeStep` resolved with something that is not a one-frame `Raster`, such as a `Buffer` or a Sharp object, or `sharpToRaster` got a multi-page image: return `sharpToRaster(…)` |
 | Sharp's "Input file is missing" from a `beforeStep` | An old step still calls `sharp(buf)` on its first argument, which is now a `Raster`: rewrite it as `async (r) => sharpToRaster(rasterToSharp(r)…)` |
 | `verify()` or the worker fails with `RESIZE_CONFIG_MEDIA_MODEL_UNKNOWN` | `mediaModelName` must name a registered model |
-| `verify()` or the first call fails with `RESIZE_PEER_MISSING` | The S3 or SQS driver selected in the config (a config file or a `createResizer` config) needs its AWS SDK packages: install the ones named in the message. An SQS queue beside queues on another backend is only not served in that process (`RESIZE_QUEUE_NOT_SERVED`); `verify()` reports `RESIZE_PEER_MISSING` when it is the Resizer's own queue |
+| `verify()` or the first call fails with `RESIZE_PEER_MISSING` | The S3 or SQS driver selected in the config (a config file or a `createResizer` config) needs its AWS SDK packages: install the ones named in the message. `signedUrl()` alone fails with it when `@aws-sdk/s3-request-presigner` is missing. An SQS queue beside queues on another backend is only not served in that process (`RESIZE_QUEUE_NOT_SERVED`); `verify()` reports `RESIZE_PEER_MISSING` when it is the Resizer's own queue |
 | `RESIZE_PIPELINE_UNKNOWN` in `prewarm()` issues, from `generate()` or in worker logs | That process has no pipeline with this name: register it in `src/resizer.ts`, and deploy the worker before the API |
 | `RESIZE_FORMAT_NOT_CONFIGURED` | A call or a `beforeEnqueue` hook asked for a format without an `encode.formats` entry, such as `'jpg'`: use a configured format ID |
 | Tasks stay `pending` | Is a worker running for that queue (`--queue`), on the same database? Such a task holds back new tasks for its media and pipeline on that queue only |
