@@ -38,14 +38,14 @@ Every workflow reads URLs with `resolve()` and writes the same `previews[]`. You
 
 ### 1. Install and scaffold
 
-You need Node `>=24`, `@adaptivestone/framework` `^5.1.0`, and `mongoose` 9 (already in a framework app). From your app's root:
+You need Node `>=24`, `@adaptivestone/framework` `^5.1.0`, and `mongoose` 9 (already in a framework app). Upgrading from 0.3.x? Before you upgrade, read [`UPGRADING.md`](https://github.com/adaptivestone/framework-module-resizer/blob/main/UPGRADING.md): it lists what to change before you run `npm i`. From your app's root:
 
 ```bash
 npm i @adaptivestone/framework-module-resize
 npx --no -- resize-scaffold --eager
 ```
 
-Run it after the install. `--no` refuses to fetch a package of that name from the registry when this one is missing, and npm stops with an error. `--` hands the options to this command, not to npm.
+Run it after the install. `--no` refuses to install a package of that name from the registry when this one is missing, and npm stops with an error. `--` hands the options to this command, not to npm.
 
 - `--eager` creates `src/resizer.ts` and `src/config/resize.ts`. Without it, the command also creates the queue model and the worker command (see [background generation](#background)). With a queue and a media model not named `File`, set `static fileRef = 'Media'` in `src/models/ResizeTask.ts`, as that file's comment says.
 - It never overwrites existing files; `--force` does.
@@ -940,7 +940,7 @@ encode: {
 },
 ```
 
-The [full config reference](https://github.com/adaptivestone/framework-module-resizer#config-reference) covers limits, sharpening, animation, queue timing and coordination. Keys renamed since 0.2, and the earlier queue shape, fail with `RESIZE_CONFIG_REMOVED_KEY`, and the message says where the value goes. The list, and what `npx --no -- resize-scaffold --check` reports after an upgrade from a version before 0.3.0, are in [`UPGRADING.md`](https://github.com/adaptivestone/framework-module-resizer/blob/main/UPGRADING.md#removed-keys).
+The [full config reference](https://github.com/adaptivestone/framework-module-resizer#config-reference) covers limits, sharpening, animation, queue timing and coordination. Keys renamed since 0.2, and the earlier queue shape, fail with `RESIZE_CONFIG_REMOVED_KEY`, and the message says where the value goes. What `npx --no -- resize-scaffold --check` reports after an upgrade from a version before 0.3.0 is in [`UPGRADING.md`](https://github.com/adaptivestone/framework-module-resizer/blob/main/UPGRADING.md#six-things-to-know-after-the-upgrade), after the list of those keys.
 
 ## Errors
 
@@ -950,7 +950,7 @@ The [full config reference](https://github.com/adaptivestone/framework-module-re
 |---|---|---|
 | `ResizeSetupError` | The wiring is wrong, e.g. a duplicate Resizer name | Fix the code |
 | `ResizeConfigError` | The config is invalid or incomplete | Fix the config; `resizer.verify()` reports it at startup |
-| `ResizeOriginalError` | Uploaded or adopted bytes are invalid, unsupported or too large. Not retryable by default: the same bytes get the same refusal. `RESIZE_ORIGINAL_INSPECT_FAILED` is retryable: a decoder failed for a reason other than the bytes | Reject the upload; when `err.retryable` is `true`, answer with your own text |
+| `ResizeOriginalError` | Uploaded or adopted bytes are invalid, unsupported or too large. Not retryable by default: the same bytes get the same refusal. `RESIZE_ORIGINAL_INSPECT_FAILED` and `RESIZE_ORIGINAL_VERIFY_FAILED` are retryable: a decoder or the decode check failed for a reason other than the bytes | Reject the upload; when `err.retryable` is `true`, answer with your own text |
 | `ResizeNoOriginalError` | The media has no original | Upload the original first |
 | `ResizeMediaError` | The media can't be used; the two errors above extend it | Skip that media |
 | `ResizeGenerateError` | `generate()` made nothing, or a queued task left variants missing. `retryable` is `false` when every variant behind it failed with `false` (for a queued task, on an original the media still holds). Its `cause` is the first failure | Check `failed`, `requested`, `missing`, `cause` and the logs |
@@ -1122,10 +1122,10 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 | Failed tasks disappear on Lambda | The trigger lacks `ReportBatchItemFailures`: see [Push delivery](#push-delivery) |
 | Worker logs `resize worker disabled` | Set `worker.enabled: true` in `src/config/resize.ts` (the worker reads no other file). The command resolves `false`, so a CLI entry that forwards the result, as the framework docs require, exits 1 |
 | Worker logs `resize worker: no Resizer has a task queue` | This process consumes nothing, with the same result: set `queue` and `queues`, or do not run a worker |
-| `npx --no -- resize-scaffold --check` reports `src/config/resize.ts`, a `resize.<NODE_ENV>.ts` override or `src/models/ResizeTask.ts` right after the upgrade | Intended for a config or an ejected model written before 0.3.0: see the [old keys](#configuration) |
+| `npx --no -- resize-scaffold --check` reports `src/config/resize.ts`, a `resize.<NODE_ENV>.ts` override or `src/models/ResizeTask.ts` right after the upgrade | Intended for a config or an ejected model written before 0.3.0: see [`UPGRADING.md`](https://github.com/adaptivestone/framework-module-resizer/blob/main/UPGRADING.md#six-things-to-know-after-the-upgrade) |
 | `RESIZE_CONFIG_QUEUE_UNKNOWN` at the first call or from `verify()` | The Resizer's queue (its `queue`, its `queueName` option, or the implied `'default'`) is not an entry of `queues` in `src/config/resize.ts`: add it, or, for eager only, set `queue: false` in the file, or `tasks: false` in code when the name came from the `queueName` option (the option wins over the file) |
 | `RESIZE_CONFIG_INVALID` saying a section "is process-wide" | `queues`, `worker` or `coordination` is in another config file (or in the `config` option): move it to `src/config/resize.ts` |
-| `RESIZE_CONFIG_REMOVED_KEY` naming `queue`, `queues.<name>.queues` or `--config` | The earlier queue shape: see the [old keys](#configuration) |
+| `RESIZE_CONFIG_REMOVED_KEY` naming `queue`, `queues.<name>.queues` or `--config` | The earlier queue shape: see the [removed keys](https://github.com/adaptivestone/framework-module-resizer/blob/main/UPGRADING.md#removed-keys) |
 | `RESIZE_QUEUE_NOT_SERVED` in `prewarm()` issues, or a warning from `resolve()` that the Resizer "cannot queue to" a queue | The call's `queue` is not defined in `queues`, or its backend's AWS SDK is not installed in that process (the message names the package): define the queue, or install the package. A queue on another backend is routed and needs nothing |
 | `RESIZE_ENQUEUE_QUEUE_FAILED` with a `causeCode` in `prewarm()` issues | The backend of the call's queue could not be built; `causeCode` is the driver's error code (for example `RESIZE_PEER_MISSING`), and `retryable` is the error's own. The next call tries again |
 | `RESIZE_ENQUEUE_LOCK_FAILED` with `causeCode: 'RESIZE_LOCKS_REQUIRED'` | The call's queue is on SQS (or a custom queue that cannot gate) and the Resizer has no lock store: pass `locks`, or give a framework app its `Lock` model |
