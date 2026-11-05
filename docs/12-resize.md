@@ -840,7 +840,7 @@ for await (const doc of File.find({ 'original.storageRef': null }).cursor()) {
 }
 ```
 
-Keep your own record of skipped rows and leave them out of the next run, so a lost file cannot loop for ever. A relative root resolves from the working directory, and `verify()` passes on a wrong one because a fresh host's root does not exist yet, so when most rows report not found, stop and check it. `{ original: { $exists: false } }` is the wrong filter: saving a new document writes `original: {}`. Run it in a script with bounded concurrency, not in the API: each call holds the object in memory, as above, up to `limits.sourceBytes`. Then let reads queue lazily, or `prewarm({ queue: 'bulk' })` with its own worker. Plan capacity: each media costs a download and a render per variant.
+Keep your own record of skipped rows and leave them out of the next run, so a lost file cannot loop for ever. A relative root resolves from the working directory, and `verify()` passes on a wrong one because a fresh host's root does not exist yet, so when most rows report not found, stop and check it. `{ original: { $exists: false } }` is the wrong filter: saving a new document writes `original: {}`. Run it in a script with bounded concurrency, not in the API: each call holds the object in memory, as above, up to `limits.sourceBytes`. Then let reads queue lazily, or `prewarm({ queue: 'bulk' })` with its own worker. Read `prewarm()`'s result: when reads share the queue, a task a read queued can hold fewer variants, and the rest come back in `unconfirmed` with the retryable `RESIZE_TASK_IN_FLIGHT`, so call it again after that task ends. A `bulk` queue with no worker is silent: `prewarm()` reports `accepted`, the tasks stay `pending` and nothing logs it, so start the worker first. Plan capacity: each media costs a download and a render per variant.
 
 With `prewarm`, pass `queue: 'bulk'` to `resolve()` too for the rows the backfill adopted, until their tasks end. A read on `'default'` queues a second task for the same media, and both render everything: 6 media of 9 variants each gave 12 tasks, 108 new objects and 54 orphaned files, against 6 tasks, 54 objects and no orphans when reads used `'bulk'`. The cost is that a variant only a read asks for waits behind the backfill, with your old path serving that media until then. Keep `'default'` for media the backfill did not adopt: a new upload prewarmed on `'default'` and read on `'bulk'` renders twice the same way.
 
@@ -940,23 +940,7 @@ encode: {
 },
 ```
 
-The [full config reference](https://github.com/adaptivestone/framework-module-resizer#config-reference) covers limits, sharpening, animation, queue timing and coordination. Keys renamed since 0.2, and the earlier queue shape, fail with `RESIZE_CONFIG_REMOVED_KEY`:
-
-| Old key | Use instead |
-|---|---|
-| `webpAvifOnly: true` | `formats: ['webp', 'avif']` |
-| `encode.quality.<format>`, `encode.effort.<format>` | `encode.formats.<format>.quality`, `encode.formats.<format>.effort` |
-| `encode.mozjpeg`, `encode.chromaSubsampling` | `encode.formats.jpeg.mozjpeg`, `encode.formats.jpeg.chromaSubsampling` |
-| `encode.flattenBackground` | `encode.flatten.background` |
-| `worker.concurrency` | the top-level `concurrency` |
-| `queue: { driver, … }` | `queues: { default: { driver, … } }` in `src/config/resize.ts`, and `queue: 'default'` |
-| `queue.queues: { bulk: url }` (SQS) | one `queues` entry per name: `bulk: { driver: 'sqs', queueUrl: url, … }` |
-| `queue.lockTtlMs` (or `queues.<name>.lockTtlMs`) | `coordination`: `dispatch` → `gateTtlMs` (a different lock: the old one held one variant for 60 s, the new one holds a queued task's media; set it to your worst queue wait), `failed` → `cooldownMs`; drop `worker` |
-| `npm run cli ResizeWorker -- --config=<name>` | nothing: the worker reads `worker` and `queues` from `src/config/resize.ts` |
-| `storage.publicUrl`, or the `S3Storage` option `publicUrl` | `publicBaseUrl` |
-| The types `FrameworkStorageConfig`, `FrameworkLocalStorageConfig`, `FrameworkS3StorageConfig` (a compile error, `TS2305` or `TS2724`, not this code; TypeScript may suggest `FrameworkWorkerConfig`, which is another type) | `StorageConfig`, `LocalStorageConfig`, `S3StorageConfig` |
-
-After the upgrade, `npx --no -- resize-scaffold --check` reports every `src/config/resize.ts`, and every `resize.<NODE_ENV>.ts` override of it, written for an earlier version (a top-level `queue: { … }` object, or `defaultFrameworkResizeConfig` imported from `…/config/resize.js`; only full-line `//` comments are skipped, and a second Resizer's `configName` file is not checked), and every ejected `ResizeTask` model without `startedAt` and `finishedAt`. That is intended: rewrite the config to the shape above, and add both fields as `{ type: Date }` (or move `src/models/ResizeTask.ts` aside (or delete it), run `npx --no -- resize-scaffold --eject` again, then restore your customizations; the scaffold never overwrites a file, so running `--eject` again alone changes nothing). Such a model keeps working, without the two times.
+The [full config reference](https://github.com/adaptivestone/framework-module-resizer#config-reference) covers limits, sharpening, animation, queue timing and coordination. Keys renamed since 0.2, and the earlier queue shape, fail with `RESIZE_CONFIG_REMOVED_KEY`, and the message says where the value goes. The list, and what `npx --no -- resize-scaffold --check` reports after an upgrade from a version before 0.3.0, are in [`UPGRADING.md`](https://github.com/adaptivestone/framework-module-resizer/blob/main/UPGRADING.md#removed-keys).
 
 ## Errors
 
@@ -986,6 +970,8 @@ try {
 ```
 
 An upload rejection's message carries the engine's line, and `badRequest(err.message)` can show it to end users. The `code` is the stable part; the text may change. Check `err.retryable`: when it is `true`, the module gave no verdict on the file, so answer with your own text.
+
+Every code, with its `retryable`, is in the [README's error table](https://github.com/adaptivestone/framework-module-resizer#error-codes).
 
 If two copies of the package are installed, `instanceof` can fail across them. `ResizeError.isResizeError(err)` still works in that case.
 
@@ -1136,7 +1122,7 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 | Failed tasks disappear on Lambda | The trigger lacks `ReportBatchItemFailures`: see [Push delivery](#push-delivery) |
 | Worker logs `resize worker disabled` | Set `worker.enabled: true` in `src/config/resize.ts` (the worker reads no other file). The command resolves `false`, so a CLI entry that forwards the result, as the framework docs require, exits 1 |
 | Worker logs `resize worker: no Resizer has a task queue` | This process consumes nothing, with the same result: set `queue` and `queues`, or do not run a worker |
-| `npx --no -- resize-scaffold --check` reports `src/config/resize.ts`, a `resize.<NODE_ENV>.ts` override or `src/models/ResizeTask.ts` right after the upgrade | Intended for a config or an ejected model written for an earlier version: see the [old keys](#configuration) |
+| `npx --no -- resize-scaffold --check` reports `src/config/resize.ts`, a `resize.<NODE_ENV>.ts` override or `src/models/ResizeTask.ts` right after the upgrade | Intended for a config or an ejected model written before 0.3.0: see the [old keys](#configuration) |
 | `RESIZE_CONFIG_QUEUE_UNKNOWN` at the first call or from `verify()` | The Resizer's queue (its `queue`, its `queueName` option, or the implied `'default'`) is not an entry of `queues` in `src/config/resize.ts`: add it, or, for eager only, set `queue: false` in the file, or `tasks: false` in code when the name came from the `queueName` option (the option wins over the file) |
 | `RESIZE_CONFIG_INVALID` saying a section "is process-wide" | `queues`, `worker` or `coordination` is in another config file (or in the `config` option): move it to `src/config/resize.ts` |
 | `RESIZE_CONFIG_REMOVED_KEY` naming `queue`, `queues.<name>.queues` or `--config` | The earlier queue shape: see the [old keys](#configuration) |
@@ -1147,7 +1133,7 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 | `RESIZE_DRIVER_CONFLICT` when a `FrameworkResizer` is constructed | Every `FrameworkResizer` of the process, an eager-only one too, must pass the same `drivers.queue`; an app that passes no `drivers` anywhere never sees it |
 | `RESIZE_QUEUE_ROUTES_INVALID` from `new RoutingTaskQueue()` | A route is neither a task queue that serves its own name nor a function that builds one |
 | `RESIZE_CONFIG_INVALID` saying a section "needs driver …" | The config names a driver the Resizer does not have: fix the name, or register the driver with `drivers`. It is reported when the Resizer first reads that section, on first use or by `verify()` (the `storage` of a config object passed in code, at construction) |
-| `RESIZE_CONFIG_QUEUE_INVALID` or `RESIZE_CONFIG_QUEUE_LEASE_INVALID` | A queue's timing is invalid: fix the key the message names (`leaseMs`, `idlePollMs` and `taskTimeoutMs` can be at most `2147483647`). `verify()` rejects for the Resizer's own queue and the worker for the queues it consumes; a call on that queue reports it (`prewarm()`) or logs it once (`resolve()`) |
+| `RESIZE_CONFIG_QUEUE_INVALID` or `RESIZE_CONFIG_QUEUE_LEASE_INVALID` | A queue's timing is invalid: fix the key the message names (`leaseMs`, `idlePollMs` and `taskTimeoutMs` can be at most `2147483647`). `verify()` rejects for the Resizer's own queue and the worker for the queues it consumes; a call on that queue reports it (`prewarm()`) or logs it once (`resolve()`). In a framework app's config file the refusal comes at first use or `verify()`: with no `verify()` at boot, every `resolve()` logs an `error` and returns an empty decision, so previews stored earlier stop being served until the value is fixed |
 | `verify()` or the worker fails with `RESIZE_MEDIA_REPLACE_MISSING`, or `generate()` and the worker fail with it when an outdated preview is replaced | A custom `MediaStore` lacks `replacePreviews(mediaId, identities, rows)`, which 0.3.0 requires: see the `MediaStore` contract in the [package reference](https://github.com/adaptivestone/framework-module-resizer#drivers) |
 | A task is dead with `RESIZE_MEDIA_ROW_NOT_KEPT` | Your custom `MediaStore`, a `findOneAndUpdate` middleware on the media model, or a strict entry schema without `resizer`, `pipeline` or `filters` changed or dropped a field of a preview row the worker wrote; the message names the fields. Store `storageRef`, `origin`, `encodeSig`, `sizeKey`, `format`, `contentType`, `resizer`, `pipeline` and `filters` as given. On a driver that names files by their bytes, a lagging reload raises it too, when it shows another row under the same ref: an older row after a replacement (naming `encodeSig`) or another size key's row on a first render (naming `sizeKey`). The rows are stored, and the next read is fresh |
 | The worker warns once that the media store `did not keep the identity` of a preview row | Your custom `MediaStore` holds the row with `identity` absent or in another form. A read does not use it, so the row is served and the task completes, but `invalidate()` finds such rows only by identity, so it leaves them, and a `replacePreviews` that removes by stored identity leaves them too. Store `identity` as given |
