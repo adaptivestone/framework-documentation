@@ -222,13 +222,13 @@ For a pipeline without `variantSteps`, a raster original no larger than the requ
 
 | Size | Source | Result |
 |---|---|---|
-| `WxH` | Fits inside the box on both sides | Its own size: not enlarged, not cropped |
+| `WxH` | Raster, fits inside the box on both sides | Its own size: not enlarged, not cropped |
 | `WxH` | Larger than the box on one side only | Exactly `WxH`, cropped, **the short side enlarged** |
 | `WxH` | Larger on both sides | Exactly `WxH`, cropped |
 | `{ width }` or `{ height }` | Any | That side exactly, aspect kept: **enlarged when the source is smaller on that side** |
 | `{ fit: true }` | Any | Inside `maxSize`, never enlarged |
 
-For example, a `100×60` source gives `100×60` for `160x160`, `80×80` for `80x80`, `200×40` for `200x40` and `620×372` for `{ width: 620 }`.
+For example, a `100×60` raster source gives `100×60` for `160x160`, `80×80` for `80x80`, `200×40` for `200x40` and `620×372` for `{ width: 620 }`. An SVG gets the full box: a `100×60` SVG gives `160×160` for `160x160`.
 
 So a size key does not promise a size. Read the preview's real size from `width` and `height`. A pipeline with `variantSteps` always gets the full box.
 
@@ -325,7 +325,13 @@ const pictures = await Promise.all(
 
 `resolve()` uses only the fields you loaded. It never throws, so this is safe.
 
-**What a read costs.** A read that finds every preview ready does no I/O. On the database queue, a read with previews missing or outdated asks the queue: one indexed query while a task waits, and that query plus one insert when it adds one. On a local replica set that was about 0.03 ms, 0.2 ms and 6 to 10 ms; only the ratio means much, and your network adds to the last two. A worker outage keeps every affected page on the middle number. For a hot public list, call `prewarm()` at upload and pass `enqueueMissing: false` on the list, and leave lazy reads on the detail route, so that it heals anything a `prewarm()` missed.
+**What a read costs,** per media read, one size in one format, on a local replica set. A read that finds every preview ready does no I/O: about 0.03 ms, and under 0.2 ms for 5 sizes in 3 formats. On the database queue, a read with previews missing or outdated asks the queue:
+
+- While a task waits: one indexed query, about 0.2 ms.
+- When it adds a task: that query and one insert, 6 to 10 ms.
+- Past a dead task's cooldown: that query and two writes, 12 to 19 ms.
+
+Your network adds to each of them. A page of 20 with a task waiting for each makes 20 queries, about 2 ms here in parallel, and a worker outage keeps every affected page there. For a hot public list, call `prewarm()` at upload and pass `enqueueMissing: false` on the list, and leave lazy reads on the detail route, so that it heals anything a `prewarm()` missed.
 
 ## Generate in the background {/* #background */}
 
@@ -435,11 +441,13 @@ return {
 
 You have three choices:
 
-- **A placeholder** from `pending`, with no latency, where the client handles it.
-- **`generate()` on that one route**, for the user who just uploaded. It is supported beside a queue and stores each preview once, while the request waits for Sharp.
+- **A placeholder** from `pending`, with no latency, where the client handles it. Cap the polling, and test `hasOriginal(file)` first: `pending` stays `true` with nothing on the way for a dead task on a cut file, a row with no original, and a just-uploaded row on an eager-only Resizer.
+- **`generate()` on that one route**, for the user who just uploaded. It is supported beside a queue and keeps one row per preview, while the request waits for Sharp. A worker that renders the same variants meanwhile leaves a second set of files with no row, as described below.
 - **`generate()` of the smallest size and `prewarm()` of the rest**, which gives the response one real image without the whole wait.
 
-On such a route call `generate()` before any `resolve()`: a task queued first finds the variants fresh, renders nothing, and logs one harmless "already fresh" warning. `sizes` is an allowlist on every route. A real frontend during this window is not tested here.
+On such a route call `generate()` before any `resolve()`. A task queued first and claimed after `generate()` finishes finds the variants fresh, renders nothing, and logs one harmless "already fresh" warning. If a worker claims a task during `generate()`, because one was queued first or another request's read queued one meanwhile, both render: 3 sizes in 3 formats made 18 files for 9 rows. Reads stay right, since the rows stay one per preview, but the second set of files stays in storage. The log line "resize: … were already stored by another worker; uploaded but not recorded storage refs: …" names them, or sweep preview objects that no row references.
+
+`sizes` is an allowlist on every route. A real frontend during this window is not tested here.
 
 ### Queues and workers {/* #named-queues */}
 
@@ -887,9 +895,9 @@ import type { Types } from 'mongoose';
 import '../resizer.ts';
 
 describe('uploads', () => { // inside a describe: these hooks run before the framework closes Mongo
-  let rootDir: string;
-  let stop: AbortController;
-  let worker: Promise<boolean>;
+  let rootDir: string | undefined;
+  let stop: AbortController | undefined;
+  let worker: Promise<boolean> | undefined;
 
   before(async () => {
     await ensureTestServerReady();
@@ -904,11 +912,17 @@ describe('uploads', () => { // inside a describe: these hooks run before the fra
     worker = runWorker({ signal: stop.signal, queue: 'default' }); // ignores worker.enabled
   });
 
+  // A failed setup still runs this: `stop` can be unset, and `await worker` can rethrow.
   after(async () => {
-    stop.abort();
-    await worker;
-    await rm(rootDir, { recursive: true, force: true });
-    await rm(`${rootDir}-private`, { recursive: true, force: true });
+    try {
+      stop?.abort();
+      await worker;
+    } finally {
+      if (rootDir) {
+        await rm(rootDir, { recursive: true, force: true });
+        await rm(`${rootDir}-private`, { recursive: true, force: true });
+      }
+    }
   });
 
   // Wait on the task, not on the previews: rows are stored before the task completes.
