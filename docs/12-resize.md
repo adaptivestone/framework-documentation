@@ -475,16 +475,22 @@ An SQS-triggered Lambda can run queued tasks instead of a worker process, with t
 
 Settings to get right first, in the order that saves tasks:
 
-1. **Batch size 1, with no batch window.** Records of a batch run one after another, so batch size × your slowest task must fit the function timeout minus the reserve. A record that does not fit is not started, yet its delivery counts as an attempt, so healthy tasks die unrun.
-2. **A function timeout well above your slowest task.** Start at 300 s. Lambda's default 3 s runs no task at all. The handler keeps back a reserve for the end of a task (`limits.processingTimeoutSeconds` + 5 s, never above half the time left), and the task gets the rest.
-3. **Redrive `maxReceiveCount` = `maxAttempts` + 2** (7 for the default 5), so the module's dead-letter, cooldown and hook run first. Too low, and SQS moves the message itself: below `maxAttempts` for every failing task, at `maxAttempts` when the last delivery is cut short. No module dead-letter, hook or cooldown then runs, and nothing logs it: the handler does not check this value.
-4. **`ReportBatchItemFailures` in the trigger's `FunctionResponseTypes`.** Without it Lambda ignores the returned list and deletes every message of a normal return, so retries are lost silently. The handler cannot detect this.
+1. **`ReportBatchItemFailures` in the trigger's `FunctionResponseTypes`.** Without it Lambda deletes every message of a normal return, so a failing task is gone after its first failure, with no copy, while its line says `retrying in 5000 ms`. The handler cannot detect this.
+2. **Batch size 1, with no batch window.** Records of a batch run one after another. One that does not fit in the time left is not started, yet its delivery counts as an attempt, so healthy tasks die unrun.
+3. **A function timeout well above your slowest task.** Start at 300 s. Lambda's default 3 s runs no task at all.
+4. **Redrive `maxReceiveCount` = `maxAttempts` + 2** (7 for the default 5). Too low, and SQS moves the message itself, with no module line, hook or cooldown.
+5. **A visibility timeout at least 6 × the function timeout**, which is AWS's rule. Set `coordination.gateTtlMs` at or above it.
+6. **A `deadLetterQueueUrl` in the queue's entry.** Without one a dead task is deleted at its last delivery.
+7. **The IAM permissions `AWSLambdaSQSQueueExecutionRole` lacks:** `sqs:ChangeMessageVisibility` on the queue, `sqs:SendMessage` on the dead-letter queue, and S3 get and put.
+8. **`MaximumConcurrency` on the trigger, rather than low reserved concurrency.** Reserved concurrency throttles, and a throttled receive may count as an attempt.
 
-What you need:
+What else you need:
 
-- A standard SQS queue, with a visibility timeout of at least 6 × the function timeout and a `deadLetterQueueUrl` in its entry. FIFO queues are not supported.
-- S3 storage, with a private bucket, since `local` does not outlive the Lambda environment. The role also needs `sqs:ChangeMessageVisibility`, `sqs:SendMessage` on the dead-letter queue, and S3 get and put.
+- A standard SQS queue. FIFO queues are not supported.
+- S3 storage, with a private bucket, since `local` does not outlive the Lambda environment.
 - A Mongo host, with its indexes made by your migration. The gate lives in a lock, so SQS needs no gate index.
+- With a customer managed KMS key on a queue, the role also needs `kms:Decrypt` on the queue's key, and `kms:Decrypt` and `kms:GenerateDataKey` on the dead-letter queue's, per AWS.
+- `MaximumConcurrency` set to your Mongo connection budget ÷ `maxPoolSize`. It applies per trigger, so the budget is shared: their combined concurrency stays within it. Triggers on `default` and `bulk`, at 100 connections and `maxPoolSize` 10, get 5 each, since 10 each would be 20 environments and 200 connections.
 
 The handler of a plain Node host:
 
@@ -538,6 +544,8 @@ export const handler = createSqsHandler({
 
 A task runs as on a worker: each delivery holds a lease, a failure retries with backoff, a dead task goes to the dead-letter queue, and the gate keeps one task per media, pipeline and queue. A stop before the function timeout keeps the finished previews, so the retry renders only the rest. A hard kill loses the attempt.
 
+An outage or a bad deploy costs healthy tasks. With Mongo down or a wrong DSN no task runs, yet each failed invocation uses a receive. Past `maxAttempts` the first delivery after the fix is dead unrun, with `RESIZE_TASK_MAX_ATTEMPTS`, and past `maxReceiveCount` SQS moves the message, with no module line, hook or cooldown. At a 300 s function, a visibility timeout of 1800 s and the default settings, those come after about 2 h and about 3 h. During a known outage disable the trigger, with `aws lambda update-event-source-mapping --uuid <UUID> --no-enabled`: the messages wait, up to the queue's retention. Afterwards call `prewarm()` again for what the dead-letter queue holds.
+
 **Framework hosts**, tried only on a minimal host so far. Build the app by hand before the handler exists, and define the queue in `queues` of `src/config/resize.ts`, with its `coordination` beside it:
 
 ```js
@@ -561,7 +569,7 @@ export const handler = createSqsHandler({
 
 It reads no `worker.enabled`. Put `maxPoolSize=5&serverSelectionTimeoutMS=5000&maxIdleTimeMS=60000` in the `MONGO_DSN` query: the framework passes only `appName` to `mongoose.connect`, so otherwise Mongoose's default pool of 100 and 30 s server selection apply.
 
-Packaging: do not bundle, and ship `node_modules` whole. The module looks for its optional peers on disk beside itself, and starts SVG's child process from `svgRasterChild.js` next to its own file, so a bundler breaks it in ways that depend on the flags. Sharp's binary must match the function's architecture: in a clean copy, run `npm install --omit=dev --os=linux --cpu=arm64 --libc=glibc`.
+Packaging: do not bundle, and ship `node_modules` whole. The module looks for its optional peers on disk beside itself, and starts SVG's child process from `svgRasterChild.js` next to its own file, so a bundler breaks it in ways that depend on the flags. Sharp's binary must match the function's architecture: for an `arm64` function, in a clean copy, run `npm install --omit=dev --os=linux --cpu=arm64 --libc=glibc`. A mismatch fails at import, before your handler runs.
 
 The options, the other settings, what each wrong setting costs, the measured numbers and the troubleshooting table are in the [README reference](https://github.com/adaptivestone/framework-module-resizer#push-delivery-preview).
 
