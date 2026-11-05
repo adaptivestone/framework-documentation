@@ -469,6 +469,102 @@ Each queue is defined once, by name, with its own timing. Queues on one backend 
 
 Any number of workers, on any number of servers, can consume one queue; each task is processed by one worker at a time. If a worker dies, its lease (its time-limited hold on the task) expires and another worker takes the task. A task can therefore run more than once, but the worker skips previews that already exist.
 
+### Push delivery (preview) {/* #push-delivery */}
+
+An SQS-triggered Lambda can run queued tasks instead of a worker process, with the same lease, retries, dead-letters and gate. Use it when you have no process to keep running: a long-lived worker is the simpler choice when you already run one. **It has not run on real AWS.** Everything here was measured on one machine, with local stand-ins and a model, so it stays a preview until the package's check list passes.
+
+Settings to get right first, in the order that saves tasks:
+
+1. **Batch size 1, with no batch window.** Records of a batch run one after another, so batch size × your slowest task must fit the function timeout minus the reserve. A record that does not fit is not started, yet its delivery counts as an attempt, so healthy tasks die unrun.
+2. **A function timeout well above your slowest task.** Start at 300 s. Lambda's default 3 s runs no task at all. The handler keeps back a reserve for the end of a task (`limits.processingTimeoutSeconds` + 5 s, never above half the time left), and the task gets the rest.
+3. **Redrive `maxReceiveCount` = `maxAttempts` + 2** (7 for the default 5), so the module's dead-letter, cooldown and hook run first. Too low, and SQS moves the message itself: below `maxAttempts` for every failing task, at `maxAttempts` when the last delivery is cut short. No module dead-letter, hook or cooldown then runs, and nothing logs it: the handler does not check this value.
+4. **`ReportBatchItemFailures` in the trigger's `FunctionResponseTypes`.** Without it Lambda ignores the returned list and deletes every message of a normal return, so retries are lost silently. The handler cannot detect this.
+
+What you need:
+
+- A standard SQS queue, with a visibility timeout of at least 6 × the function timeout and a `deadLetterQueueUrl` in its entry. FIFO queues are not supported.
+- S3 storage, with a private bucket, since `local` does not outlive the Lambda environment. The role also needs `sqs:ChangeMessageVisibility`, `sqs:SendMessage` on the dead-letter queue, and S3 get and put.
+- A Mongo host, with its indexes made by your migration. The gate lives in a lock, so SQS needs no gate index.
+
+The handler of a plain Node host:
+
+```js
+// handler.mjs
+import mongoose from 'mongoose';
+import { createResizer } from '@adaptivestone/framework-module-resize';
+import { resizeMediaSchemaFragment } from '@adaptivestone/framework-module-resize/drivers/mongo.js';
+import { createSqsHandler } from '@adaptivestone/framework-module-resize/lambda.js';
+
+const connection = await mongoose
+  .createConnection(process.env.MONGO_DSN, {
+    autoIndex: false, // indexes come from your migration
+    maxPoolSize: 5,
+    serverSelectionTimeoutMS: 5000, // the default 30 s would outlast Lambda's 10 s init
+    maxIdleTimeMS: 60000,
+  })
+  .asPromise();
+// Your media model, on its collection.
+const File = connection.model(
+  'File',
+  new mongoose.Schema({ ...resizeMediaSchemaFragment }, { minimize: false }),
+);
+
+createResizer(
+  {
+    // Your API's image settings go here too: both must match.
+    concurrency: 1,
+    storage: {
+      driver: 's3',
+      bucketPublic: process.env.PUBLIC_BUCKET,
+      bucketPrivate: process.env.PRIVATE_BUCKET,
+    },
+    database: { driver: 'mongo', connection, mediaModel: File },
+    queues: {
+      default: {
+        driver: 'sqs',
+        queueUrl: process.env.QUEUE_URL,
+        deadLetterQueueUrl: process.env.DEAD_LETTER_QUEUE_URL,
+      },
+    },
+    coordination: { gateTtlMs: 1800000 }, // at or above the queue's visibility timeout
+  },
+  { pipelines: { default: {} } },
+);
+
+export const handler = createSqsHandler({
+  sharp: { concurrency: 1, cache: false },
+});
+```
+
+A task runs as on a worker: each delivery holds a lease, a failure retries with backoff, a dead task goes to the dead-letter queue, and the gate keeps one task per media, pipeline and queue. A stop before the function timeout keeps the finished previews, so the retry renders only the rest. A hard kill loses the attempt.
+
+**Framework hosts**, tried only on a minimal host so far. Build the app by hand before the handler exists, and define the queue in `queues` of `src/config/resize.ts`, with its `coordination` beside it:
+
+```js
+// handler.mjs
+import mongoose from 'mongoose';
+import Server from '@adaptivestone/framework/server.js';
+import { createSqsHandler } from '@adaptivestone/framework-module-resize/lambda.js';
+import folderConfig from './folderConfig.js'; // the same folders your server starts with
+
+mongoose.set('autoIndex', false);
+const server = new Server(folderConfig);
+await server.init({ isSkipModelInit: true, isSkipModelLoading: true });
+await server.getModelFilesPathsWithInheritance();
+await server.initAllModels({ waitForConnection: true });
+await import('./resizer.js'); // the file that constructs your Resizers
+
+export const handler = createSqsHandler({
+  sharp: { concurrency: 1, cache: false },
+});
+```
+
+It reads no `worker.enabled`. Put `maxPoolSize=5&serverSelectionTimeoutMS=5000&maxIdleTimeMS=60000` in the `MONGO_DSN` query: the framework passes only `appName` to `mongoose.connect`, so otherwise Mongoose's default pool of 100 and 30 s server selection apply.
+
+Packaging: do not bundle, and ship `node_modules` whole. The module looks for its optional peers on disk beside itself, and starts SVG's child process from `svgRasterChild.js` next to its own file, so a bundler breaks it in ways that depend on the flags. Sharp's binary must match the function's architecture: in a clean copy, run `npm install --omit=dev --os=linux --cpu=arm64 --libc=glibc`.
+
+The options, the other settings, what each wrong setting costs, the measured numbers and the troubleshooting table are in the [README reference](https://github.com/adaptivestone/framework-module-resizer#push-delivery-preview).
+
 ## More than one Resizer
 
 Most apps need one Resizer. Create more when parts of the app need different storage, media models or formats, for example avatars and listings:
@@ -797,7 +893,7 @@ await runWorker({ signal: shutdown.signal, queue: 'default' });
 - A task queue passed in code without the `locks` it needs, or an invalid `coordination`, does not break your app: the Resizer logs the error once, `resolve()` still serves the stored previews (it just queues nothing), uploads and `generate()` work, and `prewarm()` reports the error. Only `await resizer.verify()` and the worker reject with it (`RESIZE_LOCKS_REQUIRED` or the coordination error), so call `verify()` at startup to stop such a deploy. Invalid timing of a queue is checked per queue: `verify()` rejects for the Resizer's own queue, the worker for the queues it consumes, `prewarm()` reports it, and `resolve()` logs it once per queue on its first read. For a `FrameworkResizer` that takes its task queue from the config file (or whose file sets no `queue`), invalid timing in a `queues` entry of `src/config/resize.ts`, or a malformed `queues` or `worker` section, is still a config error at the first call and in `verify()`, like the rest of the file: `uploadOriginal()`, `generate()` and `invalidate()` throw it, and `resolve()` and `prewarm()` return the empty decision and `incomplete`, so even stored previews are not served until the file is fixed. A `FrameworkResizer` with a task queue passed in code (and no `coordination` in code) reads that file only for `coordination`, so a broken file behaves as described here, like an invalid `coordination` section.
 - `storage`, `media`, `locks` and `tasks` may also be functions, sync or async, called once on first use; `await resizer.ready()` loads them, and the Resizer's own methods do it for you.
 - `runWorker()` serves the Resizers constructed in its process when it starts, or the ones you pass as `resizers`. Construct every Resizer before you start it: one constructed later is not served. The worker asks the queue only for tasks of the Resizers it serves; the database queue honours that, so it never hands the worker another Resizer's task. SQS cannot: a task for a Resizer the worker does not serve is never run there, but goes back to the queue for a worker that serves it. SQS counts the receive, so such a task can still reach `maxAttempts` on the worker that serves it. A custom queue that can neither filter nor give tasks back retries such a task as before: it fails with `RESIZE_NO_RESIZER` and is dead-lettered after `maxAttempts`. The worker logs each such Resizer once. If you pass a list and a task queue the worker consumes cannot filter (SQS), the list must include every Resizer of the process that uses that queue; otherwise the worker would take their tasks without running them, so it stops at start with `RESIZE_QUEUE_SHARED_RESIZER_UNLISTED`. With `queues` on more than one available backend, every `FrameworkResizer` that takes its task queue from the config file shares one router that reaches every queue, so a list for a worker that consumes a queue on SQS must name all of them, whatever their own queue (`npm run cli ResizeWorker` serves every Resizer, so it needs no list). Two Resizers in the list need two names.
-- Push delivery (an SQS-triggered Lambda) is not supported in 0.3.0: run the worker (`runWorker()`, or `npm run cli ResizeWorker` in a framework app) as a long-lived process.
+- Push delivery (an SQS-triggered Lambda) can run tasks instead of a worker process, as a preview: see [Push delivery](#push-delivery).
 - The framework adapter (`…/framework.js`) does exactly this wiring for you, from the config file.
 
 ## Configuration
@@ -1029,6 +1125,7 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 
 | Symptom | Check |
 |---|---|
+| Failed tasks disappear on Lambda | The trigger lacks `ReportBatchItemFailures`: see [Push delivery](#push-delivery) |
 | Worker logs `resize worker disabled` | Set `worker.enabled: true` in `src/config/resize.ts` (the worker reads no other file). The command resolves `false`, so a CLI entry that forwards the result, as the framework docs require, exits 1 |
 | Worker logs `resize worker: no Resizer has a task queue` | This process consumes nothing, with the same result: set `queue` and `queues`, or do not run a worker |
 | `npx --no -- resize-scaffold --check` reports `src/config/resize.ts`, a `resize.<NODE_ENV>.ts` override or `src/models/ResizeTask.ts` right after the upgrade | Intended for a config or an ejected model written for an earlier version: see the [old keys](#configuration) |
