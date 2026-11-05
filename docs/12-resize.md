@@ -220,6 +220,18 @@ export const previewFormats: PreviewFormat[] = ['webp']; // the examples use one
 
 For a pipeline without `variantSteps`, a raster original no larger than the requested width and height is never enlarged or cropped: its preview keeps the original's size (scaled down only to fit `limits.resultDimension`), without metadata such as EXIF or GPS. A pipeline with `variantSteps`, such as a watermark, always gets the full box its steps were written for. Fractional dimensions are rounded to whole pixels. No side of a preview other than `fit` exceeds `limits.resultDimension` (5000): when the side derived from the aspect ratio of a width-only or height-only size would, the preview is cropped to it.
 
+| Size | Source | Result |
+|---|---|---|
+| `WxH` | Fits inside the box on both sides | Its own size: not enlarged, not cropped |
+| `WxH` | Larger than the box on one side only | Exactly `WxH`, cropped, **the short side enlarged** |
+| `WxH` | Larger on both sides | Exactly `WxH`, cropped |
+| `{ width }` or `{ height }` | Any | That side exactly, aspect kept: **enlarged when the source is smaller on that side** |
+| `{ fit: true }` | Any | Inside `maxSize`, never enlarged |
+
+For example, a `100×60` source gives `100×60` for `160x160`, `80×80` for `80x80`, `200×40` for `200x40` and `620×372` for `{ width: 620 }`.
+
+So a size key does not promise a size. Read the preview's real size from `width` and `height`. A pipeline with `variantSteps` always gets the full box.
+
 :::warning
 
 **The catalog is an allowlist.** Never pass dimensions from the client into `sizes`. Map a client choice such as "thumbnail" to your catalog. Otherwise anyone can make your server resize images to any size they like.
@@ -269,8 +281,15 @@ const { decision } = await getResizer().resolve({
   formats: previewFormats,
 });
 const picture = formatPictureUrls(decision, { id: String(fileDoc.id) });
-// { id: '65f0…', sizes: { '320x320': { webp: { url: '/media/previews/8d0e2b7c.webp', contentType: 'image/webp' } } } }
+// { id: '65f0…', sizes: { '320x320': { webp: {
+//   url: 'https://media.example.com/previews/8d0e2b7c.webp',
+//   contentType: 'image/webp',
+//   width: 320,
+//   height: 320,
+// } } } }
 ```
+
+`width` and `height` are the preview's real size, useful for `<img width height>`, and are absent on a row that does not record them.
 
 With strict types, a loaded Mongoose document is not a `MediaLike` (Mongoose types the nested fields as nullable): pass it as `media: doc as MediaLike` (`import type { MediaLike }` from the main entry), or type the model's `original` and `previews` paths with `Original` and `Preview`.
 
@@ -296,14 +315,17 @@ On list pages, select only the module's fields and resolve one bounded page:
 import { resizeMediaPaths } from '@adaptivestone/framework-module-resize/framework.js';
 
 const files = await File.find(query).select([...resizeMediaPaths, 'name']).limit(20).lean();
-const pictures = [];
-for (const file of files) {
-  const { decision } = await getResizer().resolve({ media: file, sizes: thumbnailSizes, formats: previewFormats });
-  pictures.push(formatPictureUrls(decision, { id: String(file._id) }));
-}
+const pictures = await Promise.all(
+  files.map(async (file) => {
+    const { decision } = await getResizer().resolve({ media: file, sizes: thumbnailSizes, formats: previewFormats });
+    return formatPictureUrls(decision, { id: String(file._id) });
+  }),
+);
 ```
 
-`resolve()` uses only the fields you loaded. In lazy mode every read can write to the queue, so keep pages bounded.
+`resolve()` uses only the fields you loaded. It never throws, so this is safe.
+
+**What a read costs.** A read that finds every preview ready does no I/O. On the database queue, a read with previews missing or outdated asks the queue: one indexed query while a task waits, and that query plus one insert when it adds one. On a local replica set that was about 0.03 ms, 0.2 ms and 6 to 10 ms; only the ratio means much, and your network adds to the last two. A worker outage keeps every affected page on the middle number. For a hot public list, call `prewarm()` at upload and pass `enqueueMissing: false` on the list, and leave lazy reads on the detail route, so that it heals anything a `prewarm()` missed.
 
 ## Generate in the background {/* #background */}
 
@@ -400,6 +422,24 @@ if (result.status === 'incomplete') {
 | `'incomplete'` | At least one variant has no confirmed task, for example because there is no task queue or no original |
 
 The arrays `ready`, `accepted`, `notRequired` and `unconfirmed` split the requested catalog, and `result.tasks` holds the task receipts. When a task for the same media, pipeline and queue is already active, the database queue looks it up: `prewarm()` accepts the variants that task holds, and returns the others as `unconfirmed` with the retryable `RESIZE_TASK_IN_FLIGHT` issue; call `prewarm()` again after the task ends. SQS, which gates with a lock, reports every variant as `unconfirmed` with the retryable `RESIZE_ENQUEUE_LOCK_CONTENDED` issue while the lock is held. An unexpected error, for example a media document without an ID, is `incomplete` with a `RESIZE_ENQUEUE_INTERNAL_ERROR` issue. The [issue reference](https://github.com/adaptivestone/framework-module-resizer#prewarm-issues) lists every issue code, when it happens and its `retryable`.
+
+#### Before the worker has run
+
+```ts
+const { decision, output } = await getResizer().resolve({ media: file, sizes });
+return {
+  picture: output ?? formatPictureUrls(decision, { id: String(file._id) }),
+  pending: decision.missing.length > 0, // the client shows a placeholder and asks again
+};
+```
+
+You have three choices:
+
+- **A placeholder** from `pending`, with no latency, where the client handles it.
+- **`generate()` on that one route**, for the user who just uploaded. It is supported beside a queue and stores each preview once, while the request waits for Sharp.
+- **`generate()` of the smallest size and `prewarm()` of the rest**, which gives the response one real image without the whole wait.
+
+On such a route call `generate()` before any `resolve()`: a task queued first finds the variants fresh, renders nothing, and logs one harmless "already fresh" warning. `sizes` is an allowlist on every route. A real frontend during this window is not tested here.
 
 ### Queues and workers {/* #named-queues */}
 
@@ -817,6 +857,79 @@ An upload rejection's message carries the engine's line, and `badRequest(err.mes
 If two copies of the package are installed, `instanceof` can fail across them. `ResizeError.isResizeError(err)` still works in that case.
 
 Each error also has `retryable`. It is `false` only when no later delivery of the same input can succeed, and a later delivery includes one after a deploy reaches the worker. A media with no original or an image over the pixel limits is `false`; an unknown pipeline or a missing decoder stays `true`, because a worker deployed with the fix can still run the task. An unclear case stays `true`. `ResizeOriginalError` and `ResizeConfigError` default to `false`. The worker reads `retryable` on the error that fails a queued task, when that error is a `ResizeError` (also one from a second copy of the package): with `false` it dead-letters the task at once instead of retrying. Errors from other libraries are always retried, even if they carry a `retryable` field of their own. That covers errors from loading the media, downloading the original, the decoder's checks and render, `beforeSteps`, and saving the previews, so your own errors there can stop the retries the same way: throw a `ResizeError` subclass with `retryable: false`, for example `new ResizeMediaError('…', { retryable: false })`. An error inside one variant (`variantSteps`, encoding, uploading the preview) fails only that variant; the task then fails with `RESIZE_WORKER_INCOMPLETE`, whose `cause` is the first failure, and is retried for the missing variants, unless every missing variant failed with `retryable: false` and the media still holds the original they were rendered from, when it is dead-lettered at once. A final error of the whole task follows the same rule: when the worker reloads the media and finds another original, the task fails with the retryable `RESIZE_WORKER_INCOMPLETE`, with that error as `cause`, and its next delivery renders the new one. The [operations reference](https://github.com/adaptivestone/framework-module-resizer#operations) lists the codes that set `retryable: false`.
+
+## Testing your integration {/* #testing */}
+
+The module ships no test helper. A test runs your real Resizer on the framework's [test harness](09-testsing.md), with a temporary storage folder and a real worker. This needs framework 5.2 or newer, for `ensureTestServerReady`.
+
+Point the harness at your folders in `src/tests/setup.ts`:
+
+```ts
+import { fileURLToPath } from 'node:url';
+
+const folder = (name: string) => fileURLToPath(new URL(`../${name}`, import.meta.url));
+process.env.TEST_FOLDER_MODELS = folder('models');
+process.env.TEST_FOLDER_CONFIG = folder('config');
+process.env.TEST_FOLDER_COMMANDS = folder('commands');
+```
+
+Without the first two, your media model, `ResizeTask` and `src/config/resize.ts` are not loaded. The third matters only for a test that runs one of your commands, such as `ResizeWorker`: `runWorker()` below does not need it.
+
+```ts
+import { after, before, describe, test } from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { appInstance } from '@adaptivestone/framework/helpers/appInstance.js';
+import { ensureTestServerReady } from '@adaptivestone/framework/tests/testHelpers.js';
+import { runWorker } from '@adaptivestone/framework-module-resize';
+import type { Types } from 'mongoose';
+import '../resizer.ts';
+
+describe('uploads', () => { // inside a describe: these hooks run before the framework closes Mongo
+  let rootDir: string;
+  let stop: AbortController;
+  let worker: Promise<boolean>;
+
+  before(async () => {
+    await ensureTestServerReady();
+    rootDir = await mkdtemp(join(tmpdir(), 'resize-'));
+    // Before the Resizer's first use. Shallow: pass the whole `storage` section.
+    appInstance.updateConfig('resize', {
+      storage: { driver: 'local', rootDir, publicBaseUrl: 'http://media.test' },
+    });
+    // The test harness turns autoIndex off.
+    await appInstance.getModel('ResizeTask').createIndexes();
+    stop = new AbortController();
+    worker = runWorker({ signal: stop.signal, queue: 'default' }); // ignores worker.enabled
+  });
+
+  after(async () => {
+    stop.abort();
+    await worker;
+    await rm(rootDir, { recursive: true, force: true });
+    await rm(`${rootDir}-private`, { recursive: true, force: true });
+  });
+
+  // Wait on the task, not on the previews: rows are stored before the task completes.
+  async function taskDone(fileId: Types.ObjectId) {
+    const ResizeTask = appInstance.getModel('ResizeTask');
+    for (let i = 0; i < 400; i++) {
+      const task = await ResizeTask.findOne({ fileId }).lean();
+      if (task?.status === 'completed' || task?.status === 'dead') return task;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error('the task did not finish');
+  }
+  // test(…): upload, File.create, resolve, await taskDone(file._id), reload, resolve again
+});
+```
+
+Reload the document after the worker runs. The one you hold has no rows, so a read of it reports the variants as missing and queues another task, which renders nothing.
+
+`taskDone` also returns a dead task, so assert its `status`: a source the worker refuses shows there, not as a timeout. Because `updateConfig` replaces the whole `storage` section, a scaffolded `privateRootDir` is gone, and private originals go to `<rootDir>-private`, which `after` removes. With strict types, run `npm run gen` first so that `getModel` knows your models.
+
+An eager host needs only the `updateConfig` line, with `ensureTestServerReady()` before it and the temporary folders: no indexes, no worker and no `taskDone`, since `generate()` has stored the previews when it returns.
 
 ## Metrics {/* #metrics */}
 
