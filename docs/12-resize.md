@@ -126,7 +126,7 @@ A config mistake then shows up at the first upload or read. To catch it at start
 ```ts
 // src/server.ts
 await server.init();
-await resizer.verify(); // config, storage, the media model, the task queue (ResizeTask model, its gate index, and the queue), and the Lock model when its queue is on SQS
+await resizer.verify(); // config, storage settings (no request to storage), the media model, the task queue (ResizeTask model, its gate index, and the queue), and the Lock model when its queue is on SQS
 await server.startServer();
 ```
 
@@ -869,7 +869,7 @@ export const resizer = createResizer({
 await runWorker({ signal: shutdown.signal, queue: 'default' });
 ```
 
-Options in the second argument win over the config (`pipelines`, `hooks`, your own `storage` or `tasks`, `drivers`, …). Only the drivers the config names are loaded, and every part is built on first use. Each `createResizer` call builds its own queues; Resizers that should share one are wired by hand, as below. The [package reference](https://github.com/adaptivestone/framework-module-resizer#without-the-framework) lists every section and option.
+Options in the second argument win over the config (`pipelines`, `hooks`, your own `storage` or `tasks`, `drivers`, …). Only the drivers the config names are loaded, and every part is built on first use, the Mongo models included: in your migration, `await resizer.ready()` before `mongoose.connection.models.ResizeTask.createIndexes()` (and the same for `ResizeLock`), or `models.ResizeTask` is `undefined`. Each `createResizer` call builds its own queues; Resizers that should share one are wired by hand, as below. The [package reference](https://github.com/adaptivestone/framework-module-resizer#without-the-framework) lists every section and option.
 
 ### Wired by hand
 
