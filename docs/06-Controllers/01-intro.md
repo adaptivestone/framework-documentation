@@ -220,4 +220,7 @@ port; // Port that the server will use. By default, process.env.HTTP_PORT or por
 hostname; // IP to bind to. By default, process.env.HTTP_HOST or '0.0.0.0' (any). Could be dangerous.
 corsDomains; // CORS-allowed domains.
 corsExposedHeaders; // Response headers browser code may read. By default ['Retry-After'].
+requestParser; // Body size limits and extra media types to parse (mediaTypes).
 ```
+
+See [RequestParser](03-middleware.md#requestparser) for `requestParser`.

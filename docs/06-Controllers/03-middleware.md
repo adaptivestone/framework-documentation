@@ -470,15 +470,36 @@ No parameters.
 import RequestParser from "@adaptivestone/framework/services/http/middleware/RequestParser.js";
 ```
 
-This is the main middleware to parse requests (`application/json`, `multipart/form-data`, `application/octet-stream`, `application/x-www-form-urlencoded`).
+This is the main middleware to parse requests (`application/json` and any `+json` type such as `application/problem+json`, `multipart/form-data`, `multipart/related`, `application/octet-stream`, `application/x-www-form-urlencoded`).
 It is based on the [formidable](https://www.npmjs.com/package/formidable) package.
 After parsing, the data is available in `req.body`.
 
 A body over the size or count limits (`requestParser` in `config/http.ts`) gets a `413` response. For a non-multipart body over `maxFieldsSize` — declared or streamed — the connection is closed after the `413` instead of reading the rest of the body.
 
+#### Other media types
+
+Since 5.6.1, to parse another media type as JSON or urlencoded, map it in `requestParser.mediaTypes`. The body lands in `req.body` and `req.appInfo.request` as usual, under the same `maxFieldsSize` limit.
+
+```ts
+// config/http.ts
+requestParser: {
+  // ...limits
+  mediaTypes: {
+    'application/csp-report': 'json',
+    'application/x-amz-json-1.1': 'json',
+  },
+},
+```
+
+Values are `'json'` or `'urlencoded'`; any other value is ignored. Keys match the request's media type case-insensitively, ignoring parameters such as `; charset=utf-8`. Multipart and binary types cannot be mapped.
+
+The framework's default config maps `application/csp-report`, the type browsers use for CSP `report-uri` violation reports (before 5.6.1 such a request got a `400`). Your own `config/http.ts` replaces the framework's file instead of merging with it ([file inheritance](../03-files-inheritance.md)), so if your app has one, add the entry there to keep accepting CSP reports.
+
+A [content-type map](02-routes.md#different-schemas-per-content-type) on a route keys on the real `Content-Type`, so key the schema by the mapped type itself: `request: { 'application/csp-report': schema }`.
+
 #### Parameters
 
-No parameters.
+The global instance reads `requestParser` from `config/http.ts`. When you mount `RequestParser` yourself, params with the same keys (`maxFileSize`, `maxFieldsSize`, `mediaTypes`, …) replace the config values for that mount.
 
 ### Role
 

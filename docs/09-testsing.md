@@ -448,7 +448,10 @@ import {
 
 The global setup uses `MongoMemoryReplSet` with one `wiredTiger` member. Each
 test file receives a unique database, and the framework drops it during
-teardown.
+teardown: it drains HTTP requests, waits for models' background collection
+builds, drops the database, then shuts down and disconnects. Since 5.6.1 a
+failed drop fails the teardown hook instead of being ignored, so leftover
+databases no longer pile up in a shared test MongoDB.
 
 MongoDB publishes ARM64 binaries for Ubuntu, but not for every Debian release
 used by official Node.js Docker images. Use the project's Ubuntu-based Node

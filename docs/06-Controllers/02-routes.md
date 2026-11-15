@@ -583,7 +583,7 @@ import { z } from "zod";
 },
 ```
 
-The body is parsed (the parser is already Content-Type-aware), then validated with the schema matching the request's `Content-Type`. An unmatched type returns **415 Unsupported Media Type**, listing the accepted ones.
+The body is parsed (the parser is already Content-Type-aware), then validated with the schema matching the request's `Content-Type`. An unmatched type returns **415 Unsupported Media Type**, listing the accepted ones. To accept a type the parser does not read by default (such as `application/csp-report`), map it in [`requestParser.mediaTypes`](03-middleware.md#other-media-types) and key the schema by that type.
 
 `req.appInfo.request` becomes a **discriminated union** keyed by an injected `contentType` field, so the handler narrows cleanly — and codegen emits the union for you:
 
