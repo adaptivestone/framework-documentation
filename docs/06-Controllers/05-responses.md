@@ -20,13 +20,13 @@ class Users extends AbstractController {
 }
 ```
 
-Writing to `res` (`res.status(201).json(...)`) keeps working through all of 5.x. Version 6 removes `res` from ordinary handlers, so new code should return responses.
+Handlers that write to `res` (`res.status(201).json(...)`) keep working. A handler does one or the other; see [Writing to `res` and returning a response](#writing-to-res-and-returning-a-response).
 
 Errors are still **thrown** (`throw new NotFoundError(...)`), not returned; see [Error handling](04-error-handling.md).
 
 ## Response kinds
 
-Every factory takes the status first.
+Every factory except `native` takes the status first.
 
 | Factory | Body | Default media type |
 | --- | --- | --- |
@@ -34,7 +34,7 @@ Every factory takes the status first.
 | `HttpResponse.text(status, text, options?)` | string | `text/plain` |
 | `HttpResponse.bytes(status, bytes, options?)` | `Uint8Array` (a `Buffer` is one) | `application/octet-stream` |
 | `HttpResponse.stream(status, source, options?)` | `ReadableStream`, async iterable or Node `Readable` | `application/octet-stream` |
-| `HttpResponse.redirect(status, location, options?)` | — (301, 302, 303, 307 or 308) | — |
+| `HttpResponse.redirect(status, location, options?)` | no body; `location` is a string or a `URL` | — |
 | `HttpResponse.empty(status, options?)` | no body | — |
 | `HttpResponse.native(response)` | a Web `Response`, sent as it is | from the response |
 
@@ -45,7 +45,7 @@ return HttpResponse.redirect(303, `/orders/${order.id}`);
 return HttpResponse.json(422, problem, { contentType: "application/problem+json" });
 ```
 
-`options` is `{ headers, contentType }` (`redirect` and `empty` take only `headers`). Set the media type with `contentType`: a `content-type` entry in `headers` is rejected, and so is a `location` header on a redirect.
+`options` is `{ headers, contentType }` (`redirect` and `empty` take only `headers`). Set the media type with `contentType`: `json`, `text`, `bytes` and `stream` reject a `content-type` entry in `headers`, and `redirect` rejects a `location` header. Both throw a `TypeError`.
 
 JSON, text and bytes are sent the same way `res.json` and `res.send` send them: same serialization, `ETag` and conditional-GET (304) handling, and `charset=utf-8` on JSON and text.
 
@@ -55,9 +55,16 @@ A status a response kind cannot carry fails to compile when written as a literal
 
 - informational statuses (1xx) are never responses;
 - 204, 205 and 304 never carry a body: only `HttpResponse.empty` accepts them;
-- 206 is reserved for range-aware file responses (a later addition), so no factory accepts it.
+- 206 is accepted by no factory;
+- `redirect` accepts only 301, 302, 303, 307 and 308.
 
-A status computed at run time (a `number` variable) compiles and is checked when the response is built.
+```ts
+HttpResponse.json(204, {}); // does not compile: use HttpResponse.empty(204)
+HttpResponse.empty(206); // does not compile
+HttpResponse.empty(200); // compiles: a 200 without a body
+```
+
+A status computed at run time (a `number` variable) compiles and is checked when the response is built. A status outside 200–599 always throws a `RangeError`.
 
 ## Headers
 
@@ -105,13 +112,13 @@ async export(req) {
 }
 ```
 
-- The status and headers are sent together with the **first chunk**. An error before it is answered like any thrown error (through the [error-handler registry](04-error-handling.md), usually a 500). An error after it aborts the connection and is logged.
-- When the client disconnects, the source is stopped: a `ReadableStream` is cancelled, and an async generator's `finally` block runs.
-- A `HEAD` request gets the status and headers; the source is cancelled without being read.
+- The status and headers are sent together with the **first chunk**. An error before it is answered like any thrown error, through the [error-handler registry](04-error-handling.md) (usually a 500), and none of the stream's headers are sent. An error after it aborts the connection and is logged.
+- When the client disconnects, the framework stops reading at once, also while it waits for a chunk, and stops the source: a `ReadableStream` is cancelled, and an async generator's `finally` block runs (once its current step finishes).
+- A `HEAD` request gets the status and headers without a body; the source is stopped without being read.
 
 ## Web `Response` pass-through
 
-`HttpResponse.native(response)` sends a Web `Response` as it is: status, status text, headers and body. Framing headers the server sets itself (`connection`, `transfer-encoding`, …) are dropped.
+`HttpResponse.native(response)` sends a Web `Response` as it is: status, status text, headers and body. Framing headers the server sets itself (`connection`, `transfer-encoding`, …) are dropped. A body is sent like a stream, with the rules above. `Response.error()`, or a response whose body was already read, throws a `TypeError`.
 
 :::warning Proxying a `fetch()` response
 `fetch()` decompresses the body but keeps the upstream `content-encoding` and `content-length` headers. Remove them before returning the response, or clients receive a body that does not match its headers.
@@ -119,22 +126,35 @@ async export(req) {
 
 ## Writing to `res` and returning a response
 
-A handler does one or the other. If it writes the response through `res` and also returns an `HttpResponse`, the framework logs an error and does not send the returned one. Headers set on `res` *without* sending the response are kept and merged with the returned response.
+A handler does one or the other. If it sends the response through `res` and also returns an `HttpResponse`, the framework logs an error and does not send the returned one. Headers set on `res` *without* sending the response (`res.setHeader(...)`) are kept and merged with the returned response.
 
 ## Overriding built-in controllers
 
-The built-in `Auth`, `Home` and `Health` controllers return their responses. An override that calls the built-in handler must return its result:
+The built-in `Auth`, `Home` and `Health` handlers return their response. An override that calls the built-in handler should return its result:
 
 ```js
-class Auth extends FrameworkAuth {
+import OriginalAuth from "@adaptivestone/framework/controllers/Auth.js";
+
+class Auth extends OriginalAuth {
   async postLogin(req, res) {
     audit("login attempt", req.appInfo.request.email);
     return super.postLogin(req, res); // return it
   }
 }
+
+export default Auth;
 ```
 
-An override that only awaits it (`await super.postLogin(req, res)`) still answers with that response in 5.x, and the framework emits a one-time `ASF_DEP_DROPPED_RESPONSE` warning. Version 6 will not send a response that was not returned. Overrides that write to `res` themselves keep working and keep compiling.
+Overrides that write to `res` themselves keep working and keep compiling.
+
+:::info Upgrading to 5.7.0
+
+- An override that calls the built-in handler without returning the result (`await super.postLogin(req, res)`, or the same call without `await`) still answers with that response. Node prints a one-time `ASF_DEP_DROPPED_RESPONSE` deprecation warning for that handler. This is transitional: v6 will not send a response that was not returned.
+- With `await`, that response is sent when your override finishes, not when the built-in handler does. Code after the call runs before the response goes out, and if it throws, the client gets the error response instead.
+- The built-in handlers' return types now include `HttpResponse`, so an override annotated `Promise<Response>` that returns the built-in result no longer compiles. Widen the annotation or drop it.
+- The `Auth` answers without a body (register 201, verify and recover 200) no longer send `Content-Type: application/json`.
+
+:::
 
 ## Reshaping every response: `transformResponse`
 
@@ -145,7 +165,7 @@ import { HttpResponse } from "@adaptivestone/framework/services/http/responses.j
 
 const server = new Server({
   ...folderConfig,
-  transformResponse: (response, { req }) =>
+  transformResponse: (response) =>
     response.kind === "json"
       ? HttpResponse.json(
           response.status,
@@ -161,10 +181,13 @@ const server = new Server({
 | handler returns `HttpResponse.json(200, { id: 1 })` | `{"id":1}` | `{"data":{"id":1}}` |
 | `GET /nope` | `{"error":"NOT_FOUND","message":"Not found"}` | `{"data":{"error":"NOT_FOUND","message":"Not found"}}` |
 
-- It covers responses handlers return, validation and other error responses, the 404 and 405 pages, and error-handler results. A handler that writes to `res` itself is **not** transformed.
-- It must be synchronous and return an `HttpResponse`: match on `response.kind` and return the kinds you don't reshape unchanged.
-- If it throws or returns anything else, the error is logged and the original response is sent; a broken transform never takes the API down.
+- It receives the response and `{ req }`, the request.
+- It covers responses handlers return, validation and other error responses (including error-handler results), the 404 and 405 pages, the malformed-URL 400 and the 415. A response written to `res` directly, by a handler or a middleware, is **not** transformed.
+- It must be synchronous: match on `response.kind` and return the kinds you don't reshape unchanged.
+- If it throws, returns a Promise, or returns anything that is not an `HttpResponse`, the error is logged and the original response is sent. A broken transform never takes the API down.
+- If it replaces a streaming response (a `stream`, or a `native` response with a body) with one that does not send that body, the dropped stream is cancelled.
 - Pass the same option to [`configureTestServer`](../09-testsing.md#production-http-wiring-boothttp) so your tests see the same bodies.
-- The generated [OpenAPI document](../17-openapi.md) describes untransformed bodies.
+
+To keep it in its own module, type it with `TransformResponseHook` from `@adaptivestone/framework/server.js`.
 
 Most applications don't need it: by default every response goes out exactly as it was built.

@@ -276,6 +276,8 @@ class Auth extends OriginalAuth {
 export default Auth;
 ```
 
+Return the result of `super`: the built-in handlers return their response (see [Responses › Overriding built-in controllers](06-Controllers/05-responses.md#overriding-built-in-controllers)).
+
 The same approach works for models and configs. See [File Inheritance](03-files-inheritance.md).
 
 ## Test a controller with the framework helpers

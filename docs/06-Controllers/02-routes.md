@@ -583,7 +583,7 @@ import { z } from "zod";
 },
 ```
 
-The body is parsed (the parser is already Content-Type-aware), then validated with the schema matching the request's `Content-Type`. An unmatched type returns **415 Unsupported Media Type**, listing the accepted ones. To accept a type the parser does not read by default (such as `application/csp-report`), map it in [`requestParser.mediaTypes`](03-middleware.md#other-media-types) and key the schema by that type.
+The body is parsed (the parser is already Content-Type-aware), then validated with the schema matching the request's `Content-Type`. An unmatched type returns **415 Unsupported Media Type** (`error: "UNSUPPORTED_CONTENT_TYPE"`), listing the accepted ones. To accept a type the parser does not read by default (such as `application/csp-report`), map it in [`requestParser.mediaTypes`](03-middleware.md#other-media-types) and key the schema by that type.
 
 `req.appInfo.request` becomes a **discriminated union** keyed by an injected `contentType` field, so the handler narrows cleanly — and codegen emits the union for you:
 
@@ -806,7 +806,7 @@ class ControllerName extends AbstractController {
 export default ControllerName;
 ```
 
-The handler returns its response with [`HttpResponse`](05-responses.md) (since 5.7). Handlers written as `(req, res)` that call `res.status(…).json(…)` keep working through 5.x.
+Since 5.7 the handler can return its response with [`HttpResponse`](05-responses.md), as above. Handlers written as `(req, res)` that call `res.status(…).json(…)` keep working.
 
 ### Middleware
 

@@ -476,6 +476,8 @@ After parsing, the data is available in `req.body`.
 
 A body over the size or count limits (`requestParser` in `config/http.ts`) gets a `413` response. For a non-multipart body over `maxFieldsSize` — declared or streamed — the connection is closed after the `413` instead of reading the rest of the body.
 
+The `413` carries `error: "PAYLOAD_TOO_LARGE"`, and a body that cannot be parsed gets a `400` with `error: "MALFORMED_BODY"`. Since 5.7 both go through the [error-handler registry](04-error-handling.md#request-validation-errors), so a handler registered for `HttpError` can reshape them.
+
 #### Other media types
 
 Since 5.6.1, to parse another media type as JSON or urlencoded, map it in `requestParser.mediaTypes`. The body lands in `req.body` and `req.appInfo.request` as usual, under the same `maxFieldsSize` limit.

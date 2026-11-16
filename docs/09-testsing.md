@@ -68,14 +68,16 @@ import bootHttp from '../bootHttp.ts';
 configureTestServer({ bootHttp });
 ```
 
-Pass a [`transformResponse`](06-Controllers/05-responses.md#reshaping-every-response-transformresponse) the same way (`configureTestServer({ bootHttp, transformResponse })`), or your tests see different bodies from production.
-
 Point it at the **same** function production uses, rather than re-registering
 the wiring from a test hook: two copies drift, and the copy that drifts is the
 one the tests trust. Without this, tests run against a server that never ran
 that wiring at all — an error handler registered in `bootHttp` does not exist,
 so a request that returns 409 in production returns 500 under test, with nothing
 reporting the difference.
+
+Pass a [`transformResponse`](06-Controllers/05-responses.md#reshaping-every-response-transformresponse)
+the same way (`configureTestServer({ bootHttp, transformResponse })`), or your
+tests see different bodies from production.
 
 `folders` is not accepted here; the bootstrap owns those (see the
 `TEST_FOLDER_*` variables below). Call `configureTestServer` at module scope,
@@ -398,6 +400,13 @@ it('rejects an invalid request', async () => {
   assert.equal(response.status, 400);
 });
 ```
+
+Error bodies the framework builds carry a stable `error` code, such as
+`VALIDATION_FAILED` or `NOT_FOUND`. Assert on it, not on the translated
+`message`; the codes are listed under
+[Error codes of framework responses](06-Controllers/04-error-handling.md#error-codes-of-framework-responses).
+Since 5.7 every such body has the field, so a test that compares a whole error
+body needs it.
 
 Do not catch and discard `fetch()` errors in tests. A rejected request should
 fail the test and preserve the original error.

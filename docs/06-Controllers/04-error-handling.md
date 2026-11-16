@@ -185,7 +185,8 @@ The handler contract:
 - `err` is typed as an instance of the class you registered — `err.code` autocompletes, no casts.
 - `req` is the same request the route handler had — `req.appInfo.request`, `req.appInfo.i18n`, etc.
 - Return `{ status, body }` to produce a JSON response, with optional `headers` (the framework sends it — handlers never touch `res`, so double-send protection and logging stay in one place). Since 5.7 a handler may instead return any [`HttpResponse`](05-responses.md), for example `HttpResponse.json(409, problem, { contentType: "application/problem+json" })`.
-- The result must be a valid response: a status a JSON response cannot carry (206, or anything outside 200–599) counts as a failed handler and ends in the 500. A `body` of `undefined`, or status 204, 205 or 304, is sent without a body.
+- The result must be a valid response. A `{ status, body }` result with status 206, or a status outside 200–599, counts as a failed handler: it is logged and the client gets the 500. A `body` of `undefined`, or status 204, 205 or 304, is sent without a body.
+- A `{ status, body }` result with a body sets its own `Content-Type`: `application/json`, or the `Content-Type` in its `headers` (for example `application/problem+json`). It replaces a `Content-Type` set on `res` earlier. A result without a body adds no `Content-Type` unless its `headers` set one, and a 304 result gets no `ETag`.
 - Return `null`/`undefined` to pass the error to the next entry.
 - `registerErrorHandler` returns an **unregister function** — handy in tests.
 - Third argument `{ logLevel }` controls how the handled error is logged (default `warn`):
@@ -198,7 +199,7 @@ app.httpServer.registerErrorHandler(
 );
 ```
 
-If a handler itself throws, the framework logs it (with the stack) and falls back to the 500 — a broken error handler can never crash the request pipeline. If the response a handler returns cannot be written (for example a body `JSON.stringify` rejects), the client gets the plain 500 as well.
+If a handler itself throws, the framework logs it (with the stack) and falls back to the 500 — a broken error handler can never crash the request pipeline. If the response a handler returns cannot be written (for example a body `JSON.stringify` rejects), the error is logged and the client gets a 500 as well.
 
 Handler-side types, if you want to extract the function:
 
@@ -296,32 +297,60 @@ app.httpServer.registerErrorHandler(ValidationError, (err) =>
 );
 ```
 
-A handler registered for `Error` (a catch-all) now receives validation errors too. Return `null` for a `ValidationError` to keep the default 400:
+If that handler throws, or returns a result that is not a valid response, the client gets the 500, not the validation 400.
+
+The body parser's errors go through the registry the same way: an oversized body is an `HttpError` 413 (`PAYLOAD_TOO_LARGE`) and a body that cannot be parsed an `HttpError` 400 (`MALFORMED_BODY`), so a handler for `HttpError` sees them. Their status and body are unchanged.
+
+:::info Upgrading to 5.7.0
+
+A handler registered for `Error` (a catch-all) now also receives request-validation errors and the body parser's 413 and 400. Return `null` for them to keep the default answers:
 
 ```js
-app.httpServer.registerErrorHandler(Error, (err) =>
-  err instanceof ValidationError ? null : { status: 500, body: { message: "Oops" } },
-);
+import { HttpError } from "@adaptivestone/framework/services/http/httpErrors.js";
+import { ValidationError } from "@adaptivestone/framework/services/validate/ValidationError.js";
+
+app.httpServer.registerErrorHandler(Error, (err) => {
+  if (err instanceof ValidationError || err instanceof HttpError) {
+    return null; // keep the framework's answer
+  }
+  return { status: 500, body: { error: "INTERNAL", message: "Please try again later." } };
+});
 ```
 
-The body parser's errors go through the registry the same way: an oversized body is an `HttpError` 413 (`PAYLOAD_TOO_LARGE`) and a body that cannot be parsed an `HttpError` 400 (`MALFORMED_BODY`), so a handler for `HttpError` sees them.
+The `HttpError` check also keeps the answers for the HTTP errors your own code throws.
+
+:::
 
 ## Error codes of framework responses
 
 Every error response the framework builds itself carries an `error` code, so a client can branch on it instead of the translated `message`:
 
-| Status | `error` | When |
-| --- | --- | --- |
-| 400 | `VALIDATION_FAILED` | a `params:`/`request:`/`query:` schema rejected the input, or a Mongoose safety net matched |
-| 400 | `MALFORMED_URL` | the URL path could not be decoded |
-| 400 | `MALFORMED_BODY` | the request body could not be parsed |
-| 404 | `NOT_FOUND` | no route matches the path |
-| 405 | `METHOD_NOT_ALLOWED` | a route matches the path but not the method |
-| 413 | `PAYLOAD_TOO_LARGE` | the body exceeds the configured limits |
-| 415 | `UNSUPPORTED_CONTENT_TYPE` | the route accepts none of the request's content types |
-| 500 | `SERVER_ERROR` | nothing in the registry resolved the error |
+| Status | `error` | Key in `FRAMEWORK_ERROR_CODES` | When |
+| --- | --- | --- | --- |
+| 400 | `VALIDATION_FAILED` | `validationFailed` | a `params:`/`request:`/`query:` schema rejected the input, or a Mongoose safety net matched |
+| 400 | `MALFORMED_URL` | `malformedUrl` | the URL path could not be decoded |
+| 400 | `MALFORMED_BODY` | `malformedBody` | the request body could not be parsed |
+| 404 | `NOT_FOUND` | `notFound` | no route matches the path |
+| 405 | `METHOD_NOT_ALLOWED` | `methodNotAllowed` | a route matches the path but not the method |
+| 413 | `PAYLOAD_TOO_LARGE` | `payloadTooLarge` | the body exceeds the configured limits |
+| 415 | `UNSUPPORTED_CONTENT_TYPE` | `unsupportedContentType` | the route accepts none of the request's content types |
+| 500 | `SERVER_ERROR` | `serverError` | nothing in the registry resolved the error (also the rate limiter's 500 when it is not set up correctly) |
 
-The codes are exported as `FRAMEWORK_ERROR_CODES` from `@adaptivestone/framework/services/http/httpErrors.js`. The built-in middleware codes (`AUTH001`, `NO_ACCESS`, `TOO_MANY_REQUESTS`) are listed under [Errors from middleware](#errors-from-middleware).
+The codes are exported as `FRAMEWORK_ERROR_CODES` from `@adaptivestone/framework/services/http/httpErrors.js`:
+
+```js
+import { FRAMEWORK_ERROR_CODES } from "@adaptivestone/framework/services/http/httpErrors.js";
+
+assert.equal(body.error, FRAMEWORK_ERROR_CODES.notFound); // "NOT_FOUND"
+```
+
+The built-in middleware codes (`AUTH001`, `NO_ACCESS`, `TOO_MANY_REQUESTS`) are listed under [Errors from middleware](#errors-from-middleware). An `HttpError` your own code throws carries an `error` only when you give it a `code`.
+
+:::info Upgrading to 5.7.0
+
+Statuses and messages are unchanged, but these bodies now carry the `error` field. Tests that compare whole error bodies (for example with `assert.deepStrictEqual`) need the new field.
+
+:::
 
 ## Matching order
 
@@ -374,7 +403,7 @@ This is a floor, not a design. Declaring a [`params:` schema](02-routes.md#param
 ## What still becomes a 500
 
 - Any error no registry entry claims (including `null` returns all the way down).
-- A registry handler that throws while handling, or returns a result that is not a valid response.
+- A registry handler that throws while handling, or returns a result that is not a valid response. This includes a handler for `ValidationError`: the client gets the 500, not the validation 400.
 - Mongoose validation failures on internal/renamed fields (see above).
 - Mongoose cast failures on server-computed values (see above).
 
