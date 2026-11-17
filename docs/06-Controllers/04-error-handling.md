@@ -207,7 +207,8 @@ A `{ status, body }` result is now sent as a JSON response:
 
 - Status 206, or a status outside 200–599, is a failed handler: the client gets the 500. Before, 206 was sent as given.
 - A result with a body sets its own `Content-Type`, replacing one set on `res` earlier.
-- A result with `body: undefined` no longer adds a `Content-Type`, and a 304 result no longer gets an `ETag`.
+- A result with `body: undefined` no longer adds a `Content-Type` and no longer answers 304 to a conditional request, and a 304 result no longer gets an `ETag`.
+- A `Set-Cookie` in the result's `headers` is added to the cookies already on the response, and `Vary` is merged. Before, both replaced what was there.
 
 :::
 

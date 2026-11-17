@@ -153,7 +153,10 @@ Overrides that write to `res` themselves keep working and keep compiling.
 - An override that calls the built-in handler without returning the result (`await super.postLogin(req, res)`, or the same call without `await`) still answers with that response. Node prints a one-time `ASF_DEP_DROPPED_RESPONSE` deprecation warning for that handler. This is transitional: v6 will not send a response that was not returned.
 - With `await`, that response is sent when your override finishes, not when the built-in handler does. Code after the call runs before the response goes out, and if it throws, the client gets the error response instead.
 - After the call, `res.statusCode` shows the built-in answer's status, as before, so a check like `if (res.statusCode === 201)` keeps working. Nothing has been sent yet at that point (`res.headersSent` is false). In new code, read the status from the returned response: `const response = await super.postRegister(req, res)`, then `response.status`.
-- An override that calls the built-in handler and then answers through `res` itself must do so before it returns. If it answers later (in a callback, for example), the built-in response is sent first.
+- An override that calls the built-in handler and then answers through `res` itself should do so before it returns. If it answers later (in a callback, for example), the built-in response can be sent first.
+- The built-in handlers no longer call `res.json` or `res.status`. A wrapper around `res` that changed what they send no longer has an effect, and a status set on `res` before the call is replaced by the built-in status. Change the returned response instead.
+- Do not wait for `res` to finish inside the override after the call: the response is sent only once the override returns, so that wait never completes.
+- A built-in handler used directly as an Express route handler, outside the framework's routes, no longer answers by itself.
 - The built-in handlers' return types now include `HttpResponse`, so an override annotated `Promise<Response>` that returns the built-in result no longer compiles. Widen the annotation or drop it.
 - The `Auth` answers without a body (register 201, verify and recover 200) no longer send `Content-Type: application/json`.
 - The built-in `Auth`, `Home` and `Health` answers, like every JSON response the framework builds (404, 405, 415, validation and body-parser errors, the 500), are sent as `application/json`. This replaces a `Content-Type` set on `res` earlier, for example by a middleware calling `res.type(...)`; before, they kept it. To send another media type on every response, set `contentType` in [`transformResponse`](#reshaping-every-response-transformresponse).
@@ -189,7 +192,7 @@ const server = new Server({
 - It covers responses handlers return, validation and other error responses (including error-handler results), the 404 and 405 pages, the malformed-URL 400 and the 415. This includes the built-in `Auth`, `Home` and `Health` responses (login already answers `{ data: … }`, so an envelope wraps it twice unless you skip those). A response written to `res` directly, by a handler or a middleware, is **not** transformed.
 - It must be synchronous: match on `response.kind` and return the kinds you don't reshape unchanged.
 - If it throws, returns a Promise, or returns anything that is not an `HttpResponse`, the error is logged and the original response is sent. A broken transform never takes the API down.
-- If it replaces a streaming response (a `stream`, or a `native` response with a body) with one that does not send that body, the dropped stream is cancelled.
+- If it replaces a streaming response (a `stream`, or a `native` response with a body) with one that does not send that body, the dropped stream is cancelled. A replacement that wraps the original stream reads it itself, and is responsible for stopping it when the client disconnects.
 - Pass the same option to [`configureTestServer`](../09-testsing.md#production-http-wiring-boothttp) so your tests see the same bodies.
 
 To keep it in its own module, type it with `TransformResponseHook` from `@adaptivestone/framework/server.js`.
