@@ -263,11 +263,11 @@ Create a controller with the same filename as a built-in one and extend it — y
 ```ts
 // src/controllers/Auth.ts
 import OriginalAuth from "@adaptivestone/framework/controllers/Auth.js";
-import type { FrameworkRequest } from "@adaptivestone/framework/services/http/HttpServer.js";
+import type { PostLoginRequest } from "@adaptivestone/framework/controllers/Auth.routes.gen.js";
 import type { Response } from "express";
 
 class Auth extends OriginalAuth {
-  async postLogin(req: FrameworkRequest, res: Response) {
+  async postLogin(req: PostLoginRequest, res: Response) {
     // your custom login — call super for the default behavior, or replace it
     return super.postLogin(req, res);
   }
@@ -275,6 +275,8 @@ class Auth extends OriginalAuth {
 
 export default Auth;
 ```
+
+Return the result of `super`: the built-in handlers return their response (see [Responses › Overriding built-in controllers](06-Controllers/05-responses.md#overriding-built-in-controllers)).
 
 The same approach works for models and configs. See [File Inheritance](03-files-inheritance.md).
 
