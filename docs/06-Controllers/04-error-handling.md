@@ -4,7 +4,7 @@ What happens when a route handler or a middleware throws? The framework resolves
 
 1. **Your registered handlers** — checked first, in registration order.
 2. **Built-ins** — the `HttpError` mapper, the Mongoose validation safety net, then the Mongoose cast safety net.
-3. **Fallback** — nothing matched: the error is logged at `error` level and the client gets `500 {"error": "SERVER_ERROR", "message": "Something went wrong. Please try again later."}`. Every framework 500 uses this one text, translatable through the `http.serverError` key.
+3. **Fallback** — nothing matched: the error is logged at `error` level and the client gets `500 {"error": "SERVER_ERROR", "message": "Something went wrong. Please try again later."}`. Every framework 500 except the rate limiter's misconfiguration 500 uses this one text, translatable through the `http.serverError` key.
 
 The first entry whose error class matches (`instanceof`) and whose handler returns a response wins. That gives you two tools: **throw** typed HTTP errors from your own code, and **register** handlers for error types you don't own.
 
@@ -199,7 +199,17 @@ app.httpServer.registerErrorHandler(
 );
 ```
 
-If a handler itself throws, the framework logs it (with the stack) and falls back to the 500 — a broken error handler can never crash the request pipeline. If the response a handler returns cannot be written (for example a body `JSON.stringify` rejects), the error is logged and the client gets a 500 as well.
+If a handler itself throws, the framework logs it (with the stack) and falls back to the 500 — a broken error handler can never crash the request pipeline. If the response cannot be written (for example a body `JSON.stringify` rejects), the write error is itself resolved through the registry: a catch-all `Error` handler answers it, otherwise the client gets the 500.
+
+:::info Upgrading to 5.7.0
+
+A `{ status, body }` result is now sent as a JSON response:
+
+- Status 206, or a status outside 200–599, is a failed handler: the client gets the 500. Before, 206 was sent as given.
+- A result with a body sets its own `Content-Type`, replacing one set on `res` earlier.
+- A result with `body: undefined` no longer adds a `Content-Type`, and a 304 result no longer gets an `ETag`.
+
+:::
 
 Handler-side types, if you want to extract the function:
 
@@ -282,7 +292,7 @@ Your own middleware can reject the same way; see [Middleware › Rejecting a req
 
 ## Request validation errors
 
-Since 5.7, the 400 answered when a route's `params:`, `request:` or `query:` schema rejects the input also goes through the registry. With no handler for it, the response is unchanged. To reshape it, register a handler for `ValidationError`:
+Since 5.7, the 400 answered when a route's `params:`, `request:` or `query:` schema rejects the input also goes through the registry. With no handler for it, the framework answers the same 400. To reshape it, register a handler for `ValidationError`:
 
 ```js
 import { HttpResponse } from "@adaptivestone/framework/services/http/responses.js";
@@ -294,12 +304,15 @@ app.httpServer.registerErrorHandler(ValidationError, (err) =>
     { title: "Invalid input", errors: err.message }, // err.message is the per-field payload
     { contentType: "application/problem+json" },
   ),
+  { logLevel: "verbose" },
 );
 ```
 
+A handler you register logs each error it handles at `warn` by default. A rejected input is a client error, so the sample logs it at `verbose`.
+
 If that handler throws, or returns a result that is not a valid response, the client gets the 500, not the validation 400.
 
-The body parser's errors go through the registry the same way: an oversized body is an `HttpError` 413 (`PAYLOAD_TOO_LARGE`) and a body that cannot be parsed an `HttpError` 400 (`MALFORMED_BODY`), so a handler for `HttpError` sees them. Their status and body are unchanged.
+The body parser's errors go through the registry the same way: an oversized body is an `HttpError` 413 (`PAYLOAD_TOO_LARGE`) and a body that cannot be parsed an `HttpError` 400 (`MALFORMED_BODY`), so a handler for `HttpError` sees them. Their status and message are unchanged (the body gains its `error` code, see below).
 
 :::info Upgrading to 5.7.0
 
@@ -323,7 +336,7 @@ The `HttpError` check also keeps the answers for the HTTP errors your own code t
 
 ## Error codes of framework responses
 
-Every error response the framework builds itself carries an `error` code, so a client can branch on it instead of the translated `message`:
+Each error response in the table below carries an `error` code, so a client can branch on it instead of the translated `message`:
 
 | Status | `error` | Key in `FRAMEWORK_ERROR_CODES` | When |
 | --- | --- | --- | --- |
@@ -344,7 +357,7 @@ import { FRAMEWORK_ERROR_CODES } from "@adaptivestone/framework/services/http/ht
 assert.equal(body.error, FRAMEWORK_ERROR_CODES.notFound); // "NOT_FOUND"
 ```
 
-The built-in middleware codes (`AUTH001`, `NO_ACCESS`, `TOO_MANY_REQUESTS`) are listed under [Errors from middleware](#errors-from-middleware). An `HttpError` your own code throws carries an `error` only when you give it a `code`.
+The built-in middleware codes (`AUTH001`, `NO_ACCESS`, `TOO_MANY_REQUESTS`) are listed under [Errors from middleware](#errors-from-middleware). An `HttpError` your own code throws carries an `error` only when you give it a `code`. The built-in `Auth` controller's own 400 answers (except `EMAIL_NOT_VERIFIED`) and the `Health` 401 carry only `message`.
 
 :::info Upgrading to 5.7.0
 

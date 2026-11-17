@@ -401,12 +401,11 @@ it('rejects an invalid request', async () => {
 });
 ```
 
-Error bodies the framework builds carry a stable `error` code, such as
-`VALIDATION_FAILED` or `NOT_FOUND`. Assert on it, not on the translated
-`message`; the codes are listed under
-[Error codes of framework responses](06-Controllers/04-error-handling.md#error-codes-of-framework-responses).
-Since 5.7 every such body has the field, so a test that compares a whole error
-body needs it.
+The error bodies listed under
+[Error codes of framework responses](06-Controllers/04-error-handling.md#error-codes-of-framework-responses)
+carry a stable `error` code, such as `VALIDATION_FAILED` or `NOT_FOUND`.
+Assert on it, not on the translated `message`. Since 5.7 every body listed
+there has the field, so a test that compares a whole error body needs it.
 
 Do not catch and discard `fetch()` errors in tests. A rejected request should
 fail the test and preserve the original error.

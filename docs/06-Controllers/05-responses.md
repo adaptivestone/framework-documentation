@@ -34,7 +34,7 @@ Every factory except `native` takes the status first.
 | `HttpResponse.text(status, text, options?)` | string | `text/plain` |
 | `HttpResponse.bytes(status, bytes, options?)` | `Uint8Array` (a `Buffer` is one) | `application/octet-stream` |
 | `HttpResponse.stream(status, source, options?)` | `ReadableStream`, async iterable or Node `Readable` | `application/octet-stream` |
-| `HttpResponse.redirect(status, location, options?)` | no body; `location` is a string or a `URL` | — |
+| `HttpResponse.redirect(status, location, options?)` | you pass none; `location` is a string or a `URL` | a short `text/plain` or `text/html` notice, chosen by `Accept` |
 | `HttpResponse.empty(status, options?)` | no body | — |
 | `HttpResponse.native(response)` | a Web `Response`, sent as it is | from the response |
 
@@ -55,7 +55,7 @@ A status a response kind cannot carry fails to compile when written as a literal
 
 - informational statuses (1xx) are never responses;
 - 204, 205 and 304 never carry a body: only `HttpResponse.empty` accepts them;
-- 206 is accepted by no factory;
+- 206 is accepted by no factory except `native`, which sends a Web `Response` as it is;
 - `redirect` accepts only 301, 302, 303, 307 and 308.
 
 ```ts
@@ -64,7 +64,7 @@ HttpResponse.empty(206); // does not compile
 HttpResponse.empty(200); // compiles: a 200 without a body
 ```
 
-A status computed at run time (a `number` variable) compiles and is checked when the response is built. A status outside 200–599 always throws a `RangeError`.
+A status computed at run time (a `number` variable) compiles and is checked when the response is built (`redirect` needs a value typed as one of its five statuses). A status outside 200–599 always throws a `RangeError`.
 
 ## Headers
 
@@ -76,7 +76,7 @@ return HttpResponse.json(200, report, {
 });
 ```
 
-Names are normalized to lower case and repeated names are combined, except `set-cookie`, which keeps one entry per cookie. A response's `headers` can be passed as `headers` to another factory, which is how you copy them when you build a new response from an existing one.
+Names are normalized to lower case and repeated names are combined, except `set-cookie`, which keeps one entry per cookie. A response's `headers` can be passed as `headers` to another factory, which is how you copy them when you build a new response from an existing one (for `native`, read them from `response.response.headers`).
 
 Headers already set on the request's response (security headers, CORS, anything your middleware set) stay. A returned header with the same name replaces one set earlier, `set-cookie` is appended, and `vary` is merged.
 
@@ -92,6 +92,7 @@ import {
 } from "@adaptivestone/framework/services/http/responses.js";
 
 async create(req: PostCreateRequest): Promise<JsonResponse<201, { data: UserDto }>> {
+  const user = await createUser(req.appInfo.request);
   return HttpResponse.json(201, { data: toDto(user) });
 }
 
@@ -151,8 +152,11 @@ Overrides that write to `res` themselves keep working and keep compiling.
 
 - An override that calls the built-in handler without returning the result (`await super.postLogin(req, res)`, or the same call without `await`) still answers with that response. Node prints a one-time `ASF_DEP_DROPPED_RESPONSE` deprecation warning for that handler. This is transitional: v6 will not send a response that was not returned.
 - With `await`, that response is sent when your override finishes, not when the built-in handler does. Code after the call runs before the response goes out, and if it throws, the client gets the error response instead.
+- After the call, `res.statusCode` shows the built-in answer's status, as before, so a check like `if (res.statusCode === 201)` keeps working. Nothing has been sent yet at that point (`res.headersSent` is false). In new code, read the status from the returned response: `const response = await super.postRegister(req, res)`, then `response.status`.
+- An override that calls the built-in handler and then answers through `res` itself must do so before it returns. If it answers later (in a callback, for example), the built-in response is sent first.
 - The built-in handlers' return types now include `HttpResponse`, so an override annotated `Promise<Response>` that returns the built-in result no longer compiles. Widen the annotation or drop it.
 - The `Auth` answers without a body (register 201, verify and recover 200) no longer send `Content-Type: application/json`.
+- The built-in `Auth`, `Home` and `Health` answers, like every JSON response the framework builds (404, 405, 415, validation and body-parser errors, the 500), are sent as `application/json`. This replaces a `Content-Type` set on `res` earlier, for example by a middleware calling `res.type(...)`; before, they kept it. To send another media type on every response, set `contentType` in [`transformResponse`](#reshaping-every-response-transformresponse).
 
 :::
 
@@ -182,7 +186,7 @@ const server = new Server({
 | `GET /nope` | `{"error":"NOT_FOUND","message":"Not found"}` | `{"data":{"error":"NOT_FOUND","message":"Not found"}}` |
 
 - It receives the response and `{ req }`, the request.
-- It covers responses handlers return, validation and other error responses (including error-handler results), the 404 and 405 pages, the malformed-URL 400 and the 415. A response written to `res` directly, by a handler or a middleware, is **not** transformed.
+- It covers responses handlers return, validation and other error responses (including error-handler results), the 404 and 405 pages, the malformed-URL 400 and the 415. This includes the built-in `Auth`, `Home` and `Health` responses (login already answers `{ data: … }`, so an envelope wraps it twice unless you skip those). A response written to `res` directly, by a handler or a middleware, is **not** transformed.
 - It must be synchronous: match on `response.kind` and return the kinds you don't reshape unchanged.
 - If it throws, returns a Promise, or returns anything that is not an `HttpResponse`, the error is logged and the original response is sent. A broken transform never takes the API down.
 - If it replaces a streaming response (a `stream`, or a `native` response with a body) with one that does not send that body, the dropped stream is cancelled.
