@@ -483,7 +483,13 @@ This is the main middleware to parse requests (`application/json` and any `+json
 It is based on the [formidable](https://www.npmjs.com/package/formidable) package.
 After parsing, the data is available in `req.body`.
 
-A body over the size or count limits (`requestParser` in `config/http.ts`) gets a `413` response. For a non-multipart body over `maxFieldsSize` — declared or streamed — the connection is closed after the `413` instead of reading the rest of the body.
+A body over the size or count limits (`requestParser` in `config/http.ts`) gets a `413` response. An `application/octet-stream` body is one file, so `maxFileSize` bounds it (or `maxTotalFileSize`, if lower); any other non-multipart body is bounded by `maxFieldsSize`. For such a body over its limit, declared or streamed, the connection is closed after the `413` instead of reading the rest of the body.
+
+:::info Upgrading to 5.7.0
+
+5.6.1 accepted an `application/octet-stream` body of any size. Since 5.7.0 one above `maxFileSize` (20 MB by default) gets the `413`. To accept larger bodies, raise `maxFileSize` and `maxTotalFileSize` in your `config/http.ts`.
+
+:::
 
 The `413` carries `error: "PAYLOAD_TOO_LARGE"`, and a body that cannot be parsed gets a `400` with `error: "MALFORMED_BODY"`. Since 5.7 both go through the [error-handler registry](04-error-handling.md#request-validation-errors), so a handler registered for `HttpError` can reshape them.
 
