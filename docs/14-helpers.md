@@ -152,3 +152,21 @@ const sent = req.headers["x-api-key"];
 // Require a configured key: two empty strings are equal too.
 const valid = !!apiKey && typeof sent === "string" && timingSafeEqualStrings(sent, apiKey);
 ```
+
+## Password policy (`passwordPolicyIssues`)
+
+Since 5.7, your own password endpoints (settings, admin reset, invite acceptance) can apply the policy that the built-in registration and password reset use: `auth.passwordPolicy` (15–128 Unicode code points by default), with the same translated messages.
+
+```ts
+import { passwordPolicyIssues } from "@adaptivestone/framework/helpers/passwordPolicy.js";
+import { BadRequestError } from "@adaptivestone/framework/services/http/httpErrors.js";
+
+const issues = passwordPolicyIssues(req.appInfo.request.newPassword, "newPassword");
+if (issues.length) {
+  throw new BadRequestError({ code: "VALIDATION_FAILED", message: "Validation failed", errors: issues });
+}
+// → 400 {"error": "VALIDATION_FAILED", "message": "Validation failed",
+//        "errors": {"newPassword": ["Password must be at least 15 characters"]}}
+```
+
+It returns an empty list for a password that fits the policy, and otherwise the issues under the field you name (`password` by default), with the `auth.passwordProvided`, `auth.passwordTooShort` or `auth.passwordTooLong` key. An invalid `auth.passwordPolicy` throws, as it does for the built-in endpoints.

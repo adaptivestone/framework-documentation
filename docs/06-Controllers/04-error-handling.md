@@ -48,7 +48,14 @@ Available classes (all from `services/http/httpErrors.js`):
 | `ForbiddenError` | 403 | `Forbidden` |
 | `NotFoundError` | 404 | `Not found` |
 | `ConflictError` | 409 | `Conflict` |
+| `UnprocessableEntityError` | 422 | `Unprocessable entity` |
+| `TooManyRequestsError` | 429 | `Too many requests` |
+| `InternalServerError` | 500 | `Internal server error` |
+| `BadGatewayError` | 502 | `Bad gateway` |
+| `ServiceUnavailableError` | 503 | `Service unavailable` |
 | `HttpError` | any | — (base class) |
+
+The 422, 429, 500, 502 and 503 classes are new in 5.7. Pass response headers in the details object, for example `new TooManyRequestsError({ message: "Slow down", headers: { "Retry-After": "30" } })`. A 5xx error is logged at `error` level.
 
 Every constructor accepts a message string, or a details object in place of it (see [Error codes and translated messages](#error-codes-and-translated-messages)). Every framework error response follows one contract, so clients can rely on it:
 
