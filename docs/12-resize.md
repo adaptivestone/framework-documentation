@@ -155,6 +155,8 @@ Previews inherit the namespace, so it appears in their public URLs: do not put a
 - `maxTotalFileSize`: all files of one request together. The parser checks it as the bytes arrive, and `maxFileSize` only when a file ends, so set both.
 - `maxFiles`: how many files one request may carry.
 
+For an app whose only multipart route takes one image:
+
 ```ts
 // src/config/http.ts: your file replaces the framework's, so spread its defaults
 import http from '@adaptivestone/framework/config/http.js';
@@ -170,7 +172,7 @@ export default {
 };
 ```
 
-The parser runs on every route, so these limits hold for all of them: choose values that fit your largest upload. They apply to `multipart/form-data`, so send images that way.
+The parser runs on every route, so these limits are global. When another route needs larger files, the larger limit wins: then the image handler checks `file.size` against `upload.maxBytes` before it reads the file. The limits apply to `multipart/form-data`, so send images that way.
 
 Save `original` exactly as returned, and do not change it later: every preview records a signature of its `storageRef` and size, so a changed ref regenerates that media's previews. Its `storageRef` is the storage driver's own locator: `{ path, visibility }` for local files, `{ bucket, key }` for S3. To put an object you already hold on the module, see [Adopting on an app with existing media](#adopting).
 
@@ -867,26 +869,23 @@ Keep your own record of skipped rows and leave them out of the next run, so a lo
 
 With `prewarm`, pass `queue: 'bulk'` to `resolve()` too for the rows the backfill adopted, until their tasks end. A read on `'default'` queues a second task for the same media, and both render everything: 6 media of 9 variants each gave 12 tasks, 108 new objects and 54 orphaned files, against 6 tasks, 54 objects and no orphans when reads used `'bulk'`. The cost is that a variant only a read asks for waits behind the backfill, with your old path serving that media until then. Keep `'default'` for media the backfill did not adopt: a new upload prewarmed on `'default'` and read on `'bulk'` renders twice the same way.
 
-**A migration that renders.** A migration that also calls `generate()` must be safe to run again after it stops. Decide what is done by the previews, not by the original: skip a media only when `isCatalogCovered()` holds. `hasOriginal()` is not enough, because a run that stopped after the adoption leaves an original with no previews.
+**A migration that renders.** A migration that also calls `generate()` must be safe to run again after it stops. So each run selects every media in scope. A filter such as `{ 'original.storageRef': null }` would skip media adopted before the stop, and they would keep an original with no previews. Adopt a media that has no original, then always call `generate()`. When every preview is already stored and fresh, it returns before it downloads anything.
 
 ```ts
-import { getResizer, hasOriginal, isCatalogCovered, type MediaLike } from '@adaptivestone/framework-module-resize';
+import { getResizer, hasOriginal, type MediaLike } from '@adaptivestone/framework-module-resize';
 
-for await (const doc of File.find(yourQuery).cursor()) {
+for await (const doc of File.find(yourScope).cursor()) { // every media in scope, adopted or not
   // Wrap each media in the same try/catch as the backfill loop above.
   if (!hasOriginal(doc)) {
     doc.original = await getResizer().adoptOriginal({ storageRef: refFromYourRecord(doc) });
     await doc.save();
   }
-  const media = doc as MediaLike;
-  // The sizes and formats you generate. For another Resizer or pipeline, add { resizer, pipeline }.
-  if (isCatalogCovered(media, CATALOG, FORMATS)) continue;
-  const { failed } = await getResizer().generate({ media, sizes: CATALOG, formats: FORMATS });
-  if (failed > 0) retryLater(doc); // not done: the next run renders only the missing variants
+  const { failed } = await getResizer().generate({ media: doc as MediaLike, sizes: CATALOG, formats: FORMATS });
+  if (failed > 0) retryLater(doc); // not done: the next run makes only the missing previews
 }
 ```
 
-`failed > 0` is a partial success: the previews made are stored, and the next run makes the rest. Do not record such a media as done. `isCatalogCovered()` counts an outdated preview as stored, so this loop leaves it; a `generate()` call without the check would replace it.
+`failed > 0` is a partial success: the previews made are stored. Treat it, and a throw with `retryable: true`, as "run again", and do not record the media as done.
 
 **What stays yours.** Old files, old fields, their removal, and the loop itself.
 
