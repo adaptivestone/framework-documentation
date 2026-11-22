@@ -84,13 +84,17 @@ NODE_ENV=production node src/index.ts
 The primary forks the configured workers and the callback executes only in
 those workers. An abnormal worker exit is restarted after a fixed safety delay;
 exceeding the framework's fixed rolling crash limit shuts down the cluster with
-a non-zero exit status. A clean worker exit is not restarted. Backoff, jitter,
+a non-zero exit status. A clean worker exit is not restarted; since 5.7 it is
+logged as a warning with the number of workers left. Backoff, jitter,
 and rolling-deployment policy belong to an external process supervisor and are
 deliberately not part of this API.
 
 On `SIGTERM` or `SIGINT`, the primary stops scheduling restarts and forwards the
 signal to every worker. Each framework server stops accepting requests and
-drains its open connections (see [Graceful shutdown](#graceful-shutdown)).
+drains its open connections (see [Graceful shutdown](#graceful-shutdown)),
+then finishes its `'shutdown'` teardown before it exits (since 5.7; before, a
+worker exited as soon as `'shutdown'` was emitted, cutting off closing Redis
+and Mongo and flushing the logger).
 Workers still alive after `shutdownTimeoutMs` are force-terminated and the
 primary exits non-zero.
 

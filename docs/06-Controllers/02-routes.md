@@ -561,7 +561,7 @@ request: z.object({
 });
 ```
 
-`req.appInfo.request.avatar` is a `File`; `req.appInfo.request.avatars` is `File[]`.
+`req.appInfo.request.avatar` is a `File`; `req.appInfo.request.avatars` is `File[]`. Since 5.7, the files of one field keep the order the client sent them in; before, they came in the order their uploads finished writing.
 
 The same `files` check works with the other validators:
 

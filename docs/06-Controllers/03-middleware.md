@@ -454,6 +454,8 @@ You can find the default parameters in ‘config/rateLimiter.js’. These parame
 
 The rate limiter has multiple backends, selected via the `driver` option (`'mongo'`, `'memory'`, or `'redis'`). The default is `'mongo'`. The `'redis'` backend lazy-loads `@redis/client`, which is an **optional peer dependency** — install it (`npm i @redis/client`) when you choose that driver; the `'memory'` and `'mongo'` backends never load it.
 
+An unreachable Redis does not stop limiting: the limiter counts in memory until Redis is back. A Redis limiter that cannot be built at all, because `@redis/client` is missing or `redis.url` (`REDIS_URI`) is not a valid `redis://` or `rediss://` URL, is a misconfiguration: the limiter logs an error on the first request through it, and its routes answer `500` until the config is fixed.
+
 ### RequestLogger
 
 ```js
