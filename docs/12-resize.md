@@ -155,7 +155,7 @@ Previews inherit the namespace, so it appears in their public URLs: do not put a
 - `maxTotalFileSize`: all files of one request together. The parser checks it as the bytes arrive, and `maxFileSize` only when a file ends, so set both.
 - `maxFiles`: how many files one request may carry.
 
-For an app whose only multipart route takes one image:
+The framework's default `maxFileSize`, 20 MiB, is already below `upload.maxBytes` (25 MiB by default). So an app whose only multipart route takes one image changes only `maxTotalFileSize` and `maxFiles`:
 
 ```ts
 // src/config/http.ts: your file replaces the framework's, so spread its defaults
@@ -164,8 +164,7 @@ import http from '@adaptivestone/framework/config/http.js';
 export default {
   ...http,
   requestParser: {
-    ...http.requestParser,
-    maxFileSize: 20 * 1024 * 1024, // at or below upload.maxBytes (25 MiB by default)
+    ...http.requestParser, // maxFileSize stays 20 MiB
     maxTotalFileSize: 20 * 1024 * 1024,
     maxFiles: 1,
   },
@@ -872,16 +871,21 @@ With `prewarm`, pass `queue: 'bulk'` to `resolve()` too for the rows the backfil
 **A migration that renders.** A migration that also calls `generate()` must be safe to run again after it stops. So each run selects every media in scope. A filter such as `{ 'original.storageRef': null }` would skip media adopted before the stop, and they would keep an original with no previews. Adopt a media that has no original, then always call `generate()`. When every preview is already stored and fresh, it returns before it downloads anything.
 
 ```ts
-import { getResizer, hasOriginal, type MediaLike } from '@adaptivestone/framework-module-resize';
+import { getResizer, hasOriginal, ResizeError, type MediaLike } from '@adaptivestone/framework-module-resize';
 
 for await (const doc of File.find(yourScope).cursor()) { // every media in scope, adopted or not
-  // Wrap each media in the same try/catch as the backfill loop above.
-  if (!hasOriginal(doc)) {
-    doc.original = await getResizer().adoptOriginal({ storageRef: refFromYourRecord(doc) });
-    await doc.save();
+  try {
+    if (!hasOriginal(doc)) {
+      doc.original = await getResizer().adoptOriginal({ storageRef: refFromYourRecord(doc) });
+      await doc.save();
+    }
+    const { failed } = await getResizer().generate({ media: doc as MediaLike, sizes: CATALOG, formats: FORMATS });
+    if (failed > 0) retryLater(doc); // not done: the next run makes only the missing previews
+  } catch (err) {
+    // One record's error never stops the loop.
+    if (ResizeError.isResizeError(err) && !err.retryable) logAndSkip(doc, err.code); // no run can help
+    else retryLater(doc); // run again
   }
-  const { failed } = await getResizer().generate({ media: doc as MediaLike, sizes: CATALOG, formats: FORMATS });
-  if (failed > 0) retryLater(doc); // not done: the next run makes only the missing previews
 }
 ```
 
