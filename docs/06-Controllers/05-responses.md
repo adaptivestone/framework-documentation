@@ -116,18 +116,25 @@ async export(req) {
 - The status and headers are sent together with the **first chunk**. An error before it is answered like any thrown error, through the [error-handler registry](04-error-handling.md) (usually a 500), and none of the stream's headers are sent. An error after it aborts the connection and is logged.
 - When the client disconnects, the framework stops reading at once, also while it waits for a chunk, and stops the source: a `ReadableStream` is cancelled, and an async generator's `finally` block runs (once its current step finishes).
 - A `HEAD` request gets the status and headers without a body; the source is stopped without being read.
+- Yield a new `Uint8Array` or `Buffer` for every chunk. Chunks are not copied, so a source that reuses one buffer corrupts the response.
 
 ## Web `Response` pass-through
 
 `HttpResponse.native(response)` sends a Web `Response` as it is: status, status text, headers and body. Framing headers the server sets itself (`connection`, `transfer-encoding`, …) are dropped. A body is sent like a stream, with the rules above. `Response.error()`, or a response whose body was already read, throws a `TypeError`.
 
-:::warning Proxying a `fetch()` response
-`fetch()` decompresses the body but keeps the upstream `content-encoding` and `content-length` headers. Remove them before returning the response, or clients receive a body that does not match its headers.
-:::
+`fetch()` decompresses a `gzip`, `deflate`, `br` or `zstd` body but keeps the upstream headers that describe the compressed bytes. For a fetched response with a body, a status other than 206 and only encodings `fetch` decoded (under Bun, a single one: Bun's `fetch` passes stacked encodings on undecoded), the framework drops `content-encoding`, `content-length` and the digest headers. Any other response is passed on as received, with its headers:
+
+```js
+async proxy(req) {
+  return HttpResponse.native(await fetch(`https://upstream.example/items/${req.appInfo.params.id}`));
+}
+```
+
+To forward the upstream bytes exactly as received (for example when you fetched with decoding turned off), pass a response you construct, which is never changed: `HttpResponse.native(new Response(upstream.body, upstream))`.
 
 ## Writing to `res` and returning a response
 
-A handler does one or the other. If it sends the response through `res` and also returns an `HttpResponse`, the framework logs an error and does not send the returned one. Headers set on `res` *without* sending the response (`res.setHeader(...)`) are kept and merged with the returned response.
+A handler does one or the other. If it sends the response through `res`, or pipes the stream it returns into `res`, and also returns an `HttpResponse`, the framework logs an error and does not send the returned one. Headers set on `res` *without* sending the response (`res.setHeader(...)`) are kept and merged with the returned response.
 
 ## Overriding built-in controllers
 
@@ -158,8 +165,8 @@ Overrides that write to `res` themselves keep working and keep compiling.
 - Do not wait for `res` to finish inside the override after the call: the response is sent only once the override returns, so that wait never completes.
 - A built-in handler used directly as an Express route handler, outside the framework's routes, no longer answers by itself.
 - The built-in handlers' return types now include `HttpResponse`, so an override annotated `Promise<Response>` that returns the built-in result no longer compiles. Widen the annotation or drop it.
-- The `Auth` answers without a body (register 201, verify and recover 200) no longer send `Content-Type: application/json`.
-- The built-in `Auth`, `Home` and `Health` answers, like every JSON response the framework builds (404, 405, 415, validation and body-parser errors, the 500), are sent as `application/json`. This replaces a `Content-Type` set on `res` earlier, for example by a middleware calling `res.type(...)`; before, they kept it. To send another media type on every response, set `contentType` in [`transformResponse`](#reshaping-every-response-transformresponse).
+- The `Auth` answers without a body (register 201, verify and recover 200) no longer send `Content-Type: application/json`, and an Express `json replacer` no longer sees them.
+- The built-in `Auth`, `Home` and `Health` answers, like every JSON response the framework builds (404, 405, 415, validation and body-parser errors, the 500), are sent as `application/json`. This replaces a `Content-Type` set on `res` earlier, for example by a middleware calling `res.type(...)`; before, they kept it. To send another media type on the responses it sees, set `contentType` in [`transformResponse`](#reshaping-every-response-transformresponse).
 
 :::
 

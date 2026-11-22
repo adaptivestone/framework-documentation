@@ -209,6 +209,7 @@ A `{ status, body }` result is now sent as a JSON response:
 - A result with a body sets its own `Content-Type`, replacing one set on `res` earlier.
 - A result with `body: undefined` no longer adds a `Content-Type` and no longer answers 304 to a conditional request, and a 304 result no longer gets an `ETag`.
 - A `Set-Cookie` in the result's `headers` is added to the cookies already on the response, and `Vary` is merged. Before, both replaced what was there.
+- A result without a body is sent without one, so an Express `json replacer` no longer sees it.
 
 :::
 
@@ -313,7 +314,7 @@ A handler you register logs each error it handles at `warn` by default. A reject
 
 If that handler throws, or returns a result that is not a valid response, the client gets the 500, not the validation 400.
 
-The body parser's errors go through the registry the same way: an oversized body is an `HttpError` 413 (`PAYLOAD_TOO_LARGE`) and a body that cannot be parsed an `HttpError` 400 (`MALFORMED_BODY`), so a handler for `HttpError` sees them. Their status and message are unchanged (the body gains its `error` code, see below).
+The body parser's errors go through the registry the same way: an oversized body is an `HttpError` 413 (`PAYLOAD_TOO_LARGE`) and a body that cannot be parsed an `HttpError` 400 (`MALFORMED_BODY`), so a handler for `HttpError` sees them. Their status and message are unchanged (the body gains its `error` code, see below). An Express error middleware that your app mounts itself (for example in `bootHttp`) receives these errors before the framework answers them.
 
 :::info Upgrading to 5.7.0
 
