@@ -149,6 +149,30 @@ Previews inherit the namespace, so it appears in their public URLs: do not put a
 
 `uploadOriginal()` detects the format and dimensions with its decoders (Sharp for raster images and SVG), then stores the bytes unchanged under a random name. It returns the value to save as `original`. It does not create the document or queue any work. Input larger than `upload.maxBytes` (25 MiB by default), or in a format not listed in `upload.formats`, throws `ResizeOriginalError`.
 
+**Limit the request before it reaches the module.** `uploadOriginal()` checks only the bytes you hand it. By then the framework's body parser has accepted the request and written each file to a temporary folder. Set the parser's limits in `src/config/http.ts`, under `requestParser` (see [RequestParser](06-Controllers/03-middleware.md#requestparser)):
+
+- `maxFileSize`: at or below `upload.maxBytes`, so a larger file gets the parser's `413` before your handler reads it.
+- `maxTotalFileSize`: all files of one request together. The parser checks it as the bytes arrive, and `maxFileSize` only when a file ends, so set both.
+- `maxFiles`: how many files one request may carry.
+
+The framework's default `maxFileSize`, 20 MiB, is already below `upload.maxBytes` (25 MiB by default). So an app whose only multipart route takes one image changes only `maxTotalFileSize` and `maxFiles`:
+
+```ts
+// src/config/http.ts: your file replaces the framework's, so spread its defaults
+import http from '@adaptivestone/framework/config/http.js';
+
+export default {
+  ...http,
+  requestParser: {
+    ...http.requestParser, // maxFileSize stays 20 MiB
+    maxTotalFileSize: 20 * 1024 * 1024,
+    maxFiles: 1,
+  },
+};
+```
+
+The parser runs on every route, so these limits are global. When another route needs larger files, the larger limit wins: then the image handler checks `file.size` against `upload.maxBytes` before it reads the file. The limits apply to `multipart/form-data`, so send images that way.
+
 Save `original` exactly as returned, and do not change it later: every preview records a signature of its `storageRef` and size, so a changed ref regenerates that media's previews. Its `storageRef` is the storage driver's own locator: `{ path, visibility }` for local files, `{ bucket, key }` for S3. To put an object you already hold on the module, see [Adopting on an app with existing media](#adopting).
 
 ### Serve local files {/* #serve-local-files */}
@@ -372,7 +396,7 @@ import '../resizer.ts';
 export { ResizeWorker as default } from '@adaptivestone/framework-module-resize/framework.js';
 ```
 
-Keep that import if you edit the command; `npx --no -- resize-scaffold --check` reports a command without it. The API and the worker must use the same database and the same storage. With `LocalFsStorage` that means the same filesystem; for workers on other machines, use S3 or other shared storage.
+Keep that import if you edit the command; `npx --no -- resize-scaffold --check` reports a command without it. To check something your steps need, such as a logo file, before the worker claims a task, extend the command: see [Checking a host precondition at worker start](https://github.com/adaptivestone/framework-module-resizer#checking-a-host-precondition-at-worker-start). The API and the worker must use the same database and the same storage. With `LocalFsStorage` that means the same filesystem; for workers on other machines, use S3 or other shared storage.
 
 ### Lazy and pre-warm
 
@@ -640,7 +664,7 @@ await getResizer().resolve({
 - **The time limit of a step.** A `rasterToSharp` chain in a `variantStep`, from a raster the module handed over or made from one through `sharpToRaster` (a raster read back from a `.clone()` has none), runs under `limits.processingTimeoutSeconds`: past it, only that variant fails. Each chain and the encode have their own limit, so the longest a variant holds a thread is (chains + 1) × the limit. The chain's own `.timeout({ seconds: 60 })` replaces the limit on that chain, and `.timeout({ seconds: 0 })` turns it off there. Nothing else in a step is bounded: Sharp work that does not go through `rasterToSharp`, such as `sharp(raster.data, { raw: raster.info })`, a fresh `sharp()`, a raster you spread into a new object or built yourself, any other code of yours, and `beforeSteps`. The limit does not cross a duplicate copy of the package: `rasterToSharp` from a second copy reads none, with no error, so dedupe. Unbounded work can starve other tasks and dead-letter healthy ones, because stuck Sharp calls hold libuv's threads. A worker's `taskTimeoutMs` ends the task but not its variants in progress: each keeps its thread and memory until it ends, and can still store its row. So a step slower than `taskTimeoutMs` still stores its row, and the next delivery finds it fresh and completes, if one is left. With none left, because the step outlasts them or `maxAttempts` is 1, the task ends dead with its row stored, as on 0.3.0. Such a late write can also replace a newer row; the next read finds that row stale and queues it again. `generate()` has no such bound.
 - **A filter such as `{ blur: 40 }` does nothing by itself.** Your `variantSteps` give it meaning.
 - **`ctx` does not reach the worker.** Queued tasks carry only the pipeline name and the variants, and steps in the worker receive `ctx === {}`. Keep any data a step needs on the media document. Only eager `generate()` passes your `ctx` to the steps.
-- **Each pipeline keeps its own previews.** A preview is identified by Resizer, pipeline, size, format and filters. Changing a pipeline's code does not regenerate existing previews; give the pipeline a new name, such as `photo-v2`, to do that, or remove its stored previews with [`invalidate()`](#operations). A pipeline may also set `version`, a string that is part of each preview's `encodeSig`: bump it when a step's output changes, and the pipeline's stored previews are regenerated on their next read (see [outdated previews](#operations)). Deploy the change to every worker at once.
+- **Each pipeline keeps its own previews.** A preview is identified by Resizer, pipeline, size, format and filters. Changing a pipeline's code does not regenerate existing previews; give the pipeline a new name, such as `photo-v2`, to do that, or remove its stored previews with [`invalidate()`](#operations). A pipeline may also set `version`, a string that is part of each preview's `encodeSig`: bump it when a step's output changes, and the pipeline's stored previews are regenerated on their next read (see [outdated previews](#operations)). Deploy the change to every worker at once. When the old previews must stop being served, such as after adding a blur, rename the pipeline instead: see [Changing what a pipeline removes](https://github.com/adaptivestone/framework-module-resizer#changing-what-a-pipeline-removes).
 - **Register a pipeline before you request it, in every process.** A name the Resizer doesn't know (any name but `default`) is never rendered: `resolve()` serves only previews already stored for it and queues nothing, `prewarm()` reports `RESIZE_PIPELINE_UNKNOWN`, and `generate()` and the worker throw it. When you add or rename a pipeline, deploy the worker before the API starts requesting it: a worker without the pipeline fails its tasks, retries them with backoff, and dead-letters them after the queue's `maxAttempts`. The worker itself needs the indexes first ([step 4](#add-the-queue-and-the-worker)), so create them through a migration that runs before both.
 - **Pipelines are fixed at construction.** Pass every pipeline in `pipelines`; `getResizer().hasPipeline(name)` tells whether one is registered.
 
@@ -843,6 +867,29 @@ for await (const doc of File.find({ 'original.storageRef': null }).cursor()) {
 Keep your own record of skipped rows and leave them out of the next run, so a lost file cannot loop for ever. A relative root resolves from the working directory, and `verify()` passes on a wrong one because a fresh host's root does not exist yet, so when most rows report not found, stop and check it. `{ original: { $exists: false } }` is the wrong filter: saving a new document writes `original: {}`. Run it in a script with bounded concurrency, not in the API: each call holds the object in memory, as above, up to `limits.sourceBytes`. Then let reads queue lazily, or `prewarm({ queue: 'bulk' })` with its own worker. Read `prewarm()`'s result: when reads share the queue, a task a read queued can hold fewer variants. On the database queue the rest come back in `unconfirmed` with `RESIZE_TASK_IN_FLIGHT`; on SQS, which gates with a lock, every variant it would queue does, with `RESIZE_ENQUEUE_LOCK_CONTENDED`. Branch on the issue's `retryable`, not on its code: when it is `true`, call `prewarm()` again after that task ends. A `bulk` queue with no worker is silent: `prewarm()` reports `accepted`, the tasks stay `pending` and nothing logs it, so start the worker first. Plan capacity: each media costs a download and a render per variant.
 
 With `prewarm`, pass `queue: 'bulk'` to `resolve()` too for the rows the backfill adopted, until their tasks end. A read on `'default'` queues a second task for the same media, and both render everything: 6 media of 9 variants each gave 12 tasks, 108 new objects and 54 orphaned files, against 6 tasks, 54 objects and no orphans when reads used `'bulk'`. The cost is that a variant only a read asks for waits behind the backfill, with your old path serving that media until then. Keep `'default'` for media the backfill did not adopt: a new upload prewarmed on `'default'` and read on `'bulk'` renders twice the same way.
+
+**A migration that renders.** A migration that also calls `generate()` must be safe to run again after it stops. So each run selects every media in scope. A filter such as `{ 'original.storageRef': null }` would skip media adopted before the stop, and they would keep an original with no previews. Adopt a media that has no original, then always call `generate()`. When every preview is already stored and fresh, it returns before it downloads anything.
+
+```ts
+import { getResizer, hasOriginal, ResizeError, type MediaLike } from '@adaptivestone/framework-module-resize';
+
+for await (const doc of File.find(yourScope).cursor()) { // every media in scope, adopted or not
+  try {
+    if (!hasOriginal(doc)) {
+      doc.original = await getResizer().adoptOriginal({ storageRef: refFromYourRecord(doc) });
+      await doc.save();
+    }
+    const { failed } = await getResizer().generate({ media: doc as MediaLike, sizes: CATALOG, formats: FORMATS });
+    if (failed > 0) retryLater(doc); // not done: the next run makes only the missing previews
+  } catch (err) {
+    // One record's error never stops the loop.
+    if (ResizeError.isResizeError(err) && !err.retryable) logAndSkip(doc, err.code); // no run can help
+    else retryLater(doc); // run again
+  }
+}
+```
+
+`failed > 0` is a partial success: the previews made are stored. Treat it, and a throw with `retryable: true`, as "run again", and do not record the media as done.
 
 **What stays yours.** Old files, old fields, their removal, and the loop itself.
 
@@ -1052,9 +1099,11 @@ describe('uploads', () => { // inside a describe: these hooks run before the fra
 
 Reload the document after the worker runs. The one you hold has no rows, so a read of it reports the variants as missing and queues another task, which renders nothing.
 
-`taskDone` also returns a dead task, so assert its `status`: a source the worker refuses shows there, not as a timeout. Because `updateConfig` replaces the whole `storage` section, a scaffolded `privateRootDir` is gone, and private originals go to `<rootDir>-private`, which `after` removes. With strict types, run `npm run gen` first so that `getModel` knows your models.
+`taskDone` also returns a dead task, so assert its `status`: a source the worker refuses shows there, not as a timeout. Why a test waits on the task and not on the previews, and how to wait on SQS: see [Waiting for a task in tests and monitors](https://github.com/adaptivestone/framework-module-resizer#waiting-for-a-task-in-tests-and-monitors). Because `updateConfig` replaces the whole `storage` section, a scaffolded `privateRootDir` is gone, and private originals go to `<rootDir>-private`, which `after` removes. With strict types, run `npm run gen` first so that `getModel` knows your models.
 
 An eager host needs only the `updateConfig` line, with `ensureTestServerReady()` before it and the temporary folders: no indexes, no worker and no `taskDone`, since `generate()` has stored the previews when it returns.
+
+A test runner that evaluates `src/resizer.ts` twice in one process gets `RESIZE_DUPLICATE_RESIZER` from the second construction: see [Tests that evaluate `src/resizer.ts` twice](https://github.com/adaptivestone/framework-module-resizer#tests-that-evaluate-srcresizerts-twice).
 
 ## Metrics {/* #metrics */}
 
@@ -1121,7 +1170,7 @@ A custom sink extends `ResizeMetrics` with `count(name, value, labels, context)`
 
   Only an omitted `pipeline` means every pipeline. It also removes the rows from `fileDoc.previews`, so a `resolve()` in the same request does not serve them. It takes no lock: a task running for that media can still store previews after it returns. Reload the media before saving it after `generate()` or `invalidate()`; the module wrote the rows itself. Rows without an `identity` (written before 0.3.0) are never removed: delete their files yourself.
 - **Throughput.** A worker processes one task at a time from each backend and queue it consumes, and `concurrency` parallelizes the variants within it. For more throughput, run more worker processes.
-- **Shutdown.** On SIGTERM or SIGINT the worker stops claiming tasks, lets the variants in progress finish and saves them, and puts the task back in the queue without an `onTaskFailed` event or a retry delay; the next worker makes the rest. A task that failed with a non-retryable error, such as a missing original, is still dead-lettered. With the database queue this does not count as an attempt; with SQS it does. Custom queues: see the `release` method in the [package reference](https://github.com/adaptivestone/framework-module-resizer#drivers).
+- **Shutdown.** On SIGTERM or SIGINT the worker stops claiming tasks, lets the variants in progress finish and saves them, and puts the task back in the queue without an `onTaskFailed` event or a retry delay; the next worker makes the rest. A task that failed with a non-retryable error, such as a missing original, is still dead-lettered. With the database queue this does not count as an attempt; with SQS it does. Custom queues: see the `release` method in the [package reference](https://github.com/adaptivestone/framework-module-resizer#drivers). How long a stop can take, what a SIGKILL costs, and how to set a container's stop timeout: see [Stopping a worker](https://github.com/adaptivestone/framework-module-resizer#stopping-a-worker).
 
 `npm run cli ResizeWorker` prints a start error as its stack: the message, not the code, so find its row by the message's words.
 
