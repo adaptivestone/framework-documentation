@@ -101,6 +101,17 @@ const sampleConfig = this.app.updateConfig("sample", {
 });
 ```
 
+`updateConfig` is shallow: it runs `Object.assign` on the cached config, so each key you pass replaces the old value. A nested object is replaced whole, not merged: `updateConfig("rateLimiter", { limiterOptions: { points: 2 } })` drops `limiterOptions.duration`. Pass the full nested object instead:
+
+```js
+const { limiterOptions } = this.app.getConfig("rateLimiter");
+this.app.updateConfig("rateLimiter", {
+  limiterOptions: { ...limiterOptions, points: 2 },
+});
+```
+
+The cached config changes in place, so later `getConfig` calls see the new values. Code that already read the config keeps what it read, for example a middleware that read it in its constructor: middleware instances are built on the first request and then reused.
+
 ## Typed config
 
 The base `getConfig(name)` signature is `Record<string, unknown>`, but the

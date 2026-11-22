@@ -333,7 +333,7 @@ Upgrading resets existing rate-limit counters. Complete the rollout across worke
           [
             RateLimiter,
             {
-              consumeKeyComponents: { ip: false },
+              // key: IP + route (+ user id when logged in)
               limiterOptions: { points: 5 },
             },
           ],
@@ -342,6 +342,14 @@ Upgrading resets existing rate-limit counters. Complete the rollout across worke
     ]);
   }
 ```
+
+Keep `ip` in the key on routes that logged-out callers use, such as login. With `ip: false`, a request that has none of the enabled identities (no user and none of the `request` fields) is keyed by the route alone, so all such requests share one bucket. On a login route that is every logged-out caller: anyone can use up the budget and lock everyone else out. Disable `ip` only where every request has an identity, for example after `Auth`, which rejects callers without a user. A mount with every identity disabled (`ip`, `user` and `request`) is an intended per-route budget.
+
+:::info Upgrading to 5.7.0
+
+With `ip` disabled, the limiter now logs a warning naming the route when a request with none of the enabled identities shares the route's bucket. It warns once per mount. Keys are unchanged. If you see the warning, enable `ip` in `consumeKeyComponents`.
+
+:::
 
 You can include request body fields in the key. The limiter runs before validation, so it reads the raw `req.body`, not `req.appInfo.request`. Each value is Unicode-normalized (NFKC), trimmed and lowercased, so `Foo@x.com`, ` foo@x.com` and `FOO@x.com` share one budget; blank values and objects/arrays are ignored. Field names and values are hashed into the key, so e-mails never appear in stored keys or logs.
 
@@ -356,7 +364,8 @@ Request-keyed limiters re-key on upgrade, which resets their counters. If you ad
     return new Map([
       ['POST/login', [
         GetUserByToken,
-        [RateLimiter,{consumeKeyComponents: { ip: false, request:['email','phone'] }}]
+        // key: IP + route (+ user id when logged in) + email/phone
+        [RateLimiter, { consumeKeyComponents: { request: ['email', 'phone'] } }]
       ]]
     ]);
 }
@@ -445,6 +454,8 @@ You can find the default parameters in ‘config/rateLimiter.js’. These parame
 
 The rate limiter has multiple backends, selected via the `driver` option (`'mongo'`, `'memory'`, or `'redis'`). The default is `'mongo'`. The `'redis'` backend lazy-loads `@redis/client`, which is an **optional peer dependency** — install it (`npm i @redis/client`) when you choose that driver; the `'memory'` and `'mongo'` backends never load it.
 
+An unreachable Redis does not stop limiting: the limiter counts in memory until Redis is back. A Redis limiter that cannot be built at all, because `@redis/client` is missing or `redis.url` (`REDIS_URI`) is not a valid `redis://` or `rediss://` URL, is a misconfiguration: the limiter logs an error on the first request through it, and its routes answer `500` until the config is fixed.
+
 ### RequestLogger
 
 ```js
@@ -474,7 +485,15 @@ This is the main middleware to parse requests (`application/json` and any `+json
 It is based on the [formidable](https://www.npmjs.com/package/formidable) package.
 After parsing, the data is available in `req.body`.
 
-A body over the size or count limits (`requestParser` in `config/http.ts`) gets a `413` response. For a non-multipart body over `maxFieldsSize` — declared or streamed — the connection is closed after the `413` instead of reading the rest of the body.
+A body over the size or count limits (`requestParser` in `config/http.ts`) gets a `413` response. An `application/octet-stream` body is one file, so `maxFileSize` bounds it (or `maxTotalFileSize`, if lower); any other non-multipart body is bounded by `maxFieldsSize`. For such a body over its limit, declared or streamed, the connection is closed after the `413` instead of reading the rest of the body.
+
+:::info Upgrading to 5.7.0
+
+5.6.1 accepted an `application/octet-stream` body of any size. Since 5.7.0 one above `maxFileSize` (20 MB by default) gets the `413`. To accept larger bodies, raise `maxFileSize` and `maxTotalFileSize` in your `config/http.ts`.
+
+:::
+
+The `413` carries `error: "PAYLOAD_TOO_LARGE"`, and a body that cannot be parsed gets a `400` with `error: "MALFORMED_BODY"`. Since 5.7 both go through the [error-handler registry](04-error-handling.md#request-validation-errors), so a handler registered for `HttpError` can reshape them.
 
 #### Other media types
 

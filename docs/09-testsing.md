@@ -75,6 +75,10 @@ that wiring at all — an error handler registered in `bootHttp` does not exist,
 so a request that returns 409 in production returns 500 under test, with nothing
 reporting the difference.
 
+Pass a [`transformResponse`](06-Controllers/05-responses.md#reshaping-every-response-transformresponse)
+the same way (`configureTestServer({ bootHttp, transformResponse })`), or your
+tests see different bodies from production.
+
 `folders` is not accepted here; the bootstrap owns those (see the
 `TEST_FOLDER_*` variables below). Call `configureTestServer` at module scope,
 before any hook boots the server — calling it afterwards throws, because a late
@@ -397,6 +401,12 @@ it('rejects an invalid request', async () => {
 });
 ```
 
+The error bodies listed under
+[Error codes of framework responses](06-Controllers/04-error-handling.md#error-codes-of-framework-responses)
+carry a stable `error` code, such as `VALIDATION_FAILED` or `NOT_FOUND`.
+Assert on it, not on the translated `message`. Since 5.7 every body listed
+there has the field, so a test that compares a whole error body needs it.
+
 Do not catch and discard `fetch()` errors in tests. A rejected request should
 fail the test and preserve the original error.
 
@@ -443,6 +453,29 @@ import {
 - `serverInstance` exposes the current test server.
 - `createDefaultTestUser()` creates the framework's default User and token.
 - `setDefaultUser()` and `setDefaultAuthToken()` support custom User models.
+
+## Where tests differ from production
+
+The test server does not run exactly like production. Keep these differences in
+mind:
+
+- **The rate limiter uses the memory driver.** The test setup sets
+  `driver: 'memory'` in the `rateLimiter` config, replacing your own driver.
+  The counters live in the test process: they start empty in each test file
+  and carry over between the tests of one file.
+- **Mongoose `autoIndex` is off.** The indexes your models declare, unique ones
+  included, are not created, so a duplicate insert succeeds instead of failing
+  with `E11000`. A test that relies on a unique index must create it first, for
+  example `await appInstance.getModel('Person').createIndexes()`.
+- **`updateConfig` is shallow.** It runs `Object.assign` on the cached config,
+  so a nested object you pass replaces the old one whole:
+  `updateConfig('rateLimiter', { limiterOptions: { points: 2 } })` drops
+  `duration`. Pass the full nested object. See
+  [Configs › API](02-configs.md#api).
+- **Middleware instances are built on the first request and then reused.** A
+  middleware that reads config in its constructor, as `RateLimiter` does, keeps
+  what it read. An `updateConfig` after the first request through that
+  middleware does not reach it, so change the config before that request.
 
 ## MongoDB and Docker
 

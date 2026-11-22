@@ -88,13 +88,26 @@ A vendor-neutral type for files uploaded via `multipart/form-data`. It aliases t
 import { File } from "@adaptivestone/framework/types.js";
 import { z } from "zod";
 
+const files = (v: unknown) => Array.isArray(v) && v.every((f) => f instanceof File);
+
 request: z.object({
-  avatar: z.array(z.instanceof(File)).length(1).transform(([f]) => f), // one file  -> File
-  avatars: z.array(z.instanceof(File)),                                // many files -> File[]
+  avatar: z
+    .custom<File[]>(files, "not a file")
+    .refine((a) => a.length === 1, "send one file")
+    .transform(([f]) => f),                       // one file   -> File
+  avatars: z.custom<File[]>(files, "not a file"), // many files -> File[]
 });
 ```
 
-`File` is exported as both a value (for `instanceof`) and a type. Every multipart field arrives as an array, so declare cardinality with your validator's array support. See [Routes → File Validation](./06-Controllers/02-routes.md#file-validation).
+`File` is exported as both a value (for `instanceof`) and a type. A file field always arrives as an array (one file is a one-element array). Check the array as a whole, as `files` does, so an error stays under the field name; a check on each element reports `avatar[0]`. The same check works with other validators: valibot `v.custom<File[]>(files, "not a file")`, yup `mixed<File[]>().test("file", "not a file", files)`. A missing field fails it; for an optional field, let `files` also accept `undefined`. See [Routes → File Validation](./06-Controllers/02-routes.md#file-validation).
+
+As a type, `File` has the upload fields a handler reads: `filepath`, `mimetype`, `originalFilename` and `size`.
+
+:::info Upgrading to 5.7.0
+
+Before, a `File` annotation resolved to the global web `File`. It now types an upload. Code that read web `File` members from it, which were never there at runtime, no longer compiles.
+
+:::
 
 :::warning Deprecated: `YupFile`
 The older yup-specific `YupFile` helper (`@adaptivestone/framework/helpers/yup.js`) is **deprecated and will be removed in v6** — it now emits a runtime `DeprecationWarning` (escalate it to a thrown error with Node's `--throw-deprecation`). Migrate to the `File` export above; it works with any validator and needs no yup.
@@ -139,3 +152,21 @@ const sent = req.headers["x-api-key"];
 // Require a configured key: two empty strings are equal too.
 const valid = !!apiKey && typeof sent === "string" && timingSafeEqualStrings(sent, apiKey);
 ```
+
+## Password policy (`passwordPolicyIssues`)
+
+Since 5.7, your own password endpoints (settings, admin reset, invite acceptance) can apply the policy that the built-in registration and password reset use: `auth.passwordPolicy` (15–128 Unicode code points by default), with the same translated messages.
+
+```ts
+import { passwordPolicyIssues } from "@adaptivestone/framework/helpers/passwordPolicy.js";
+import { BadRequestError } from "@adaptivestone/framework/services/http/httpErrors.js";
+
+const issues = passwordPolicyIssues(req.appInfo.request.newPassword, "newPassword");
+if (issues.length) {
+  throw new BadRequestError({ code: "VALIDATION_FAILED", message: "Validation failed", errors: issues });
+}
+// → 400 {"error": "VALIDATION_FAILED", "message": "Validation failed",
+//        "errors": {"newPassword": ["Password must be at least 15 characters"]}}
+```
+
+It returns an empty list for a password that fits the policy, and otherwise the issues under the field you name (`password` by default), with the `auth.passwordProvided`, `auth.passwordTooShort` or `auth.passwordTooLong` key. An invalid `auth.passwordPolicy` throws, as it does for the built-in endpoints.
