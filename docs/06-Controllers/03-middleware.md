@@ -333,7 +333,7 @@ Upgrading resets existing rate-limit counters. Complete the rollout across worke
           [
             RateLimiter,
             {
-              consumeKeyComponents: { ip: false },
+              // key: IP + route (+ user id when logged in)
               limiterOptions: { points: 5 },
             },
           ],
@@ -342,6 +342,14 @@ Upgrading resets existing rate-limit counters. Complete the rollout across worke
     ]);
   }
 ```
+
+Keep `ip` in the key on routes that logged-out callers use, such as login. With `ip: false`, a request that has none of the enabled identities (no user and none of the `request` fields) is keyed by the route alone, so all such requests share one bucket. On a login route that is every logged-out caller: anyone can use up the budget and lock everyone else out. Disable `ip` only where every request has an identity, for example after `Auth`, which rejects callers without a user. A mount with every identity disabled (`ip`, `user` and `request`) is an intended per-route budget.
+
+:::info Upgrading to 5.7.0
+
+With `ip` disabled, the limiter now logs a warning naming the route when a request with none of the enabled identities shares the route's bucket. It warns once per mount. Keys are unchanged. If you see the warning, enable `ip` in `consumeKeyComponents`.
+
+:::
 
 You can include request body fields in the key. The limiter runs before validation, so it reads the raw `req.body`, not `req.appInfo.request`. Each value is Unicode-normalized (NFKC), trimmed and lowercased, so `Foo@x.com`, ` foo@x.com` and `FOO@x.com` share one budget; blank values and objects/arrays are ignored. Field names and values are hashed into the key, so e-mails never appear in stored keys or logs.
 
@@ -356,7 +364,8 @@ Request-keyed limiters re-key on upgrade, which resets their counters. If you ad
     return new Map([
       ['POST/login', [
         GetUserByToken,
-        [RateLimiter,{consumeKeyComponents: { ip: false, request:['email','phone'] }}]
+        // key: IP + route (+ user id when logged in) + email/phone
+        [RateLimiter, { consumeKeyComponents: { request: ['email', 'phone'] } }]
       ]]
     ]);
 }

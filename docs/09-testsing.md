@@ -454,6 +454,29 @@ import {
 - `createDefaultTestUser()` creates the framework's default User and token.
 - `setDefaultUser()` and `setDefaultAuthToken()` support custom User models.
 
+## Where tests differ from production
+
+The test server does not run exactly like production. Keep these differences in
+mind:
+
+- **The rate limiter uses the memory driver.** The test setup sets
+  `driver: 'memory'` in the `rateLimiter` config, replacing your own driver.
+  The counters live in the test process: they start empty in each test file
+  and carry over between the tests of one file.
+- **Mongoose `autoIndex` is off.** The indexes your models declare, unique ones
+  included, are not created, so a duplicate insert succeeds instead of failing
+  with `E11000`. A test that relies on a unique index must create it first, for
+  example `await appInstance.getModel('Person').createIndexes()`.
+- **`updateConfig` is shallow.** It runs `Object.assign` on the cached config,
+  so a nested object you pass replaces the old one whole:
+  `updateConfig('rateLimiter', { limiterOptions: { points: 2 } })` drops
+  `duration`. Pass the full nested object. See
+  [Configs › API](02-configs.md#api).
+- **Middleware instances are built on the first request and then reused.** A
+  middleware that reads config in its constructor, as `RateLimiter` does, keeps
+  what it read. An `updateConfig` after the first request through that
+  middleware does not reach it, so change the config before that request.
+
 ## MongoDB and Docker
 
 The global setup uses `MongoMemoryReplSet` with one `wiredTiger` member. Each

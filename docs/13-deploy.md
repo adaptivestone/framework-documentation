@@ -90,8 +90,9 @@ deliberately not part of this API.
 
 On `SIGTERM` or `SIGINT`, the primary stops scheduling restarts and forwards the
 signal to every worker. Each framework server stops accepting requests and
-drains its open connections. Workers still alive after `shutdownTimeoutMs` are
-force-terminated and the primary exits non-zero.
+drains its open connections (see [Graceful shutdown](#graceful-shutdown)).
+Workers still alive after `shutdownTimeoutMs` are force-terminated and the
+primary exits non-zero.
 
 `workers: 'auto'` uses Node's available parallelism. A positive integer pins
 the worker count. Early lifecycle messages use `console` by default. Pass an
@@ -106,6 +107,63 @@ events to an observability provider before the application itself exists.
 | systemd | `src/server.ts` | systemd/unit replicas |
 | PM2 fork or cluster mode | `src/server.ts` | PM2 |
 | Standalone multi-core host | `src/index.ts` with `runCluster()` | Framework cluster primary |
+
+## Graceful shutdown
+
+On `SIGTERM` or `SIGINT`, a server started with `startServer()` shuts down in
+this order:
+
+1. **Stop accepting.** The server stops accepting new connections and closes
+   idle keep-alive connections. Requests in flight and long-lived connections,
+   such as WebSockets, stay open.
+2. **`'beforeShutdown'`** (since 5.7). The framework calls the
+   `app.events.on('beforeShutdown', …)` listeners the way `emit` does: with no
+   arguments, with `app.events` as `this`, and with a `once` listener removed.
+   It waits for them, async ones included, for at most 3 seconds. A listener
+   that throws or rejects is logged and does not stop the shutdown.
+3. **HTTP drain.** The server waits for in-flight requests and the remaining
+   connections to finish.
+4. **`'shutdown'`.** The framework's listeners close the Mongo and Redis
+   connections and the logger. The process then exits with code 0 once nothing else keeps it
+   running.
+
+If the process is still running 10 seconds after the signal, it is forced to
+exit with code 1.
+
+Close WebSocket and other long-lived connections (such as server-sent events)
+in `'beforeShutdown'`. They are not idle, so the drain waits for them until the
+10-second forced exit, and `'shutdown'` never runs. New connections are already
+refused while the listener runs, so a client that reconnects cannot slip in and
+hold the drain open. For example, with the `ws` package attached in
+[`bootHttp`](06-Controllers/01-intro.md#project-boot-hook-boothttp):
+
+```ts title="src/server.ts"
+import Server from '@adaptivestone/framework/server.js';
+import { WebSocketServer } from 'ws';
+import folderConfig from './folderConfig.ts';
+
+const server = new Server({
+  ...folderConfig,
+  bootHttp: async (app) => {
+    if (!app.httpServer) {
+      throw new Error('bootHttp ran without a live httpServer');
+    }
+    const wss = new WebSocketServer({ server: app.httpServer.httpServer });
+
+    app.events.on('beforeShutdown', async () => {
+      for (const socket of wss.clients) {
+        socket.close(1001, 'Server is shutting down'); // 1001: going away
+      }
+      // Give clients a second to answer (the limit is 3 s), then drop the rest.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      for (const socket of wss.clients) {
+        socket.terminate();
+      }
+    });
+  },
+});
+await server.startServer();
+```
 
 ## Health checks
 

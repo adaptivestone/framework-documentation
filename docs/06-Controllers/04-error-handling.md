@@ -4,7 +4,7 @@ What happens when a route handler or a middleware throws? The framework resolves
 
 1. **Your registered handlers** — checked first, in registration order.
 2. **Built-ins** — the `HttpError` mapper, the Mongoose validation safety net, then the Mongoose cast safety net.
-3. **Fallback** — nothing matched: the error is logged at `error` level and the client gets `500 {"error": "SERVER_ERROR", "message": "Something went wrong. Please try again later."}`. Every framework 500 except the rate limiter's misconfiguration 500 uses this one text, translatable through the `http.serverError` key.
+3. **Fallback** — nothing matched: the error is logged at `error` level and the client gets `500 {"error": "SERVER_ERROR", "message": "Something went wrong. Please try again later."}`. Every framework 500 except the rate limiter's misconfiguration 500 uses this one text, translatable through the `http.serverError` key. The exception is a route schema (`params:`, `request:` or `query:`) that rejects the input: it gets the [validation 400](#request-validation-errors) and is not logged. A `ValidationError` thrown from a route handler or a middleware gets the 500 (see [Field errors from a route handler](#field-errors-from-a-route-handler)).
 
 The first entry whose error class matches (`instanceof`) and whose handler returns a response wins. That gives you two tools: **throw** typed HTTP errors from your own code, and **register** handlers for error types you don't own.
 
@@ -147,14 +147,22 @@ export class PaymentRequiredError extends HttpError {
 }
 ```
 
-Thrown `HttpError`s are logged at `verbose` level — they're deliberate control flow, not defects, so they don't pollute your error logs.
+A thrown `HttpError` with a status below 500 is logged at `verbose` level: it is deliberate control flow, not a defect, so it stays out of your error logs. One with a 5xx status (for example a 502 for a failed upstream) is a server failure, so it is logged at `error` and reaches your production logs and Sentry.
+
+:::info Upgrading to 5.7.0
+
+Before, every thrown `HttpError` was logged at `verbose`. A 5xx one is now logged at `error`. Other statuses stay at `verbose`.
+
+:::
 
 ## Mapping errors you don't own
 
 Libraries throw their own error types — the Mongo driver, payment SDKs, queue clients. Register a handler for the class, typically from the [`bootHttp` hook](01-intro.md#project-boot-hook-boothttp) (the `Server` constructor option that runs with the live app):
 
 ```js
-import { MongoServerError } from "mongodb";
+import mongoose from "mongoose";
+
+const { MongoServerError } = mongoose.mongo;
 
 const server = new Server({
   ...folderConfig,
@@ -170,6 +178,8 @@ const server = new Server({
   },
 });
 ```
+
+Take `MongoServerError` from `mongoose.mongo`, the driver copy mongoose uses. Don't import it from `mongodb`: the framework depends on mongoose, not on `mongodb`, and a separately installed `mongodb` copy has its own class. Then `instanceof` never matches, and the handler silently never runs.
 
 :::tip Register them in tests too
 The framework builds its own server for tests and does not read your `Server`
@@ -228,6 +238,7 @@ import type { ErrorHandlerFn, ErrorHandlerResult } from "@adaptivestone/framewor
 //        request: object({ title: string().required() })
 //        query:   object({ notify: string() })
 // Model: title has a unique index per project → E11000 on duplicates.
+// MongoServerError comes from mongoose.mongo, as above.
 
 app.httpServer?.registerErrorHandler(MongoServerError, (err, req) => {
   if (err.code !== 11000) {
@@ -336,6 +347,31 @@ The `HttpError` check also keeps the answers for the HTTP errors your own code t
 
 :::
 
+### Field errors from a route handler
+
+A schema cannot check everything, for example whether a name is already taken. To report client field errors from a route handler, throw `BadRequestError` with `errors` (see [Throwing HTTP errors](#throwing-http-errors-from-your-code)):
+
+```js
+import { BadRequestError } from "@adaptivestone/framework/services/http/httpErrors.js";
+
+async create(req, res) {
+  const { name } = req.appInfo.request;
+  if (await this.app.getModel("Team").exists({ name })) {
+    throw new BadRequestError({
+      code: "VALIDATION_FAILED", // the schema 400's code, so clients handle both alike
+      message: "Validation failed",
+      errors: { name: "Name is already taken" },
+    });
+    // → 400 {"error": "VALIDATION_FAILED", "message": "Validation failed", "errors": {"name": ["Name is already taken"]}}
+  }
+  // …
+}
+```
+
+Field messages that are i18n keys are translated. It is an `HttpError`, so a handler registered for `HttpError` sees it, not one for `ValidationError`.
+
+Don't throw a framework `ValidationError` from a handler for this. It is treated as a server error: the client gets the 500, and the error is logged at `error` level. A handler may be validating its own data, for example a stored record or a reply from another service, and those field errors must not reach the client. The same applies to a `ValidationError` thrown from a middleware. It still goes through the registry first, so a handler registered for `ValidationError` can reshape it. That handler then receives both: schema rejections and the `ValidationError`s your code throws.
+
 ## Error codes of framework responses
 
 Each error response in the table below carries an `error` code, so a client can branch on it instead of the translated `message`:
@@ -417,7 +453,7 @@ This is a floor, not a design. Declaring a [`params:` schema](02-routes.md#param
 
 ## What still becomes a 500
 
-- Any error no registry entry claims (including `null` returns all the way down).
+- Any error no registry entry claims (including `null` returns all the way down). This includes a framework `ValidationError` thrown from a route handler or a middleware. Only a route schema that rejects the input gets the validation 400.
 - A registry handler that throws while handling, or returns a result that is not a valid response. This includes a handler for `ValidationError`: the client gets the 500, not the validation 400.
 - Mongoose validation failures on internal/renamed fields (see above).
 - Mongoose cast failures on server-computed values (see above).

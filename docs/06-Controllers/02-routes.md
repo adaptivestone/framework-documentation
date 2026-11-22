@@ -262,6 +262,8 @@ request: yup.object().shape({
 
 For Yup schemas, the framework automatically strips unknown fields (security-relevant when handlers spread `req.appInfo.request` into model creates). You don't need `.noUnknown()` — the framework calls `cast(data, { stripUnknown: true })` for you.
 
+Since 5.7, a list or object sent to a `string().trim()` field (for example a form field sent twice) answers the validation 400; before, it was a 500. The same goes for `.lowercase()` and `.uppercase()`.
+
 ### Zod example
 
 ```js
@@ -391,7 +393,28 @@ class Crud extends AbstractController {
 }
 ```
 
-If a `routes` getter isn't a static literal, codegen can't analyze it and **`npm run gen` fails** (declarative-only — there is no constructor fallback). Move the dynamic part into handlers or a module-level constant so the returned shape stays literal.
+If a `routes` getter isn't a static literal, codegen can't analyze it: it **skips that controller with a warning** (declarative-only — there is no constructor fallback). The controller still works at runtime, but its handlers get no generated request types, and a gen file it already had is no longer updated (codegen logs an error naming the file). Move the dynamic part into handlers or a module-level constant so the returned shape stays literal.
+
+Don't annotate the getter's return type either. An annotation such as `get routes(): RouteParams` can widen the route shapes, and then the generated request types of that controller fail to compile. Since 5.7 codegen warns when an annotated getter declares a `request:`, `query:` or `params:` schema. To check the shape, put `satisfies RouteParams` on the returned object instead:
+
+```ts
+import AbstractController, {
+  type RouteParams,
+} from "@adaptivestone/framework/modules/AbstractController.js";
+
+class Teams extends AbstractController {
+  get routes() {
+    return {
+      post: {
+        "/": {
+          handler: this.create,
+          request: yup.object({ name: yup.string().required() }),
+        },
+      },
+    } satisfies RouteParams;
+  }
+}
+```
 
 #### Setup
 
@@ -518,34 +541,51 @@ This works for Zod, Valibot, ArkType too. Trade-off: middleware-contributed fiel
 
 ### File Validation
 
-Files are uploaded via `multipart/form-data`. The parser preserves the raw form shape, which means **every multipart field arrives as an array** — a single value is a one-element array, several values are a longer array. Validate against the framework-exported `File` type, using your validator's own array support to declare cardinality:
+Files are uploaded via `multipart/form-data`. **A file field always arrives as an array**: one file is a one-element array, several files a longer array. Text fields are different: a field sent once arrives as a plain string, and only a field sent several times arrives as an array. Validate a file field with an `instanceof` check against the framework-exported `File`, and check the array as a whole, so an error stays under the field name (a check on each element reports `avatar[0]`, not `avatar`):
 
 ```ts
 import { File } from "@adaptivestone/framework/types.js";
 import { z } from "zod";
 
+// true for an array of uploaded files
+const files = (v: unknown) => Array.isArray(v) && v.every((f) => f instanceof File);
+
 request: z.object({
-  // one file: validate the one-element array, unwrap to a File for the handler
-  avatar: z.array(z.instanceof(File)).length(1).transform(([f]) => f),
+  // one file: check the array, then unwrap it to a File for the handler
+  avatar: z
+    .custom<File[]>(files, "not a file")
+    .refine((a) => a.length === 1, "send one file")
+    .transform(([f]) => f),
   // many files (`<input type="file" multiple>`): keep the array
-  avatars: z.array(z.instanceof(File)).nonempty(),
+  avatars: z.custom<File[]>(files, "not a file"),
 });
 ```
 
 `req.appInfo.request.avatar` is a `File`; `req.appInfo.request.avatars` is `File[]`.
 
+The same `files` check works with the other validators:
+
+- zod: `z.custom<File[]>(files, "not a file")`
+- valibot: `v.custom<File[]>(files, "not a file")`
+- arktype: `type("unknown").narrow((v, ctx) => files(v) || ctx.mustBe("an array of files"))`
+- yup: `mixed<File[]>().test("file", "not a file", files)`
+
+A missing field fails these checks. For an optional field, let `files` also accept `undefined`, for example `(v: unknown) => v === undefined || files(v)`.
+
 :::caution Cardinality is declared, not inferred from length
-A single value and a one-element array look identical on the wire (`["A"]`), so you must **declare** which fields are scalar — never auto-unwrap by array length. A `multiple` field that receives one file still arrives as `["A"]`; because `avatars` is declared `z.array(...)` (no transform), it correctly stays a one-element `File[]`. Only fields you explicitly transform to a scalar (`.length(1).transform(...)`) are unwrapped — and a scalar field that receives two values fails `.length(1)`, which is the right outcome.
+One file and a `multiple` upload with one file look identical (`[file]`), so you must **declare** which file fields hold a single file — never auto-unwrap by array length. A `multiple` field that receives one file still arrives as `[file]`; because `avatars` has no transform, it correctly stays a one-element `File[]`. Only fields you explicitly unwrap (`.transform(([f]) => f)`) become a `File` — and the length check makes a single-file field that receives two files fail, which is the right outcome.
+
+A text field that can repeat works the other way round: sent once, it arrives as a string, not a one-element array. Accept both, for example `tags: z.union([z.array(z.string()), z.string().transform((s) => [s])])`.
 :::
 
-`File` is exported as both a value (so `instanceof` works) and a type. It aliases the parser's file class today and re-points at the web-standard `File` after the transport-neutral parser swap — so your validation code stays stable across that change. The same `File` works with every validator: `z.instanceof(File)`, `v.instance(File)`, `type.instanceOf(File)`, or yup's `mixed().test("file", "not a file", (v) => v instanceof File)`.
+`File` is exported as both a value (so `instanceof` works) and a type. It aliases the parser's file class today and re-points at the web-standard `File` after the transport-neutral parser swap — so your validation code stays stable across that change. Since 5.7, the type has the upload fields a handler reads: `filepath`, `mimetype`, `originalFilename` and `size`. A check for a single `File` (`z.instanceof(File)`) rejects every upload, because a file field is always an array.
 
 #### How route types are generated for multipart
 
-Route-type generation is **parser-agnostic** — the multipart always-array shape never reaches it. Codegen emits `req.appInfo.request: StandardSchemaV1.InferOutput<...["request"]>`, which reads the request schema's **output** type. Because the schema above transforms the one-element array down to a `File`, the generated handler type is the unwrapped shape (`{ avatar: File; avatars: File[] }`) — and it matches the runtime value. The schema is the single source of truth for both runtime and types.
+Route-type generation is **parser-agnostic** — the parser's array shape never reaches it. Codegen emits `req.appInfo.request: StandardSchemaV1.InferOutput<...["request"]>`, which reads the request schema's **output** type. Because the schema above transforms the one-element array down to a `File`, the generated handler type is the unwrapped shape (`{ avatar: File; avatars: File[] }`) — and it matches the runtime value. The schema is the single source of truth for both runtime and types.
 
 :::info Planned — route-level single-element extraction
-A **route-level option** is planned so a route can declare which multipart fields are scalar, and the router unwraps their single-element arrays *before* validation. The schema then stays the clean logical shape (`avatar: z.instanceof(File)`), codegen reads that output type directly, and there's no per-field `.array().length(1).transform(...)` to write. This keeps the array-handling in the parser layer (where the array-ness originates) instead of the schema. Until it ships, use the validator's array handling shown above.
+A **route-level option** is planned so a route can declare which file fields hold a single file, and the router unwraps their single-element arrays *before* validation. The schema then stays the clean logical shape (`avatar: z.instanceof(File)`), codegen reads that output type directly, and there's no per-field length check and `.transform(...)` to write. This keeps the array-handling in the parser layer (where the array-ness originates) instead of the schema. Until it ships, use the validator's array handling shown above.
 :::
 
 :::warning Deprecated: `YupFile`
@@ -572,12 +612,17 @@ A single route can accept more than one `Content-Type` with a different body sha
 import { File } from "@adaptivestone/framework/types.js";
 import { z } from "zod";
 
+const files = (v: unknown) => Array.isArray(v) && v.every((f) => f instanceof File);
+
 "/avatar": {
   handler: this.setAvatar,
   request: {
     "application/json": z.object({ url: z.string().url() }),
     "multipart/form-data": z.object({
-      file: z.array(z.instanceof(File)).length(1).transform(([f]) => f),
+      file: z
+        .custom<File[]>(files, "not a file")
+        .refine((a) => a.length === 1, "send one file")
+        .transform(([f]) => f),
     }),
   },
 },
@@ -712,6 +757,17 @@ ValidateService.register(myJoiDriver);
 
 Drivers are matched in registration order; user-registered drivers take priority over the built-ins. Register them before `startServer()` (module scope, as above): routes resolve their driver once at boot, and a schema no driver matches fails the boot with a migration message instead of answering a 500 later.
 
+:::note Route schemas are built once, at boot
+The `routes` getter runs once, when the controller is registered at boot, so its schemas are built then. A value computed inside a schema, such as `max(new Date().getFullYear())`, stays frozen until the next restart. Read such values at request time, in a check that runs on every request, for example yup's `.test()` or zod's `.refine()`:
+
+```ts
+// ❌ the year is read once, at boot
+year: yup.number().max(new Date().getFullYear()),
+// ✅ the year is read on every request
+year: yup.number().test("not-future", "Year cannot be in the future", (v) => v == null || v <= new Date().getFullYear()),
+```
+:::
+
 ### ValidationError
 
 When validation fails, the framework throws a `ValidationError`. The instance's `.message` is the path-keyed payload object, sent as the `errors` of the response:
@@ -731,7 +787,7 @@ Each value is always an array of messages. A field that fails multiple validator
 
 The body is `error`, `message` and `errors` — no `data`. The 400 goes through the [error-handler registry](04-error-handling.md#request-validation-errors), so you can reshape it. `message` is translatable through the `http.validationFailed` key. Every framework error response follows the same contract, `{ error?, message, errors? }`, so a client can always read field errors from `body.errors` (see [Error handling](04-error-handling.md#error-codes-and-translated-messages)). If you are replacing a hand-rolled in-handler guard with a `request:`/`query:`/`params:` schema and your project envelope is `{ data, message?, errors? }`, clients and tests that read `data` (for example asserting `body.data === null`) must stop expecting it.
 
-Validation errors cover input that fails the declared schema **before** the handler runs. For errors thrown **inside** the handler — typed HTTP errors like `NotFoundError`, third-party errors you map yourself, escaped Mongoose validation — see [Error handling](04-error-handling.md).
+Validation errors cover input that fails the declared schema **before** the handler runs. A `ValidationError` thrown **inside** the handler does not get this 400: it is treated as a server error and answers the 500. To report field errors from a handler, throw `BadRequestError` with `errors` (see [Field errors from a route handler](04-error-handling.md#field-errors-from-a-route-handler)). For other errors thrown inside the handler — typed HTTP errors like `NotFoundError`, third-party errors you map yourself, escaped Mongoose validation — see [Error handling](04-error-handling.md).
 
 For structured access (logging, observability), use `.issues`:
 
@@ -748,6 +804,8 @@ try {
   }
 }
 ```
+
+Since 5.7, yup issue params no longer carry the values a `ref()` resolves, such as the password that `repeatPassword: string().oneOf([ref("password")])` must match, so logging the issues does not write it out.
 
 ### i18n
 
