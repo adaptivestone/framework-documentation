@@ -109,6 +109,12 @@ Before, a `File` annotation resolved to the global web `File`. It now types an u
 
 :::
 
+:::info Upgrading to 5.7.1
+
+In 5.7.0, `File` silently became `any` in an app without `@types/formidable`. Since 5.7.1 it is the framework's own type and needs no extra package; remove `@types/formidable` if you added it only for this. The type has the four fields above, and `new File(…)` no longer compiles.
+
+:::
+
 :::warning Deprecated: `YupFile`
 The older yup-specific `YupFile` helper (`@adaptivestone/framework/helpers/yup.js`) is **deprecated and will be removed in v6** — it now emits a runtime `DeprecationWarning` (escalate it to a thrown error with Node's `--throw-deprecation`). Migrate to the `File` export above; it works with any validator and needs no yup.
 :::
