@@ -111,7 +111,7 @@ Before, a `File` annotation resolved to the global web `File`. It now types an u
 
 :::info Upgrading to 5.7.1
 
-In 5.7.0, `File` (and the request types) needed `@types/formidable` (and `@types/express`) in your app; without them `File` silently became `any`. Since 5.7.1 the framework ships both, so you can remove them if you added them only for this.
+In 5.7.0, `File` silently became `any` in an app without `@types/formidable`. Since 5.7.1 it is the framework's own type and needs no extra package; remove `@types/formidable` if you added it only for this. The type has the four fields above, and `new File(…)` no longer compiles.
 
 :::
 
@@ -145,8 +145,6 @@ const valid = verifySecret(submittedCode, loginCode.codeHash, LOGIN_CODE);
 - The protection is `AUTH_SALT` staying out of the database. Anyone holding both finds a 6-digit code instantly, so keep codes short-lived and limit attempts.
 - Rotating `AUTH_SALT` invalidates every stored code hash. That suits codes that expire in minutes; reissue them after a rotation.
 - Hash exactly what you compare: normalize input (for example, strip spaces) before both calls.
-
-The built-in login answers an unknown account as slowly as a wrong password, so response times don't reveal which accounts exist: it checks the password against a throwaway hash, computed when the HTTP server starts. An app with its own login can skip that work with `precomputeLoginTimingHash: false` in its `config/auth.ts` (since 5.7.1). The built-in login then computes the hash on the first unknown-account login, which is slower.
 
 ### Comparing secrets
 
