@@ -14,6 +14,7 @@ Deep inside business logic you often know the right HTTP answer — the document
 
 ```js
 import { NotFoundError, ForbiddenError } from "@adaptivestone/framework/services/http/httpErrors.js";
+import { HttpResponse } from "@adaptivestone/framework/services/http/responses.js";
 
 class Posts extends AbstractController {
   get routes() {
@@ -22,7 +23,7 @@ class Posts extends AbstractController {
     };
   }
 
-  async getOne(req, res) {
+  async getOne(req) {
     const post = await this.app.getModel("Post").findById(req.params.id);
     if (!post) {
       throw new NotFoundError("Post not found");
@@ -32,7 +33,7 @@ class Posts extends AbstractController {
       throw new ForbiddenError("Not your post");
       // → 403 {"message": "Not your post"}
     }
-    return res.status(200).json({ data: post.getPublic() });
+    return HttpResponse.json(200, { data: post.getPublic() });
   }
 }
 ```
@@ -440,10 +441,10 @@ The safety net is a fallback, not the contract. Route schemas are the API's sour
 The classic version of this is a path param handed straight to a model:
 
 ```js
-async getPerson(req, res) {
+async getPerson(req) {
   // `req.params.id` is a raw, unvalidated string
   const person = await this.app.getModel("Person").findById(req.params.id);
-  return res.json({ data: person });
+  return HttpResponse.json(200, { data: person });
 }
 ```
 
